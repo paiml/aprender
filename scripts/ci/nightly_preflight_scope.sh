@@ -39,6 +39,7 @@ classify() { # classify PATHSFILE [DIFFFILE]
   while IFS= read -r p; do
     [ -n "$p" ] || continue
     n=$((n + 1))
+    case "$p" in '"'*) echo "reason=quoted path $p, cannot judge"; hit=1; continue ;; esac
     r="$(path_reason "$p")"
     if [ -n "$r" ]; then echo "reason=$r"; hit=1; fi
   done < "$paths"
@@ -49,7 +50,7 @@ classify() { # classify PATHSFILE [DIFFFILE]
         "+++ b/.github/workflows/"* | "--- a/.github/workflows/"*) f="${p#??? ?/}" ;;
         "+++ "* | "--- "*) f="" ;;
         [+-]*)
-          if [ -n "$f" ] && printf '%s' "$p" | grep -Eq '^[+-][[:space:]]*(-[[:space:]]+)?runs-on:'; then
+          if [ -n "$f" ] && grep -Eq '^[+-][[:space:]]*(-[[:space:]]+)?runs-on:' <<< "$p"; then
             echo "reason=runs-on changed in $f"; hit=1
           fi ;;
       esac
@@ -63,7 +64,7 @@ from_git() { # BASE HEAD
   local base="$1" head="$2" mb d
   d="$(mktemp -d "${TMPDIR:-/tmp}/npf-scope.XXXXXX")" || return 2
   mb="$(git merge-base "$base" "$head" 2>/dev/null)" || { echo "reason=no merge-base for $base $head"; echo "applicable=yes"; rm -rf -- "${d:?}"; return 0; }
-  if ! git diff --no-renames --name-only "$mb" "$head" > "$d/paths" 2>/dev/null \
+  if ! git -c core.quotepath=off diff --no-renames --name-only "$mb" "$head" > "$d/paths" 2>/dev/null \
     || ! git diff --no-renames -U0 "$mb" "$head" -- .github/workflows > "$d/diff" 2>/dev/null; then
     echo "reason=git diff failed"; echo "applicable=yes"; rm -rf -- "${d:?}"; return 0
   fi
@@ -103,11 +104,16 @@ self_test() {
   expect plain_workflow_no_runs_on no '.github/workflows/ci.yml\n' '--- a/.github/workflows/ci.yml\n+++ b/.github/workflows/ci.yml\n@@ -1 +1 @@\n-      - run: echo a\n+      - run: echo b\n'
   expect runs_on_in_non_workflow_diff_ignored no 'docs/x.md\n' '--- a/docs/x.md\n+++ b/docs/x.md\n@@ -1 +1 @@\n+runs-on: x\n'
   expect runs_on_after_workflow_in_other_file_ignored no '.github/workflows/ci.yml\ndocs/x.md\n' '--- a/.github/workflows/ci.yml\n+++ b/.github/workflows/ci.yml\n@@ -1 +1 @@\n-a\n+b\n--- a/docs/x.md\n+++ b/docs/x.md\n@@ -1 +1 @@\n+runs-on: x\n'
+  expect quoted_path_fail_closed yes '"scripts/release/a\\303\\251.sh"\n'
+  expect path_with_spaces_hit yes 'scripts/release/my script.sh\n'
+  expect path_with_spaces_miss no 'docs/my notes.md\n'
+  expect deleted_pin_file_is_a_path yes 'scripts/pmat_pin.sh\n'
   expect lookalike_dirs no 'scripts/releases/x.sh\nxscripts/release/y.sh\nscripts/nightly/x.rs\n'
   expect lookalike_names no '.github/workflows/ci-release-notes.yml.bak\nscripts/mypin.sh\n'
   # reason lines are printed for a hit
   printf 'tools.toml\n' > "$d/p"
-  if classify "$d/p" | grep -q '^reason=tool pin tools.toml$'; then echo "  ok    reason_line"; else echo "  BAD   reason_line"; bad=$((bad + 1)); fi
+  got="$(classify "$d/p")"
+  if grep -q '^reason=tool pin tools.toml$' <<< "$got"; then echo "  ok    reason_line"; else echo "  BAD   reason_line"; bad=$((bad + 1)); fi
   echo "$PROG self-test: $bad broke"
   [ "$bad" = 0 ]
 }
@@ -138,11 +144,14 @@ if [ "$n" -eq 0 ]; then echo "reason=empty path list, cannot judge"; echo "appli
 if [ "$hit" = 1 ]; then echo "applicable=yes"; else echo "applicable=no"; fi	echo "applicable=no"
 "+++ "* | "--- "*) f="" ;;	"+++ "* | "--- "*) f="$f" ;;
 "+++ b/.github/workflows/"* | "--- a/.github/workflows/"*) f="${p#??? ?/}" ;;	"--- a/.github/workflows/"*) f="${p#??? ?/}" ;;
+case "$p" in '"'*) echo "reason=quoted path $p, cannot judge"; hit=1; continue ;; esac	case "$p" in '"'*) continue ;; esac
 M
   echo "$PROG mutants: $n planted, $bad not killed"
   [ "$bad" = 0 ]
 }
 
+# two args that are not an option: BASE HEAD, even when BASE is empty (a merge_group event can carry no base_sha): from_git fails closed
+if [ $# -eq 2 ] && [ "${1#-}" = "$1" ]; then from_git "$1" "$2"; exit $?; fi
 case "${1:-}" in
   --self-test) self_test; exit $? ;;
   --mutants) mutants; exit $? ;;

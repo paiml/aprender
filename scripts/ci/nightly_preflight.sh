@@ -85,7 +85,7 @@ check_workflow() {
   local f="$1" bad=0 t
   [ -r "$f" ] || { echo "unreadable $f"; return 2; }
   t="$(grep -Ev '^[[:space:]]*#' "$f")"
-  chk() { if printf "%s\n" "$t" | bash -c "$2" > /dev/null 2>&1; then echo "  ok    $1"; else echo "  BAD   $1"; bad=1; fi; }
+  chk() { if bash -c "$2" <<< "$t" > /dev/null 2>&1; then echo "  ok    $1"; else echo "  BAD   $1"; bad=1; fi; }
   chk on_pull_request "grep -Eq '^  pull_request:'"
   chk on_merge_group "grep -Eq '^  merge_group:'"
   chk no_paths_filter "! grep -Eq '^[[:space:]]+paths(-ignore)?:'"
@@ -133,7 +133,8 @@ self_test() {
   t pool_checker_red 1 env NPF_ROOT="$w" NPF_POOL_CMD=false NPF_TOOLS_CMD=true NPF_PROBE_CMD=true NPF_RUSTC="$d/rustc" bash "$SELF"
   t tools_check_red 1 env NPF_ROOT="$w" NPF_POOL_CMD=true NPF_TOOLS_CMD=false NPF_PROBE_CMD=true NPF_RUSTC="$d/rustc" bash "$SELF"
   t token_reachable_red 1 env NPF_ROOT="$w" NPF_POOL_CMD=true NPF_TOOLS_CMD=true NPF_PROBE_CMD=false NPF_RUSTC="$d/rustc" bash "$SELF"
-  t red_run_never_prints_ok 0 bash -c "! NPF_ROOT='$w' NPF_POOL_CMD=true NPF_TOOLS_CMD=false NPF_PROBE_CMD=true NPF_RUSTC='$d/rustc' bash '$SELF' | grep -q 'PREFLIGHT OK'"
+  NPF_ROOT="$w" NPF_POOL_CMD=true NPF_TOOLS_CMD=false NPF_PROBE_CMD=true NPF_RUSTC="$d/rustc" bash "$SELF" > "$d/red.out" 2>&1
+  t red_run_never_prints_ok 0 bash -c "! grep -q 'PREFLIGHT OK' '$d/red.out'"
   t rustc_wrong_version_red 1 env FAKE_RUSTC=1.92.0 NPF_ROOT="$w" NPF_POOL_CMD=true NPF_TOOLS_CMD=true NPF_PROBE_CMD=true NPF_RUSTC="$d/rustc" bash "$SELF"
   t rustc_absent_red 1 env NPF_ROOT="$w" NPF_POOL_CMD=true NPF_TOOLS_CMD=true NPF_PROBE_CMD=true NPF_RUSTC="$d/nope" bash "$SELF"
   fixture "$P" '[self-hosted, Linux, X64, clean-room]'
