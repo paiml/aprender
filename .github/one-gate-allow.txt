@@ -1,0 +1,39 @@
+# ONE-GATE allow-list (APR-GREEN-001 item 2, 2026-11-21). Read by scripts/check_one_gate_parity.sh.
+# THIS FILE IS PART OF THE GATE: an edit is a GATE CHANGE (two non-author lanes, bound to the head).
+# Every value is compared byte for byte; an unlisted push-vs-PR difference is RED, and a line
+# below that no longer matches a difference is RED (stale). Spaces in a step name are written "_".
+#
+# required: <workflow> <job>   a verdict job (a required status check). Every job that runs on a
+#                              push to main must be in the `needs` closure of one of these.
+# allow <kind> <workflow> <job> <detail> -- <reason>
+#   kinds: push-only | not-required | attr | step | paths | pin
+required ci.yml gate
+required ci.yml ci-gate
+required ci.yml workspace-test
+
+# --- push-only jobs: cannot be PR checks by nature --------------------------------------------
+allow push-only advisory-andon.yml andon - -- scheduled advisory alarm job (cron every 2h; the push trigger only refreshes it); LAB, cannot block a merge or release (C324)
+allow push-only book.yml deploy - -- GitHub Pages deploy of the book; needs the pages environment and only makes sense after merge. The PR runs the book `build` job on the same runner labels
+allow push-only ci.yml mg-reuse - -- reads the merge_group run on the same sha to decide whether x86-main/determinism may be reused on this push (T43/#4748); reads PR-side history, has no PR-side equivalent
+
+# --- DESIGN-CALL 1: required-ness of a job both sides run ---------------------------------------
+allow not-required ci.yml runner-smells - -- runs on PR and push with the same `if` and the same reusable workflow pin, but no verdict job needs it. DESIGN CALL: add it to gate needs (changes what a merge requires), left to the cop
+
+# --- DESIGN-CALL 2: workspace-test-shard partition differs push vs merge_group ------------------
+# push shards the workspace 4 ways with default timeouts; the merge queue shards it 3 ways with
+# scaled timeouts (ci/sections.yml matrix-pins workspace-test-shard vs workspace-test-shard-merge_group).
+# Σ-executed proves both partitions cover the same universe, but a push-only partition (shard 1 or 4
+# of 4) is a run the queue never made: this is the class of the 2026-11-21 push-only reds.
+# DESIGN CALL: make push use the merge_group 3-way partition and timeouts, then delete these 4 lines.
+allow attr ci.yml workspace-test-shard matrix.shard -- push 4-way vs queue 3-way partition. DESIGN CALL 2 (collapse push onto the queue partition)
+allow attr ci.yml workspace-test-shard matrix.shards -- push 4-way vs queue 3-way partition. DESIGN CALL 2
+allow attr ci.yml workspace-test-shard env.FAT_TIMEOUT_SCALE -- queue runs unscaled section timeouts, push the x2 default; timeout policy only, same tests (NOAH 2026-10-26 timeout = 2x p95)
+allow attr ci.yml workspace-test-shard env.FAT_IDLE_LIMIT_S -- queue arms the idle watchdog (hang detector), push does not; detection only, same tests
+allow attr ci.yml x86-main env.FAT_TIMEOUT_SCALE -- queue runs unscaled section timeouts, push the x2 default; timeout policy only, same sections
+
+# --- steps that run on push but not on the PR side ---------------------------------------------
+allow step ci.yml x86-main codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 -- coverage upload, continue-on-error, post-merge by design (ci.yml comment: neither can block a merge)
+allow step ci.yml x86-main Generate_SLSA_provenance -- provenance attestation, continue-on-error, post-merge by design
+allow step ci.yml workspace-test actions/checkout@v7 -- workspace-test on a PR reads the pr-light verdict (workspace-test-ran); the Σ-executed steps need shards, which a PR does not run (the queue does)
+allow step ci.yml workspace-test actions/download-artifact@v4 -- same: shard artifacts exist only on queue/push runs
+allow step ci.yml workspace-test Σ-executed:_the_union_of_the_shards_is_exactly_the_owed_set_(#4433) -- same: runs on the queue (merge_group) and on push, never on a PR
