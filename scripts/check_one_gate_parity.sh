@@ -68,7 +68,8 @@ emit_records() {
         ((.value.strategy.matrix // {}) | to_entries | .[] | select(.key != "include" and .key != "exclude") | [$j, "matrix." + .key, (.value | to_json(0))]),
         ((.value.env // {}) | to_entries | .[] | [$j, "env." + .key, (.value | tostring)]),
         ((.value.steps // []) | to_entries | .[] | [$j, "step", ((.value.if // "") | tostring) + "@@" + ((.value.name // .value.uses // ("#" + (.key | tostring))) | tostring)]),
-        ((.value.steps // []) | .[] | select(.uses != null) | [$j, "pin", (.uses + " " + ((.with.toolchain // "") | tostring))])
+        ((.value.steps // []) | .[] | select(.uses != null) | [$j, "pin", (.uses + " " + ((.with.toolchain // "") | tostring))]),
+        ((.value.steps // []) | .[] | select(((.run // "") | tostring) | test("--sections")) | [$j, "sect", ((.if // "") | tostring) + "@@" + (.run | sub("\n"; "~NL~"))])
       ) | join("\t")' "$f" | awk -v wf="$wf" -F'\t' 'NF >= 3 && $1 != "" { printf "%s\t%s\t%s\t%s\n", wf, $1, $2, $3 }'
   done
 }
@@ -157,6 +158,37 @@ function ifval(raw, ev,    e) {
   if (e == "UNPARSEABLE") { unparse[wf_ "|" job_] = raw; return 1 }
   return truthy(e)
 }
+# sections_of(key, ev): the fat_driver --sections items the job runs on event ev.
+# A `run` block may branch on "$EVT" (if [ "$EVT" = X ]; then ... else ... fi): the branch is honoured.
+function add_items(list, ev, key,    i, c, depth, cur, n) {
+  gsub(/\$\{\{[^}]*\}\}/, "{}", list)
+  depth = 0; cur = ""
+  for (i = 1; i <= length(list) + 1; i++) {
+    c = substr(list, i, 1)
+    if (c == "[") depth++
+    if (c == "]") depth--
+    if ((c == "," && depth == 0) || i > length(list)) {
+      if (cur != "") { secset[ev "|" cur] = 1; secjob[ev "|" cur] = key }
+      cur = ""
+    } else cur = cur c
+  }
+}
+function sections_of(key, ev,    i, sv, sp, sif, run, nl, lines, l, ctx, X, m, lst) {
+  for (i = 1; i <= nsect[key]; i++) {
+    sv = sectraw[key, i]; sp = index(sv, "@@"); sif = substr(sv, 1, sp - 1); run = substr(sv, sp + 2)
+    if (!ifval(sif, ev)) continue
+    nl = split(run, lines, "~NL~"); ctx = "all"; X = ""
+    for (l = 1; l <= nl; l++) {
+      if (match(lines[l], /\[ "\$EVT" = [a-z_]+ \]/)) { m = substr(lines[l], RSTART, RLENGTH); sub(/.*= /, "", m); sub(/ \].*/, "", m); X = m; ctx = "is"; continue }
+      if (lines[l] ~ /^[ ]*else[ ]*$/) { ctx = "not"; continue }
+      if (lines[l] ~ /^[ ]*fi[ ]*$/) { ctx = "all"; continue }
+      if (match(lines[l], /--sections +'[^']*'/)) {
+        lst = substr(lines[l], RSTART, RLENGTH); sub(/^--sections +'/, "", lst); sub(/'$/, "", lst)
+        if (ctx == "all" || (ctx == "is" && X == ev) || (ctx == "not" && X != ev)) add_items(lst, ev, key)
+      }
+    }
+  }
+}
 function viol(kind, w, j, d, msg,    key) {
   gsub(/ /, "_", d)
   key = kind "|" w "|" j "|" d
@@ -188,6 +220,7 @@ fileno == 2 {
   else if (k == "needs") needs[w "|" j] = v
   else if (k == "pin") { npin[w "|" j]++; pinv[w "|" j, npin[w "|" j]] = v }
   else if (k == "runs-on" || k ~ /^matrix\./ || k ~ /^env\./) rawattr[w "|" j "|" k] = v
+  else if (k == "sect") { nsect[w "|" j]++; sectraw[w "|" j, nsect[w "|" j]] = v }
   else if (k == "step") { nstep[w "|" j]++; stepraw[w "|" j, nstep[w "|" j]] = v }
   next
 }
@@ -234,6 +267,22 @@ END {
     n = npin[key]
     for (i = 1; i <= n; i++)
       if (pinv[key, i] ~ /github\.event_name/) viol("pin", w, j, "-", "event-dependent tool pin: " pinv[key, i])
+  }
+  # section SET per event: a fat_driver section that push runs (inside any job) must be run by some job on
+  # pull_request or merge_group too, after each job's `if` and each step's `if`/"$EVT" branch are resolved.
+  for (key in jobs) {
+    split(key, p, "|")
+    if (!(key in nsect)) continue
+    for (e = 1; e <= 3; e++) { ev = EVS[e]; if (ran[key "|" ev]) sections_of(key, ev) }
+  }
+  for (sk in secset) {
+    split(sk, sp2, "|")
+    if (sp2[1] != "push") continue
+    sec = substr(sk, 6)
+    if (!(("pull_request|" sec) in secset) && !(("merge_group|" sec) in secset)) {
+      split(secjob[sk], jp, "|")
+      viol("section", jp[1], jp[2], sec, "section runs on push to main (job " jp[2] ") but on neither pull_request nor merge_group")
+    }
   }
   for (key in unparse) { split(key, p, "|"); viol("attr", p[1], p[2], "if", "if expression not understood by the evaluator (fail closed): " unparse[key]) }
   # paths: every push path entry must appear in the PR path filter (when the PR has one)
@@ -311,10 +360,41 @@ jobs:
         run: echo hi
 YML
 }
-case_run() { # NAME WANT-RC ALLOW-EXTRA SED-MUTATION
+# base_sect: a job that runs fat_driver sections: push runs 4, the queue runs 2 plus the `guards` job's 2,
+# a PR runs only the PR-only pair. Spliced in (and made required) when the 5th case_run argument is "sect".
+base_sect() {
+  cat <<'YML'
+  fat:
+    needs: [build]
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    steps:
+      - name: Sections
+        env:
+          EVT: ${{ github.event_name }}
+        run: |
+          if [ "$EVT" = merge_group ]; then
+            python3 scripts/ci/fat_driver.py run --sections 'sov.*,determinism[X64]'
+          else
+            python3 scripts/ci/fat_driver.py run --sections 'sov.*,guard-cargo,determinism[X64]'
+          fi
+  guards:
+    needs: [build]
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    steps:
+      - name: Sections
+        run: python3 scripts/ci/fat_driver.py run --sections 'guard-cargo'
+YML
+}
+case_run() { # NAME WANT-RC ALLOW-EXTRA SED-MUTATION [sect]
   local name=$1 want=$2 extra=$3 mut=$4 rc
   [ -n "${st:-}" ] && rm -rf "${st:?}/wf"; mkdir -p "$st/wf"
   base_ci >"$st/wf/ci.yml"
+  if [ "${5:-}" = sect ]; then
+    base_sect >>"$st/wf/ci.yml"
+    sed -i 's/^    needs: \[build, shard\]$/    needs: [build, shard, fat, guards]/' "$st/wf/ci.yml"
+  fi
   if [ -n "$mut" ]; then sed -i "$mut" "$st/wf/ci.yml"; fi
   printf 'required ci.yml gate\n%s' "$extra" >"$st/allow.txt"
   rc=0; "$0" --workflows "$st/wf" --allow "$st/allow.txt" >"$st/out" 2>&1 || rc=$?
@@ -337,5 +417,10 @@ case_run "M10 allow line without reason is RED" 1 "allow push-only ci.yml shard 
 " "s/^  shard:\$/  shard:\n    if: github.event_name == ${Q}push${Q}/"
 case_run "A1 listed difference is accepted" 0 "allow push-only ci.yml shard - -- planted: reviewed exception
 " "s/^  shard:\$/  shard:\n    if: github.event_name == ${Q}push${Q}/"
+case_run "S0 section set equal (push sections all run by the queue)" 0 "" "" sect
+case_run "S1 section only on push (queue drops guard-cargo)" 1 "" "s/^    if: \${{ github.event_name == ${Q}merge_group${Q} }}\$/    if: \${{ github.event_name == ${Q}push${Q} }}/" sect
+case_run "S2 section removed from the queue list and the guards job" 1 "" "s/--sections ${Q}guard-cargo${Q}/--sections ${Q}determinism[X64]${Q}/;s/'sov.\*,determinism\[X64\]'/'sov.*'/" sect
+case_run "S3 push-only section accepted when listed with a reason" 0 "allow section ci.yml fat guard-cargo -- planted: reviewed exception
+" "s/--sections ${Q}guard-cargo${Q}/--sections ${Q}determinism[X64]${Q}/;s/'sov.\*,determinism\[X64\]'/'sov.*'/" sect
 if [ "$fail" -ne 0 ]; then echo "one-gate self-test: FAILED"; exit 1; fi
 echo "one-gate self-test: all cases behave (baseline holds, every planted defect is RED)"
