@@ -6,7 +6,7 @@
 #   2. the heavy jobs x86-main and workspace-test-shard carry `github.event.pull_request.draft != true` in their `if:`.
 #   3. the three verdict jobs (workspace-test, ci-gate, gate) read `DRAFT: ${{ github.event.pull_request.draft }}` and
 #      exit 0 on `true`, so `workspace-test`, `ci / gate` and `gate` still REPORT (a draft cannot be queued or merged).
-#   4. workspace-test's checkout / download-artifact / sigma steps are skipped on a draft (they would fail with no shards).
+#   4. workspace-test-sigma's (#7314; was workspace-test's) checkout / download-artifact / sigma steps are skipped on a draft (they would fail with no shards).
 # No third state: nothing here is continue-on-error; a non-draft PR, a merge_group entry and a push run exactly as before.
 #
 # Usage:  bash scripts/check_ci_draft_skip.sh [--self-test] [WORKFLOW_FILE]
@@ -35,8 +35,14 @@ check() { # FILE -> prints one FAIL line per violated condition; rc 1 when any
     for j in x86-main workspace-test-shard; do
         blk="$(job_block "$f" "$j")"
         if [ -z "$blk" ]; then echo "FAIL  job $j not found"; bad=1; continue; fi
-        if ! printf '%s\n' "$blk" | /usr/bin/grep -E '^    if:' | has 'github.event.pull_request.draft != true'; then
-            echo "FAIL  job $j has no draft guard in its if:"; bad=1
+        # Semantic (#7314 lane 2): the if: is read as conjuncts. Cut the same-repo fork guard whole; what is left may hold no `||`
+        # (`|| true` runs the job on every draft) and its LAST conjunct must be the draft clause, so a substring elsewhere cannot satisfy it.
+        jif="$(printf '%s\n' "$blk" | /usr/bin/grep -E '^    if:' | tr -s ' ')"
+        jrest="$jif"
+        jrest="${jrest//"(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)"/}"
+        jrest="${jrest//"(github.event_name != 'pull_request' || github.repository == github.event.pull_request.head.repo.full_name)"/}"
+        if [ -z "$jif" ] || [[ "$jrest" == *'||'* ]] || [[ "$jrest" != *' && github.event.pull_request.draft != true }}' ]]; then
+            echo "FAIL  job $j has no draft guard in its if: (the draft clause must be the last && conjunct and the if: may hold no || outside the fork guard)"; bad=1
         fi
     done
     for j in workspace-test ci-gate gate; do
@@ -52,9 +58,10 @@ check() { # FILE -> prints one FAIL line per violated condition; rc 1 when any
             echo "FAIL  verdict job $j uses continue-on-error (no third state)"; bad=1
         fi
     done
-    blk="$(job_block "$f" workspace-test)"
-    if [ "$(printf '%s\n' "$blk" | /usr/bin/grep -c -E 'if: [$][{][{] (needs[.]mg-reuse-wt[.]outputs[.]wt != .1. && )?github[.]event[.]pull_request[.]draft != true( && github[.]event_name != .pull_request.)? [}][}]')" -lt 3 ]; then
-        echo "FAIL  workspace-test: checkout, download-artifact and sigma steps are not all skipped on a draft"; bad=1
+    blk="$(job_block "$f" workspace-test-sigma)"
+    if [ -z "$blk" ]; then echo "FAIL  job workspace-test-sigma not found"; bad=1; fi
+    if [ "$(printf '%s\n' "$blk" | /usr/bin/grep -c -E '^ {8}if: [$][{][{] (needs[.]mg-reuse[.]outputs[.]wt != .1. && )?(needs[.]mg-reuse-wt[.]outputs[.]wt != .1. && )?github[.]event[.]pull_request[.]draft != true( && github[.]event_name != .pull_request.)? [}][}]')" -lt 3 ]; then
+        echo "FAIL  workspace-test-sigma: checkout, download-artifact and sigma steps are not all skipped on a draft"; bad=1
     fi
     return "$bad"
 }
@@ -77,7 +84,19 @@ self_test() {
     mutant gate-no-draft-exit '/echo "gate: draft PR/d'
     mutant ci-gate-no-draft-flag '/^  ci-gate:/,/^  gate:/{/DRAFT: \$/d}'
     mutant sigma-step-runs-on-draft '/Σ-executed/{n;d}'
+    # #7314 lane 2: a commented-out step if: and an `|| true` on the heavy-job if: both passed (a substring match, an unanchored count)
+    mutant sigma-step-if-commented-out '/Σ-executed/{n;s/^( +)if:/\1# if:/}'
+    mutant x86-main-if-or-true '/^  x86-main:$/,/runs-on:/{s/^(    if: .*) \}\}$/\1 || true }}/}'
+    mutant shard-if-or-true '/^  workspace-test-shard:$/,/runs-on:/{s/^(    if: .*) \}\}$/\1 || true }}/}'
+    mutant x86-main-draft-clause-first '/^  x86-main:$/,/runs-on:/{s/ && github\.event\.pull_request\.draft != true \}\}/ }}/;s/if: \$\{\{ /if: ${{ github.event.pull_request.draft != true || /}'
     mutant third-state 's/^  gate:$/  gate:\n    continue-on-error: true/'
+    # one mutant per verdict job and per condition (#7314 lane 2: dropping workspace-test from the verdict loop survived, only gate and ci-gate were mutated)
+    mutant workspace-test-no-draft-flag '/^  workspace-test:/,/^  [A-Za-z0-9_-]+:/{/DRAFT: \$/d}'
+    mutant workspace-test-no-draft-exit '/^  workspace-test:/,/^  [A-Za-z0-9_-]+:/{/echo "draft PR: the shards/d}'
+    mutant ci-gate-no-draft-exit '/echo "ci \/ gate: draft PR/d'
+    mutant gate-no-draft-flag '/^  gate:/,/^  [A-Za-z0-9_-]+:/{/DRAFT: \$/d}'
+    mutant workspace-test-third-state 's/^  workspace-test:$/  workspace-test:\n    continue-on-error: true/'
+    mutant ci-gate-third-state 's/^  ci-gate:$/  ci-gate:\n    continue-on-error: true/'
     return "$fails"
 }
 

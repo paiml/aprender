@@ -1,0 +1,45 @@
+﻿2026-11-19T11:09:30.1731842Z Current runner version: '2.337.0'
+2026-11-19T11:09:30.1738670Z ##[group]GITHUB_TOKEN Permissions
+2026-11-19T11:09:30.1740011Z Actions: write
+2026-11-19T11:09:30.1740300Z ArtifactMetadata: write
+2026-11-19T11:09:30.1740601Z Attestations: write
+2026-11-19T11:09:30.1740885Z Checks: write
+2026-11-19T11:09:30.1741161Z CodeQuality: write
+2026-11-19T11:09:30.1741441Z Contents: write
+2026-11-19T11:09:30.1741722Z CopilotRequests: write
+2026-11-19T11:09:30.1742019Z Deployments: write
+2026-11-19T11:09:30.1742304Z Discussions: write
+2026-11-19T11:09:30.1742597Z Drives: write
+2026-11-19T11:09:30.1742874Z Issues: write
+2026-11-19T11:09:30.1743150Z Metadata: read
+2026-11-19T11:09:30.1743476Z Models: read
+2026-11-19T11:09:30.1743746Z Packages: write
+2026-11-19T11:09:30.1744019Z Pages: write
+2026-11-19T11:09:30.1744326Z PullRequests: write
+2026-11-19T11:09:30.1744630Z RepositoryProjects: write
+2026-11-19T11:09:30.1744929Z SecurityEvents: write
+2026-11-19T11:09:30.1745215Z Statuses: write
+2026-11-19T11:09:30.1745497Z VulnerabilityAlerts: read
+2026-11-19T11:09:30.1745802Z ##[endgroup]
+2026-11-19T11:09:30.1746855Z Secret source: Actions
+2026-11-19T11:09:30.1747289Z Cache mode: write
+2026-11-19T11:09:30.1747744Z Prepare workflow directory
+2026-11-19T11:09:30.1995289Z Prepare all required actions
+2026-11-19T11:09:30.2024000Z Getting action download info
+2026-11-19T11:09:30.6454726Z Download action repository 'actions/checkout@v7' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-11-19T11:09:31.2159033Z Download action repository 'actions/download-artifact@v4' (SHA:d3f86a106a0bac45b974a628896c90dbdf5c8093)
+2026-11-19T11:09:32.0994953Z Complete job name: workspace-test
+2026-11-19T11:09:32.1181988Z A job started hook has been configured by the self-hosted runner administrator
+2026-11-19T11:09:32.1251654Z ##[group]Run '/opt/ci-hook/pre-job.sh'
+2026-11-19T11:09:32.1259206Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-11-19T11:09:32.1259931Z ##[endgroup]
+2026-11-19T11:09:32.1354361Z pre-job-cpu-pool: thread cap 4 set: RUNNER_THREAD_CAP CARGO_BUILD_JOBS RUST_TEST_THREADS RAYON_NUM_THREADS NEXTEST_TEST_THREADS
+2026-11-19T11:09:32.1251654Z ##[group]Run set -uo pipefail
+2026-11-19T11:09:32.1480482Z [36;1mset -uo pipefail[0m
+2026-11-19T11:09:32.1480622Z [36;1mm=$(git rev-parse HEAD) && t=$(git rev-parse 'HEAD^{tree}') && b=$(git rev-parse 'HEAD^1') && h=$(git rev-parse 'HEAD^2') \[0m
+2026-11-19T11:09:32.1480354Z [36;1m  || { echo "PUSH-REUSE-STAMP unavailable: HEAD is not a two-parent merge commit"; exit 0; }[0m
+2026-11-19T11:09:32.1480703Z [36;1mecho "PUSH-REUSE-STAMP tested_sha=$m tested_tree=$t tested_base=$b tested_head=$h"[0m
+2026-11-19T11:09:32.1480870Z [36;1mecho "tested merge $m tree $t base $b head $h" >> "$GITHUB_STEP_SUMMARY"[0m
+2026-11-19T11:09:32.2001234Z ##[endgroup]
+2026-11-19T11:09:32.2100000Z PUSH-REUSE-STAMP tested_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa tested_tree=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb tested_base=cccccccccccccccccccccccccccccccccccccccc tested_head=dddddddddddddddddddddddddddddddddddddddd
+2026-11-19T11:09:32.2203333Z Post job cleanup.

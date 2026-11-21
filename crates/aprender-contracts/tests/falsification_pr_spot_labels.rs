@@ -742,7 +742,7 @@ fn check_triggers(top: &Mapping, why: &mut Vec<String>) {
 fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
     const JOB: &str = "mg-reuse-self-test";
     const IF: &str =
-        "${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}";
+        "${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}";
     let Some(Value::Mapping(jobs)) = key(top, "jobs") else {
         return;
     };
@@ -1251,23 +1251,52 @@ fn only_the_three_aggregators_may_take_the_spot_expression() {
 
 #[test]
 fn moved_jobs_carry_no_checkout_cache_secret_or_write() {
-    // workspace-test's checkout is skipped on a pull_request; drop that skip
-    let no_skip = job_mut(
-        "workspace-test",
-        "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}",
-        "github.event.pull_request.draft != true }}",
-    );
+    // workspace-test is a needs-only aggregator: Σ-executed's checkout and download live in the clean-room
+    // `workspace-test-sigma` job (#7314), so any such step added back here must be skipped on a pull_request,
+    // and an unconditional or `|| true` one is red
+    let add = |extra: &str| {
+        job_mut(
+            "workspace-test",
+            "    steps:\n",
+            &format!("    steps:\n{extra}"),
+        )
+    };
     red(
         "workspace-test-checkout-on-pr",
-        &no_skip,
+        &add("      - uses: actions/checkout@v7\n"),
         "runs on pull_request",
     );
-    let or_skip = job_mut(
-        "workspace-test",
-        "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}",
-        "github.event_name != 'pull_request' || true }}",
+    red(
+        "workspace-test-or-true",
+        &add("      - uses: actions/checkout@v7\n        if: ${{ github.event_name != 'pull_request' || true }}\n"),
+        "runs on pull_request",
     );
-    red("workspace-test-or-true", &or_skip, "runs on pull_request");
+    red(
+        "workspace-test-optin-skip-is-not-accepted",
+        &add("      - uses: actions/download-artifact@v4\n        if: ${{ github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1' }}\n"),
+        "runs on pull_request",
+    );
+    // the sigma job must stay off the spot pool, whatever its steps
+    let sigma_spot = job_mut(
+        "workspace-test-sigma",
+        "runs-on: [self-hosted, Linux, clean-room]",
+        "runs-on: [self-hosted, burst-x64, burst-public]",
+    );
+    red(
+        "workspace-test-sigma-on-spot",
+        &sigma_spot,
+        "can land on a spot seat",
+    );
+    let sigma_optin = job_mut(
+        "workspace-test-sigma",
+        "runs-on: [self-hosted, Linux, clean-room]",
+        &format!("runs-on: {}", canonical("workspace-test").unwrap()),
+    );
+    red(
+        "workspace-test-sigma-optin",
+        &sigma_optin,
+        "opt-in variable outside",
+    );
     for job in ["ci-gate", "gate"] {
         for (n, step) in [
             ("checkout", "      - uses: actions/checkout@v7\n"),
@@ -1358,8 +1387,8 @@ fn guard_is_wired_unmasked_into_every_event() {
         ("step-if", job_mut(job, "      - name: pr spot labels guard", "      - if: false\n        name: pr spot labels guard"), "no unmasked step"),
         ("step-continue", job_mut(job, "      - name: pr spot labels guard", "      - continue-on-error: true\n        name: pr spot labels guard"), "no unmasked step"),
         ("job-continue", job_mut(job, "    runs-on:", "    continue-on-error: true\n    runs-on:"), "continue-on-error"),
-        ("job-if-merge-group-only", job_mut(job, "if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}", "if: ${{ github.event_name == 'merge_group' }}"), "all-events condition"),
-        ("job-if-pr-only", job_mut(job, "if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}", "if: ${{ github.event_name == 'pull_request' }}"), "all-events condition"),
+        ("job-if-merge-group-only", job_mut(job, "if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}", "if: ${{ github.event_name == 'merge_group' }}"), "all-events condition"),
+        ("job-if-pr-only", job_mut(job, "if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}", "if: ${{ github.event_name == 'pull_request' }}"), "all-events condition"),
         ("skip-suffix", job_mut(job, step, &format!("{step} -- --skip ''")), "no unmasked step"),
         ("list-suffix", job_mut(job, step, &format!("{step} -- --list")), "no unmasked step"),
         ("semicolon-suffix", job_mut(job, step, &format!("{step}; true")), "no unmasked step"),
@@ -1373,7 +1402,7 @@ fn guard_is_wired_unmasked_into_every_event() {
         ("no-errexit", job_mut(job, "set -euo pipefail", "true"), "no unmasked step"),
         ("job-defaults-shell", job_mut(job, "    runs-on:", "    defaults:\n      run:\n        shell: \"true {0}\"\n    runs-on:"), "sets defaults"),
         ("job-Continue-On-Error-case", job_mut(job, "    runs-on:", "    Continue-On-Error: true\n    runs-on:"), "has continue-on-error"),
-        ("job-If-case", job_mut(job, "if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}", "If: ${{ github.event_name == 'merge_group' }}"), "all-events condition"),
+        ("job-If-case", job_mut(job, "if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}", "If: ${{ github.event_name == 'merge_group' }}"), "all-events condition"),
         ("gate-drops-mst-line", real_mut("          [ \"$MST\" = success ] || { echo \"mg-reuse-self-test failed: $MST\"; exit 1; }\n", ""), "does not enforce"),
         ("gate-mst-env-constant", real_mut("MST: ${{ needs.mg-reuse-self-test.result }}", "MST: success"), "does not enforce"),
         ("multiline-if-wrapper", job_mut(job, "          timeout --foreground", "          if false; then\n          timeout --foreground"), "no unmasked step"),

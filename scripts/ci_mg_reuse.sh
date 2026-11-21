@@ -430,6 +430,8 @@ self_test() {
   sed "s|^determinism\tsuccess\$|determinism\tfailure|" <<< "$GREEN_JOBS" | { cat; sh4 1 2 3 4; ran success; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-x86fail"
   { cat <<< "$GREEN_JOBS"; sh4 1 3 4; printf 'workspace-test-shard (2, 4)\tfailure\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-shard-failed"
   { cat <<< "$GREEN_JOBS"; sh4 1 2 3; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-partial"
+  # #7314 lane 1: MORE shard names than the matrix total (5 of 4); a relaxed equality (-ge) would read it as complete. ran success, so only the count can refuse it.
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; printf 'workspace-test-shard (5, 4)\tsuccess\n'; ran success; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-extra-shard"
   { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; printf 'workspace-test-shard (5, 12)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-mixed-m"
   run_obj 1001 "$H" completed | jq '.run_attempt = ""' | runs_json 0 > "$F/runs.no-attempt"
   { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard\tskipped\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-draft"
@@ -449,6 +451,7 @@ self_test() {
   wd greenverdict-zero-shards   0 "$M" "$B" "$H" runs.ok jobs.ok
   wd one-shard-failed-runs      0 "$M" "$B" "$H" runs.ok jobs.wt-shard-failed
   wd partial-shards-runs        0 "$M" "$B" "$H" runs.ok jobs.wt-partial
+  wd extra-shard-over-total-runs 0 "$M" "$B" "$H" runs.ok jobs.wt-extra-shard
   wd mixed-shard-totals-runs    0 "$M" "$B" "$H" runs.ok jobs.wt-mixed-m
   wd empty-attempt-no-cite-runs 0 "$M" "$B" "$H" runs.no-attempt jobs.wt-ok
   wd changed-tree-runs          0 "$M_TREE" "$B" "$H" runs.ok jobs.wt-ok
@@ -576,6 +579,10 @@ STUB
 
   # The wiring: each skip and each refusal is where ci.yml decides it.
   job() { awk -v j="  $1:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$wf" 2> /dev/null; }
+  # the same-repo fork guard every self-hosted PR-run job carries (#7314); FORKE is the same text as an ERE for the sed mutants
+  qt="'"; fk="github.event.pull_request.head.repo.full_name == github.repository"
+  FORKG="(github.event_name != ${qt}pull_request${qt} || ${fk})"
+  FORKE="\\(github.event_name != ${qt}pull_request${qt} \\|\\| ${fk}\\)"
   wire() { # wire JOB FIXED_STRING
     # Capture, then a here-string: never pipe into grep -q here. grep -q exits on its first
     # match, job's awk takes SIGPIPE (141), and under this file's pipefail the pipeline is
@@ -591,23 +598,34 @@ STUB
   wire mg-reuse 'PBEFORE: ${{ github.event.before }}'
   wire mg-reuse-self-test 'bash scripts/ci_mg_reuse.sh --self-test'
   wire x86-main 'needs: [mg-reuse]'
-  wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
+  wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && ${FORKG} && github.event.pull_request.draft != true }}"
   wire determinism 'needs: [mg-reuse, x86-main]'  # T42: determinism also waits on x86-main
-  wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}"
+  wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && ${FORKG} && github.event.pull_request.draft != true }}"
   # Q6 quorum, C324: mac-check is LAB and left ci.yml (nightly.yml now). The `mac` key is
   # still computed above; ci.yml must neither run the job nor export the key.
   if [ -z "$(job mac-check)" ]; then pass=$((pass + 1)); else
     fail=$((fail + 1)); echo "FAIL wiring: ci.yml runs mac-check, a LAB job (Q6 quorum, C324)"; fi
   if grep -qF 'outputs.mac' <<<"$(job mg-reuse)"; then
     fail=$((fail + 1)); echo "FAIL wiring: mg-reuse still exports mac, which no ci.yml job reads"; else pass=$((pass + 1)); fi
-  wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
-  wire x86-main-advisories "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
-  wire workspace-test-shard "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
+  wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && ${FORKG} && github.event.pull_request.draft != true }}"
+  wire x86-main-advisories "github.event.pull_request.draft != true }}"
+  wire workspace-test-shard "needs.mg-reuse-wt.outputs.wt != '1' && ${FORKG} && github.event.pull_request.draft != true }}"
+  # #7298: the push arm's `wt` comes from mg-reuse, so the shard, the artifact download and the Sigma step are skipped on it
+  # too; workspace-test accepts wt=1 only from a job that succeeded. Without these rows a drifted `if` would read as green.
+  wire workspace-test-shard "needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && ${FORKG} && github.event.pull_request.draft != true }}"
+  # the download step and the Sigma step each carry the clause: exactly two lines in the workspace-test-sigma job (#7314: they
+  # moved out of the spot-routed workspace-test aggregator; the clause has no PR_SPOT_OPTIN term, the job is never spot)
+  wtc=$(job workspace-test-sigma); wtc=$(grep -cF "if: \${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}" <<<"$wtc") || wtc=0
+  if [ "$wtc" -eq 2 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL wiring: workspace-test-sigma has $wtc (want 2) steps skipped on needs.mg-reuse.outputs.wt"; fi
+  wire workspace-test-sigma 'needs: [workspace-test-shard, mg-reuse-wt, mg-reuse, pr-light]'
+  wire workspace-test-sigma 'runs-on: [self-hosted, Linux, clean-room]'
+  wire workspace-test "WT_SRC_RESULT: \${{ needs.mg-reuse-wt.outputs.wt == '1' && needs.mg-reuse-wt.result || needs.mg-reuse.result }}"
+  wire workspace-test '[ "${WT_SRC_RESULT:-}" = success ]'
   wire pr-light "if: \${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}"
   # PMAT-6169: pr-x64 is a variable-selected OPTION; the runs-on line is compared EXACT. PR_LIGHT_POOL == 'pr-x64' picks the
   # X64 pr-x64 pool, anything else (unset, today) keeps X64 clean-room.
   wire pr-light "runs-on: \${{ vars.PR_LIGHT_POOL == 'pr-x64' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"pr-x64\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]') }}"
-  wire workspace-test 'needs: [workspace-test-shard, mg-reuse-wt, pr-light]'
+  wire workspace-test 'needs: [workspace-test-shard, workspace-test-sigma, mg-reuse-wt, mg-reuse, pr-light]'
   wire x86-main-advisories 'advisory_gate.sh"'
   wire x86-main-advisories 'bash scripts/check_deny_exemptions_live.sh'
   wire ci-gate 'MG-REUSE-VERDICT-BEGIN'
@@ -619,9 +637,10 @@ STUB
   # pool. The merge_group half (this row): x86-main and workspace-test-shard take the mq lane on a
   # merge_group entry and clean-room on every other event, and nothing else is event-conditional.
   # Each row is compared as the EXACT line (trailing comment stripped), so a third state cannot slip in.
-  # #5955 (Noah 15:09Z): heavy jobs run only in the merge queue. Both directions, run through the real step scripts:
-  # a pull_request with the heavy jobs skipped PASSES when pr-light passed; a merge_group, push, empty or unknown
-  # event with the heavy jobs skipped FAILS, even when pr-light is (wrongly) green.
+  # One check set per repo (decision: #7272 issuecomment-7007305270): a pull_request owes pr-light AND the heavy jobs exactly as a push does.
+  # Both directions, run through the real step scripts: a pull_request with the heavy jobs skipped FAILS even when
+  # pr-light is green; a merge_group, push, empty or unknown event with the heavy jobs skipped FAILS too; every
+  # event with the heavy jobs green PASSES (a pull_request additionally needs pr-light green).
   stepscript() { # stepscript WF JOB -> the job's first `run: |` body, de-indented
     awk -v j="  $2:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1" 2> /dev/null \
       | awk '/^        run: \|$/ {r = 1; next} r && /^      - / {exit} r {sub(/^          /, ""); print}'
@@ -643,35 +662,64 @@ STUB
     [ -n "$scr" ] || { fail=$((fail + 1)); echo "FAIL prl-$n: no run script found for $j"; return; }
     rc=0
     env EVT="$ev" PRL="$prl" DRAFT="" RESULTS="null" MG="skipped" MG_X86="" MG_DET="" MG_CITE="" ADV="skipped" \
-      X86="null" DET="null" WT="success" MST="success" SHARD_RESULT="skipped" WT_REUSE="" WT_CITE="" "$@" \
+      X86="null" DET="null" WT="success" MST="success" SHARD_RESULT="skipped" SIGMA="success" WT_REUSE="" WT_CITE="" "$@" \
       bash -c "$scr" > /dev/null 2>&1 || rc=$?
     case "$want" in
       0) [ "$rc" = 0 ] ;;
       red) [ "$rc" != 0 ] ;;
     esac && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL prl-$n: want $want got rc=$rc"; }
   }
+  heavy_green() { # heavy_green JOB -> env assignments that make JOB's heavy-job inputs all green
+    case "$1" in
+      ci-gate) printf '%s\n' 'RESULTS={"sov.gate":{"result":"success"}}' ;;
+      gate) printf '%s\n' \
+        'X86={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' \
+        'GRD={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' \
+        GRDR=success 'DET={"determinism-compare":{"result":"success"}}' ;;
+      workspace-test) printf '%s\n' SHARD_RESULT=success ;;
+    esac
+  }
   prlsuite() { # prlsuite WF TAG -> every row against workflow WF (TAG names the variant)
-    local f="$1" t="$2" j
+    local f="$1" t="$2" j hv
     for j in ci-gate gate workspace-test; do
-      prlrow "$f" "$t-$j-pr-light-ok"        "$j" 0   pull_request success
-      prlrow "$f" "$t-$j-pr-light-failed"    "$j" red pull_request failure
-      prlrow "$f" "$t-$j-pr-light-skipped"   "$j" red pull_request skipped
-      prlrow "$f" "$t-$j-pr-light-cancelled" "$j" red pull_request cancelled
-      prlrow "$f" "$t-$j-pr-light-empty"     "$j" red pull_request ""
-      # the FAIL direction: heavy jobs skipped on any non-PR event, pr-light adversarially green
+      mapfile -t hv < <(heavy_green "$j")
+      # a pull_request: pr-light green AND heavy green passes; pr-light anything else is RED
+      prlrow "$f" "$t-$j-pr-heavy-green-light-ok"   "$j" 0   pull_request success "${hv[@]}"
+      prlrow "$f" "$t-$j-pr-light-failed"    "$j" red pull_request failure "${hv[@]}"
+      prlrow "$f" "$t-$j-pr-light-skipped"   "$j" red pull_request skipped "${hv[@]}"
+      prlrow "$f" "$t-$j-pr-light-cancelled" "$j" red pull_request cancelled "${hv[@]}"
+      prlrow "$f" "$t-$j-pr-light-empty"     "$j" red pull_request "" "${hv[@]}"
+      # the FAIL direction: heavy jobs skipped on EVERY event, a pull_request included, pr-light adversarially green
+      prlrow "$f" "$t-$j-pr-heavy-skipped"   "$j" red pull_request success
       prlrow "$f" "$t-$j-mg-heavy-skipped"   "$j" red merge_group success
       prlrow "$f" "$t-$j-push-heavy-skipped" "$j" red push success
       prlrow "$f" "$t-$j-empty-heavy-skipped" "$j" red "" success
       prlrow "$f" "$t-$j-unknown-heavy-skipped" "$j" red workflow_dispatch success
       prlrow "$f" "$t-$j-mg-heavy-skipped-light-skipped" "$j" red merge_group skipped
+      prlrow "$f" "$t-$j-pr-heavy-skipped-light-skipped" "$j" red pull_request skipped
     done
-    # control: the same scripts still pass a merge_group whose heavy jobs ran and passed
+    # a pull_request whose heavy jobs FAILED is RED even with pr-light green
+    prlrow "$f" "$t-ci-gate-pr-x86-failed" ci-gate red pull_request success 'RESULTS={"sov.gate":{"result":"failure"}}'
+    prlrow "$f" "$t-gate-pr-determinism-failed" gate red pull_request success \
+      'X86={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' \
+      'DET={"determinism-compare":{"result":"failure"}}'
+    prlrow "$f" "$t-gate-pr-determinism-missing" gate red pull_request success \
+      'X86={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}'
+    prlrow "$f" "$t-workspace-test-pr-shards-failed" workspace-test red pull_request success SHARD_RESULT=failure
+    prlrow "$f" "$t-workspace-test-pr-sigma-failed" workspace-test red pull_request success SHARD_RESULT=success SIGMA=failure
+    prlrow "$f" "$t-workspace-test-pr-sigma-skipped" workspace-test red pull_request success SHARD_RESULT=success SIGMA=skipped
+    # controls: the same scripts still pass a merge_group / push whose heavy jobs ran and passed, pr-light not owed there
     prlrow "$f" "$t-ci-gate-mg-heavy-green" ci-gate 0 merge_group skipped \
       MG=skipped ADV=skipped 'RESULTS={"sov.gate":{"result":"success"}}'
     prlrow "$f" "$t-gate-mg-heavy-green" gate 0 merge_group skipped \
       'X86={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' \
       'GRD={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' GRDR=success \
       'DET={"determinism-compare":{"result":"success"}}'
+    # an empty event is not a pull_request: it never owes pr-light, and never passes on pr-light alone
+    for j in ci-gate gate workspace-test; do
+      mapfile -t hv < <(heavy_green "$j")
+      prlrow "$f" "$t-$j-empty-heavy-green-light-skipped" "$j" 0 "" skipped "${hv[@]}"
+    done
     prlrow "$f" "$t-workspace-test-mg-shards-ran" workspace-test red merge_group skipped SHARD_RESULT=skipped
   }
   prlsuite "$wf" real
@@ -765,7 +813,7 @@ STUB
     fail=$((fail + 1)); echo "FAIL mutant mgshape-unreadable: an unreadable workflow passed green (fails open)"; fi
   mgmut mg-if-old-merge_group "mg-reuse if names merge_group" "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
   mgmut mg-if-removed-string-elsewhere "is not the push-only key" "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/{s/.*/    # if: github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main'/}"
-  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
+  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' && ${FORKE} && github.event.pull_request.draft != true \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
   mgmut determinism-if-loses-cancelled "job determinism needs mg-reuse but its if lacks" '/^  determinism:$/,/^    runs-on:/{s/^    if: \$\{\{ !cancelled\(\) && /    if: ${{ /}'
   mgmut x86-main-needs-lookalike "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{s/^    needs: \[mg-reuse\]$/    needs: [mg-reuse-self-test]/}'
   mgmut x86-main-drops-needs "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{/^    needs: \[mg-reuse\]$/d}'

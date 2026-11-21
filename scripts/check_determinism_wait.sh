@@ -89,13 +89,43 @@ check() {   # check <ci.yml>: rc 0 when W1-W5 hold
     n_gate=$(printf '%s\n' "$g" | grep -c -E '^    needs: \[(.*, )?determinism(, .*)?\]$|^    if: always\(\)$|^ +for pair in .*DET:determinism-compare')
     [ "$n_gate" = 3 ] ||   # m:nogate
         { printf 'FAIL  W7 the gate no longer needs determinism under always() and reads DET:determinism-compare\n'; bad=1; }
-    # W10 determinism does not run on a PR head (the ARM64 pool is the queue's), so the job's if: names
-    # pull_request AND the gate skips DET:determinism-compare on pull_request only: a skipped job must
-    # not read as a missing section (RED on every PR), and the skip must not widen to other events.
-    grep -q -E "^    if: .*&& github\.event_name != 'pull_request' \}\}$" <<<"$j" ||   # m:nopr
-        { printf 'FAIL  W10 the determinism job still runs on a pull_request head (it competes with the queue head for the ARM64 pool)\n'; bad=1; }
-    [ "$(printf '%s\n' "$g" | grep -c -F '[ "$job:$EVT" = "DET:pull_request" ] && continue')" = 1 ] ||   # m:noskip
-        { printf 'FAIL  W10 the gate does not skip DET:determinism-compare on pull_request only\n'; bad=1; }
+    # W10 determinism runs on a PR head exactly as on a push to main (#7272, one check set per repo): the job's if: must
+    # NOT name pull_request, and the gate must NOT skip DET:determinism-compare on any event (a skip there reads a
+    # job a PR no longer runs as covered, which is how a red determinism reached main).
+    # The ONE allowed mention is the same-repo fork guard (a fork PR never runs self-hosted jobs; a non-fork PR runs it, #7314): it is cut out
+    # whole before the test, so any OTHER `event_name != 'pull_request'` (a guard that turns the job off for every PR) is still RED.
+    # Semantic, not literal (#7314 lane 2): the if: is read as its conjuncts. The fork guard (either operand order) is cut out whole;
+    # what is left may name no event, no `||` (so no `|| true`) and no bracketed property access, and the guard must be present
+    # (a determinism job with no guard runs on a fork PR, which has no self-hosted runner). Matching is case-insensitive: Actions compares strings so.
+    ifl="$(printf '%s\n' "$j" | grep -E '^    if:' | tr -s ' ')"; rest="$ifl"; has_fg=0
+    for forkg in "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)" \
+                 "(github.event_name != 'pull_request' || github.repository == github.event.pull_request.head.repo.full_name)"; do
+        case "$rest" in *"$forkg"*) has_fg=1; rest="${rest//"$forkg"/}" ;; esac
+    done
+    [ "$has_fg" = 1 ] ||   # m:nofork
+        { printf 'FAIL  W10 the determinism job lacks the same-repo fork guard (a fork PR would queue a self-hosted job)\n'; bad=1; }
+    # What is left is split on `&&` and every conjunct must be one of the three the job is meant to carry; any other conjunct
+    # (`!github.event.pull_request`, `github.event.pull_request == null`, `github.ref == ..`, an `||`, a bracket, an event_name) can turn the job
+    # off on a pull_request head without naming the event, so an allow-list, not a deny-list.
+    needs_re="^needs\.[a-z0-9_-]+\.outputs\.[a-z0-9_]+ != '[01]'\$"
+    rest_ok=1; rest_body="${rest#*if:}"; rest_body="${rest_body//\$\{\{/}"; rest_body="${rest_body//\}\}/}"
+    while IFS= read -r conj; do
+        conj="${conj#"${conj%%[![:space:]]*}"}"; conj="${conj%"${conj##*[![:space:]]}"}"
+        [ -n "$conj" ] || continue   # the cut fork guard leaves an empty slot between two &&
+        shopt -s nocasematch
+        case "$conj" in
+            '!cancelled()'|"github.event.pull_request.draft != true") ;;
+            *) [[ "$conj" =~ $needs_re ]] || rest_ok=0 ;;
+        esac
+        shopt -u nocasematch
+    done < <(printf '%s\n' "${rest_body//&&/$'\n'}")
+    [ "$rest_ok" = 1 ] ||   # m:nopr
+        { printf 'FAIL  W10 the determinism job is event-guarded off a pull_request head, or its if: has an || / [..] clause outside the fork guard (it must run on a PR as on a push to main)\n'; bad=1; }
+    # W10c a draft owes no heavy job (x86-main and the shards carry the same clause): determinism must skip a draft.
+    grep -q -F "github.event.pull_request.draft != true" <<<"$(printf '%s\n' "$j" | grep -E '^    if:')" ||   # m:nodraft
+        { printf 'FAIL  W10c the determinism job runs on a draft pull_request (its if: lacks github.event.pull_request.draft != true)\n'; bad=1; }
+    [ "$(printf '%s\n' "$g" | grep -c -E '"DET:[a-z_]+" \] && continue')" = 0 ] ||   # m:noskip
+        { printf 'FAIL  W10 the gate skips DET:determinism-compare on some event (every event, a PR included, must read it)\n'; bad=1; }
     # W10b the gate's EVT is the live event, not a literal: a hardcoded `EVT: pull_request` would
     # exempt DET:determinism-compare on merge_group and tag runs and every check above would still pass.
     [ "$(printf '%s\n' "$g" | grep -c -F 'EVT: ${{ github.event_name }}')" -ge 1 ] ||   # m:evtlit
@@ -166,6 +196,8 @@ selftest() {
     check "$d/w2.yml" > /dev/null 2>&1; row W2 RED $? "no if: (default success()) skips the job when x86-main fails"
     plant "$d/w2b.yml" 's/^    if: \$\{\{ !cancelled\(\) (&& needs\.mg-reuse\.outputs\.det != .1. .*)\}\}$/    if: ${{ success() \1}}/'
     check "$d/w2b.yml" > /dev/null 2>&1; row W2b RED $? "if: success() skips the job when x86-main fails"
+    plant "$d/w2c.yml" 's/^(    if: \$\{\{ )!cancelled\(\) \&\& (.*)$/\1\2/'
+    check "$d/w2c.yml" > /dev/null 2>&1; row W2c RED $? "the !cancelled() conjunct dropped with the fork guard and draft clause intact (only W2 can see it)"
     plant "$d/w3.yml" '/^      FAT_ARTIFACT_WAIT_S: "0"$/d'
     check "$d/w3.yml" > /dev/null 2>&1; row W3 RED $? "no FAT_ARTIFACT_WAIT_S: the driver waits its 3600 s default"
     plant "$d/w3b.yml" 's/^      FAT_ARTIFACT_WAIT_S: "0"$/      FAT_ARTIFACT_WAIT_S: "600"/'
@@ -175,12 +207,34 @@ selftest() {
     plant "$d/w5.yml" "s/determinism\\[ARM64\\],determinism-compare/determinism[ARM64]/"
     check "$d/w5.yml" > /dev/null 2>&1; row W5 RED $? "the compare section dropped from the job"
 
-    plant "$d/x1.yml" "s/ && github\\.event_name != 'pull_request' \\}\\}\$/ }}/"
-    check "$d/x1.yml" > /dev/null 2>&1; row X1 RED $? "determinism back on PR heads (the if: loses its pull_request clause)"
-    plant_file "$CI" "$d/x3.yml" '/^  gate:$/,/^    steps:$/!{/DET:pull_request" \] && continue/d}'
-    check "$d/x3.yml" > /dev/null 2>&1; row X3 RED $? "a gate that reads a skipped determinism-compare on a PR (RED on every PR)"
-    plant_file "$CI" "$d/x4.yml" '/^  gate:$/,/^    steps:$/!{s/"DET:pull_request" \] && continue/"DET:merge_group" ] \&\& continue/}'
-    check "$d/x4.yml" > /dev/null 2>&1; row X4 RED $? "a gate that skips determinism-compare on merge_group instead of pull_request"
+    plant "$d/x1.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& github.event_name != 'pull_request' }}/"
+    check "$d/x1.yml" > /dev/null 2>&1; row X1 RED $? "determinism off PR heads again (the if: gains a pull_request exclusion)"
+    plant "$d/x6.yml" "s/^(    if: .*) \\&\\& github\\.event\\.pull_request\\.draft != true \\}\\}\$/\\1 }}/"
+    check "$d/x6.yml" > /dev/null 2>&1; row X6 RED $? "determinism runs on a draft pull_request (the if: lost its draft clause)"
+    plant "$d/x7.yml" "s/ \\&\\& \\(github\\.event_name != 'pull_request' \\|\\| github\\.event\\.pull_request\\.head\\.repo\\.full_name == github\\.repository\\)//"
+    check "$d/x7.yml" > /dev/null 2>&1; row X7 RED $? "determinism with the same-repo fork guard deleted (a fork PR queues a self-hosted job)"
+    plant "$d/x7b.yml" "s/\\(github\\.event_name != 'pull_request' \\|\\| github\\.event\\.pull_request\\.head\\.repo\\.full_name == github\\.repository\\)/github.event_name == 'push'/"
+    check "$d/x7b.yml" > /dev/null 2>&1; row X7b RED $? "the fork guard replaced by github.event_name == 'push' (determinism stops running on a PR head)"
+    plant "$d/x8.yml" "s/^(    if: .*) \\}\\}\$/\\1 || true }}/"
+    check "$d/x8.yml" > /dev/null 2>&1; row X8 RED $? "an if: that ends in || true (the job runs on everything, drafts and forks included)"
+    plant "$d/x8b.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& !github.event.pull_request }}/"
+    check "$d/x8b.yml" > /dev/null 2>&1; row X8b RED $? "an if: that gains && !github.event.pull_request (off on every PR head without naming the event)"
+    plant "$d/x8c.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& github.event.pull_request == null }}/"
+    check "$d/x8c.yml" > /dev/null 2>&1; row X8c RED $? "an if: that gains && github.event.pull_request == null (push only)"
+    plant "$d/x8d.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& github.ref == 'refs\/heads\/main' }}/"
+    check "$d/x8d.yml" > /dev/null 2>&1; row X8d RED $? "an if: that gains && github.ref == main (push only)"
+    plant "$d/x8e.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& github.event['pull_request'] == null }}/"
+    check "$d/x8e.yml" > /dev/null 2>&1; row X8e RED $? "an if: that gains the bracket form of the push-only test"
+    plant "$d/x8f.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& null == github.event.pull_request }}/"
+    check "$d/x8f.yml" > /dev/null 2>&1; row X8f RED $? "an if: that gains the reversed null test"
+    plant "$d/x8g.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& vars.ANYTHING == 'y' }}/"
+    check "$d/x8g.yml" > /dev/null 2>&1; row X8g RED $? "an if: that gains an unknown conjunct (allow-list, not deny-list)"
+    plant "$d/x9.yml" "s/\\(github\\.event_name != 'pull_request' \\|\\| github\\.event\\.pull_request\\.head\\.repo\\.full_name == github\\.repository\\)/(github.event_name != 'pull_request' || github.repository == github.event.pull_request.head.repo.full_name)/"
+    check "$d/x9.yml" > /dev/null 2>&1; row X9 GREEN $? "the fork guard with its equality operands swapped is the same guard (control: the check is not a literal match)"
+    plant_file "$CI" "$d/x3.yml" '/^  gate:$/,/^    steps:$/!{s/^( +)(r=\$\(res "\$\{!job\}" "\$sec"\))$/\1[ "$job:$EVT" = "DET:pull_request" ] \&\& continue\n\1\2/}'
+    check "$d/x3.yml" > /dev/null 2>&1; row X3 RED $? "a gate that skips determinism-compare on a PR (a red compare would reach main)"
+    plant_file "$CI" "$d/x4.yml" '/^  gate:$/,/^    steps:$/!{s/^( +)(r=\$\(res "\$\{!job\}" "\$sec"\))$/\1[ "$job:$EVT" = "DET:merge_group" ] \&\& continue\n\1\2/}'
+    check "$d/x4.yml" > /dev/null 2>&1; row X4 RED $? "a gate that skips determinism-compare on merge_group"
     plant_file "$CI" "$d/x5.yml" '/^  gate:$/,/^    steps:$/!{s/EVT: \$\{\{ github\.event_name \}\}/EVT: pull_request/}'
     check "$d/x5.yml" > /dev/null 2>&1; row X5 RED $? "a gate whose EVT is the literal pull_request (determinism exempt on every event)"
     plant "$d/w3c.yml" "s/^( +)(.*--sections 'determinism\\[ARM64\\],determinism-compare'.*)\$/\\1\\2\\n          FAT_ARTIFACT_WAIT_S: \"3600\"/"
@@ -233,7 +287,7 @@ selftest() {
 # ---------------------------------------------------------------- mutants
 # Each mutant is a sed edit of this checker (or of the compare it runs); the planted copy's self-test
 # must FAIL. An edit that does not apply is an ERROR (exit 2), never a survivor.
-MUTANTS=(noneeds noif nowait noexpect nocompare nostepwait nodriver nogate nocoe nopattern cmpnosvg)   # each check line carries its tag: # m:<name>
+MUTANTS=(noneeds noif nowait noexpect nocompare nostepwait nodriver nogate nocoe nopattern cmpnosvg nofork nopr nodraft noskip evtlit)   # each check line carries its tag: # m:<name>
 
 mutants() {
     local d m name killed=0 total=0 s

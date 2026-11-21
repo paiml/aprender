@@ -1140,9 +1140,10 @@ fn falsify_mono_014_path_pins_name_their_target_version() {
 
 /// The one draft form the PR-only jobs use (main already has it on `x86-main` and the shard).
 const DF: &str = "github.event.pull_request.draft != true";
-const NOT_PR: &str = "github.event_name != 'pull_request'";
-const G_ALL: &str =
-    "${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}";
+/// NO-FORK-1 (#7314): a job that runs the PR tree on a self-hosted seat skips a fork PR; the aggregators then refuse it.
+const FG: &str = "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)";
+const FORK_EQ: &str = "github.event.pull_request.head.repo.full_name == github.repository";
+const G_ALL: &str = "${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}";
 const CI_TYPES: [&str; 4] = ["opened", "synchronize", "reopened", "ready_for_review"];
 
 /// (job, canonical `if:` scalar)
@@ -1153,14 +1154,17 @@ fn draft_gate_canon() -> Vec<(&'static str, String)> {
         ("pr-light", format!("${{{{ github.event_name == 'pull_request' && {DF} }}}}")),
         // Reusable-workflow caller (paiml/.github runner-smells); same-repo PRs only, a draft is skipped.
         ("runner-smells", format!("{DF} && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)")),
-        ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} && {NOT_PR} }}}}")),
-        ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {DF} && {NOT_PR} }}}}")),
-        ("determinism", "${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}".into()),
+        ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {FG} && {DF} }}}}")),
+        ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {FG} && {DF} }}}}")),
+        // #7272: determinism runs on a non-draft pull_request exactly as on a push to main; no event guard. #7314: same-repo PRs only (NO-FORK-1).
+        ("determinism", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.det != '1' && {FG} && {DF} }}}}")),
         // merge_group-only: a draft never reaches the queue, so there is nothing to skip.
         ("mg-reuse-wt", "github.event_name == 'merge_group'".into()),
         ("guards", "${{ !cancelled() && github.event_name == 'merge_group' && needs.mg-reuse.outputs.x86 != '1' }}".into()),
-        ("workspace-test-shard", format!("${{{{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && {DF} && {NOT_PR} }}}}")),
-        ("workspace-test-ran", format!("${{{{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && {DF} }}}}")),
+        ("workspace-test-shard", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && {FG} && {DF} }}}}")),
+        ("workspace-test-ran", format!("${{{{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && {FORK_EQ} && {DF} }}}}")),
+        // #7314: Σ-executed runs here (static clean-room, never spot); same-repo non-draft PRs only, and workspace-test refuses its skip.
+        ("workspace-test-sigma", format!("${{{{ !cancelled() && {FG} && {DF} }}}}")),
         ("workspace-test", "always()".into()),
         ("ci-gate", "always()".into()),
         ("gate", "always()".into()),
@@ -1245,10 +1249,10 @@ fn rewrite_if(src: &str, job: &str, new: Option<&str>) -> String {
     out.join("\n") + "\n"
 }
 
-/// The 18 planted mutants: (label, mutated ci.yml). Each must be RED.
+/// The 22 planted mutants: (label, mutated ci.yml). Each must be RED.
 fn draft_gate_mutants(src: &str) -> Vec<(&'static str, String)> {
     let x86_if = format!(
-        "    if: ${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} && {NOT_PR} }}}}"
+        "    if: ${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {FG} && {DF} }}}}"
     );
     let gate_tail = src.split_once("\n  gate:\n").expect("gate job").1;
     let gate_mut = src.replacen(
@@ -1264,7 +1268,7 @@ fn draft_gate_mutants(src: &str) -> Vec<(&'static str, String)> {
         ("m5 aggregator not always()", gate_mut),
         ("m6 empty parse", "on:\n  pull_request:\n    types: [ready_for_review]\njobs:\n".to_string()),
         ("m7 DF guard padded with || true", mutate(src, "draft != true }}", "draft != true || true }}")),
-        ("m7b G_ALL padded with || true", mutate(src, "!github.event.pull_request.draft }}", "!github.event.pull_request.draft || true }}")),
+        ("m7b G_ALL padded with || true", mutate(src, "&& !github.event.pull_request.draft) }}", "&& !github.event.pull_request.draft) || true }}")),
         ("m8 shard if = push || true", rewrite_if(src, "workspace-test-shard", Some("    if: ${{ github.event_name == 'push' || true }}"))),
         ("m9 ready_for_review_x", mutate(src, "ready_for_review]", "ready_for_review_x]")),
         ("m11 && true == DF", mutate(src, &format!(" && {DF}"), &format!(" && true == {DF}"))),
@@ -1274,7 +1278,11 @@ fn draft_gate_mutants(src: &str) -> Vec<(&'static str, String)> {
         ("m15 || true then a comment", mutate(src, "draft != true }}\n", "draft != true || true }} # fine\n")),
         ("m16 more-indented || true line folds into the scalar", mutate(src, &format!("{x86_if}\n"), &format!("{x86_if}\n      || true\n"))),
         ("m17 decoy types line, real list lacks ready_for_review", mutate(src, "types: [opened, synchronize, reopened, ready_for_review]", "types: [opened, synchronize, reopened]") + "# types: [ready_for_review]\n"),
-        ("m18 G_ALL polarity flipped", mutate(src, "|| !github.event.pull_request.draft", "|| github.event.pull_request.draft")),
+        ("m18 G_ALL polarity flipped", mutate(src, "&& !github.event.pull_request.draft)", "&& github.event.pull_request.draft)")),
+        ("m19 fork guard dropped from the heavy jobs", mutate(src, &format!(" && {FG}"), "")),
+        ("m20 fork guard dropped from mg-reuse-self-test", mutate(src, "(github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft)", "!github.event.pull_request.draft")),
+        ("m21 fork guard dropped from workspace-test-ran", mutate(src, &format!(" && {FORK_EQ} && {DF}"), &format!(" && {DF}"))),
+        ("m22 fork guard dropped from workspace-test-sigma", rewrite_if(src, "workspace-test-sigma", Some(&format!("    if: ${{{{ !cancelled() && {DF} }}}}")))),
     ]
 }
 
@@ -1289,12 +1297,12 @@ fn falsify_ci_draft_gate_real_workflow_holds() {
     );
 }
 
-/// D1 / #5801: each of the 18 planted mutants is RED, so the rule cannot pass vacuously.
+/// D1 / #5801: each of the 22 planted mutants is RED, so the rule cannot pass vacuously.
 #[test]
 fn falsify_ci_draft_gate_every_planted_mutant_is_red() {
     let src = ci_yml_text();
     let mutants = draft_gate_mutants(&src);
-    assert_eq!(mutants.len(), 18, "the fixture table lost a mutant");
+    assert_eq!(mutants.len(), 22, "the fixture table lost a mutant");
     for (label, text) in &mutants {
         assert_ne!(
             text, &src,

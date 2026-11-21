@@ -96,6 +96,8 @@ jobs:
   # reused. mac-check is never reused on a push. Q6 quorum, C324: mac-check left
   # this workflow, so its `mac` key is no longer an output here; ci_mg_reuse.sh
   # still computes it (its case table and check_ci_push_reuse.sh read it).
+  # #7298: a push the queue arm did not reuse may instead cite the PR's own green pull_request run when scripts/ci_push_reuse.sh
+  # C1-C6 hold (same tree, run bound to this PR into main, a gate path untouched, run started within 24 h); advisories always run.
   mg-reuse:
     # S1 (20X r6): a queue entry never reuses (x86=0 det=0 are constant: the queue owes the FULL tier), so
     # reading the key on merge_group only made x86-main wait for an X64 runner before it asked for
@@ -112,6 +114,8 @@ jobs:
       x86: ${{ steps.key.outputs.x86 }}
       det: ${{ steps.key.outputs.det }}
       cite: ${{ steps.key.outputs.cite }}
+      wt: ${{ steps.key.outputs.wt }}
+      wt_cite: ${{ steps.key.outputs.wt_cite }}
     steps:
       # Full history: the key reads the queue head's parent, the base's parent and
       # whether the base is an ancestor of the PR head.
@@ -119,8 +123,10 @@ jobs:
         with:
           fetch-depth: 0
       - name: The reuse key's case table (hermetic)
-        run: bash scripts/ci_mg_reuse.sh --self-test
-      - name: Read the reuse key for this queue entry or push (3 or 2 API calls)
+        run: |
+          bash scripts/ci_mg_reuse.sh --self-test
+          bash scripts/ci_push_reuse.sh --self-test
+      - name: Read the reuse key for this queue entry or push (3 or 2 API calls, +5 for the PR-run arm)
         id: key
         env:
           GH_TOKEN: ${{ github.token }}
@@ -137,7 +143,23 @@ jobs:
             *) out=$(bash scripts/ci_mg_reuse.sh resolve --event "$EVT" --ref "$QREF" --queue-head "$QHEAD" --base "$QBASE" --repo "$REPO") ;;
           esac
           printf '%s\n' "$out"
-          printf '%s\n' "$out" | grep -E '^(x86|det|cite|pr_head)=' >> "$GITHUB_OUTPUT"
+          grep -E '^(x86|det|cite|pr_head)=' <<< "$out" >> "$GITHUB_OUTPUT"
+          # #7298: a push the merge-queue arm did not reuse may cite the PR's own run (C1-C6 in scripts/ci_push_reuse.sh).
+          # Anything but an exact `reuse=yes` (a failed read, a refusal, a crash) leaves the outputs as they are: the jobs run.
+          if [ "$EVT" = push ] && ! grep -qx 'x86=1' <<< "$out"; then
+            facts="$RUNNER_TEMP/push-reuse-facts.json"
+            if bash scripts/ci_push_reuse_facts.sh --repo "$REPO" --sha "$GITHUB_SHA" --before "$PBEFORE" --ref "$GITHUB_REF" --event "$EVT" --now "$(date +%s)" > "$facts"; then
+              pr=$(bash scripts/ci_push_reuse.sh decide --facts "$facts")
+            else
+              pr="reuse=no reason=the facts could not be read"
+            fi
+            echo "PR-run reuse: $pr"
+            if [ "$pr" = "reuse=yes" ]; then
+              cite="PR #$(jq -r '.pr.number' "$facts") run $(jq -r '.run.id' "$facts") on head $(jq -r '.pr.head_sha' "$facts") (tree $(jq -r '.tree' "$facts"); reused, not re-run here)"
+              { echo "x86=1"; echo "det=1"; echo "cite=$cite"; echo "wt=1"; echo "wt_cite=$cite"; } >> "$GITHUB_OUTPUT"
+              echo "REUSED from $cite" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
 
   # T43b (#5884, Noah 16:28Z #3, extends mg-reuse): on merge_group, workspace-test-shard is skipped ONLY when the queue
   # entry's tree sha == the tree sha of a green PR run's head (K1-K5: queue head has one parent, the base; the base
@@ -178,8 +200,9 @@ jobs:
 
   # The same case table on every event, so a change that breaks the key is RED on
   # its own PR, not first in the queue. gate requires it.
+  # NO-FORK-1 (#7314): runs the PR tree on a self-hosted seat, so a fork PR skips it.
   mg-reuse-self-test:
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 30
     permissions:
@@ -207,6 +230,8 @@ jobs:
           mkdir -p "$base/registry" "$base/target"
           # one line on purpose: a backslash continuation joins differently in bash than in the guard test, so check_wiring refuses any
           timeout --foreground -k 30 900 docker run --rm --init --name "$cname" --cpus 4 --memory 8g --memory-swap 8g --pids-limit 2048 -v "$GITHUB_WORKSPACE:/w:ro" -v "$base/registry:/usr/local/cargo/registry" -v "$base/target:/t" -e CARGO_TARGET_DIR=/t -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e CARGO_INCREMENTAL=0 -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -w /w localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels
+      - name: The PR-run reuse decision's case table (hermetic, #7298)
+        run: bash scripts/ci_push_reuse.sh --self-test
       - name: reap the guard container and its per-run dir
         if: ${{ always() }}
         run: |
@@ -339,9 +364,9 @@ jobs:
 
   x86-main:
     needs: [mg-reuse]
-    # Noah 15:09Z (#5955): heavy jobs run only in the merge queue and on push; a PR runs pr-light. `!= 'pull_request'` is
-    # fail-closed: an empty or unknown event name owes the heavy job.
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+    # One check set per repo (decision: #7272 issuecomment-7007305270): every job that runs on a push to main also runs on a pull_request,
+    # on the same runner pool, matrix and features. A draft owes nothing until ready_for_review.
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true }}
     # every event, merge_group included, takes the certified clean-room seats: [self-hosted, Linux, X64, clean-room]
     runs-on: [self-hosted, Linux, X64, clean-room]
     # merge_group: 2 x p95 (8.9 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull (the Set-up-runner pull has measured 20 min, sections.yml:94); the 240 stays for push.
@@ -609,7 +634,7 @@ jobs:
 
   x86-main-advisories:
     needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 30
     permissions:
@@ -686,12 +711,10 @@ jobs:
 
   determinism:
     needs: [mg-reuse, x86-main]
-    # Operator 2026-10-17 (cop window), verbatim: "we are not gaiting on night this is a boondoggle,
-    # only gating on tags/release"; the PR gate is the quick tier. The ARM64 raster + compare leg ran on
-    # PR heads on the same gx10 pool as the queue head (a PR-head determinism queued ahead of the MQ
-    # head's), so it runs on merge_group / push / tag only. x86-main stays on PR heads. The gate skips
-    # DET:determinism-compare on pull_request only (loop below; scripts/check_determinism_wait.sh W10).
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}
+    # One check set per repo (decision: #7272 issuecomment-7007305270): determinism runs on a pull_request exactly
+    # as on a push to main, so a red determinism-compare is found before the merge. This reverses the 2026-10-17 rule that
+    # kept it off PR heads; the gate reads DET:determinism-compare on every event (scripts/check_determinism_wait.sh W10).
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
     # T42: start only once x86-main has concluded. The ARM64 raster takes about a minute; before
@@ -776,15 +799,27 @@ jobs:
   # (mgshape) is RED until this job needs it and keys its if on receipt-judge.outputs.ok.
   workspace-test-ran:
     needs: [workspace-test-shard]
-    if: ${{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
+    if: ${{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 5
     steps:
       - run: echo "this run owes and runs the test suite"
+      # #7298: record what this run tested, so a later push of the same tree can cite it (scripts/ci_push_reuse.sh, C3a). On a
+      # pull_request GITHUB_SHA is the test merge commit M of refs/pull/N/merge; depth 2 holds M and both its parents.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Record the tested merge sha, tree, base and head
+        run: |
+          set -uo pipefail
+          m=$(git rev-parse HEAD) && t=$(git rev-parse 'HEAD^{tree}') && b=$(git rev-parse 'HEAD^1') && h=$(git rev-parse 'HEAD^2') \
+            || { echo "PUSH-REUSE-STAMP unavailable: HEAD is not a two-parent merge commit"; exit 0; }
+          echo "PUSH-REUSE-STAMP tested_sha=$m tested_tree=$t tested_base=$b tested_head=$h"
+          echo "tested merge $m tree $t base $b head $h" >> "$GITHUB_STEP_SUMMARY"
   workspace-test-shard:
     # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them
-    needs: [mg-reuse-wt]
-    if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+    needs: [mg-reuse-wt, mg-reuse]
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true }}
     # same lane as x86-main: the plain clean-room seats on every event
     runs-on: [self-hosted, Linux, X64, clean-room]
     # pull_request/push: >= section 150 (sections.yml:112) + the untimed ~20-min image pull on the full-tier fallback. merge_group is DELIBERATELY
@@ -854,41 +889,63 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 10
-    needs: [workspace-test-shard, mg-reuse-wt, pr-light]
+    needs: [workspace-test-shard, workspace-test-sigma, mg-reuse-wt, mg-reuse, pr-light]
     if: always()
     steps:
       - name: Every shard passed (or the whole set was reused from an identical-tree green PR run)
         env:
           SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
-          WT_REUSE: ${{ needs.mg-reuse-wt.outputs.wt }}
-          WT_CITE: ${{ needs.mg-reuse-wt.outputs.wt_cite }}
+          WT_REUSE: ${{ needs.mg-reuse-wt.outputs.wt || needs.mg-reuse.outputs.wt }}
+          WT_CITE: ${{ needs.mg-reuse-wt.outputs.wt_cite || needs.mg-reuse.outputs.wt_cite }}
+          # the job that wrote the wt key: mg-reuse-wt when it set it, else mg-reuse (the same precedence as WT_REUSE)
+          WT_SRC_RESULT: ${{ needs.mg-reuse-wt.outputs.wt == '1' && needs.mg-reuse-wt.result || needs.mg-reuse.result }}
           DRAFT: ${{ github.event.pull_request.draft }}
           EVT: ${{ github.event_name }}
           PRL: ${{ needs.pr-light.result }}
+          SIGMA: ${{ needs.workspace-test-sigma.result }}
         run: |
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "draft PR: the shards are not owed until ready_for_review"; exit 0; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
-          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
-          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          # A pull_request owes pr-light AND every heavy job that runs on a push to main (one check set per repo,
+          # decision: #7272 issuecomment-7007305270). pr-light passing is never a pass by itself: the block falls through to the
+          # heavy-job checks below on every event, an empty one included (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
-            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+            echo "pull_request: pr-light passed; the heavy jobs are checked below, exactly as on a push"
           fi
           # --- PR-LIGHT-VERDICT-END ---
+          # #7314: the Σ-executed steps run in workspace-test-sigma (static clean-room); this required check passes only when that job passed.
+          [ "${SIGMA:-}" = success ] || { echo "::error::workspace-test: workspace-test-sigma is '${SIGMA:-}', not success"; exit 1; }
           echo "workspace-test-shard matrix result: $SHARD_RESULT (reuse key wt='${WT_REUSE:-}')"
           if [ "${WT_REUSE:-}" = 1 ]; then
+            [ "${WT_SRC_RESULT:-}" = success ] || { echo "::error::workspace-test: reuse key wt=1 but the job that wrote it is '${WT_SRC_RESULT:-}', not success"; exit 1; }
             # T43b: the shards are skipped ONLY under the key; a shard that ran anyway is a contradiction, never a pass
             [ "$SHARD_RESULT" = skipped ] || { echo "::error::workspace-test: reuse key wt=1 but the shard matrix result is '$SHARD_RESULT'"; exit 1; }
             [ -n "${WT_CITE:-}" ] || { echo "::error::workspace-test: reuse key wt=1 without a citation"; exit 1; }
-            echo "workspace-test reused: merge-group tree == tree of a green PR run (${WT_CITE})"
+            echo "workspace-test REUSED (recorded as reused, not a fresh pass; the shards did not run here): tree == tree of a green PR run (${WT_CITE})"
             exit 0
           fi
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
+
+  # #7314 (quorum aprender-spotguard lanes 1+2, f6d29d4): the checkout, artifact download and Σ-executed steps need a token and the repo
+  # tree, so they live on a static clean-room job (never the spot pool) and run on every non-draft event, a PR included (#7272 parity:
+  # the same check on pull_request and push). `workspace-test` (the required check name) stays a needs-only aggregator and passes only
+  # when this job passes. Guard: crates/aprender-contracts/tests/falsification_pr_spot_labels.rs.
+  workspace-test-sigma:
+    # NO-FORK-1 (#7314): runs the PR tree (sigma_executed.py) on a self-hosted seat, so a fork PR skips it; workspace-test then reads
+    # the skipped result as red (SIGMA must be 'success'), so a fork PR is refused, never passed vacuously.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true }}
+    runs-on: [self-hosted, Linux, clean-room]
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    needs: [workspace-test-shard, mg-reuse-wt, mg-reuse, pr-light]
+    steps:
       - uses: actions/checkout@v7
-        if: ${{ github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+        if: ${{ github.event.pull_request.draft != true }}
       - uses: actions/download-artifact@v4
-        if: ${{ needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+        if: ${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}
         with:
           pattern: sigma-shard-*
           path: ${{ runner.temp }}/sigma
@@ -897,7 +954,7 @@ jobs:
       # ids is compared with the universe shard 1 listed. A shard whose ids did
       # not arrive is RED, never a smaller universe.
       - name: "Σ-executed: the union of the shards is exactly the owed set (#4433)"
-        if: ${{ needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+        if: ${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}
         run: |
           set -euo pipefail
           d="$RUNNER_TEMP/sigma"
@@ -954,17 +1011,19 @@ jobs:
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "ci / gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
-          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
-          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          # A pull_request owes pr-light AND every heavy job that runs on a push to main (one check set per repo,
+          # decision: #7272 issuecomment-7007305270). pr-light passing is never a pass by itself: the block falls through to the
+          # heavy-job checks below on every event, an empty one included (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
-            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+            echo "pull_request: pr-light passed; the heavy jobs are checked below, exactly as on a push"
           fi
           # --- PR-LIGHT-VERDICT-END ---
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
           # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
-          # them when the merge_group run on this very commit RAN both and they passed (#4748). Either
+          # them when the merge_group run on this very commit RAN both and they passed (#4748), or when the
+          # PR's own green pull_request run tested this exact tree (#7298; scripts/ci_push_reuse.sh C1-C6). Either
           # way the RustSec advisory job must have passed. A split, a flag on any other event, or a flag
           # from a failed mg-reuse is RED.
           REUSE=0
@@ -1018,17 +1077,19 @@ jobs:
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
           [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
-          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
-          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          # A pull_request owes pr-light AND every heavy job that runs on a push to main (one check set per repo,
+          # decision: #7272 issuecomment-7007305270). pr-light passing is never a pass by itself: the block falls through to the
+          # heavy-job checks below on every event, an empty one included (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
-            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+            echo "pull_request: pr-light passed; the heavy jobs are checked below, exactly as on a push"
           fi
           # --- PR-LIGHT-VERDICT-END ---
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
           # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
-          # them when the merge_group run on this very commit RAN both and they passed (#4748). Either
+          # them when the merge_group run on this very commit RAN both and they passed (#4748), or when the
+          # PR's own green pull_request run tested this exact tree (#7298; scripts/ci_push_reuse.sh C1-C6). Either
           # way the RustSec advisory job must have passed. A split, a flag on any other event, or a flag
           # from a failed mg-reuse is RED.
           REUSE=0
@@ -1047,8 +1108,6 @@ jobs:
             [ "$EVT" != merge_group ] || [ "${GRDR:-}" = success ] || { echo "guards job: ${GRDR:-missing}"; exit 1; }
             for pair in "$G:guard-tree" "$G:guard-cargo" X86:sov.gate DET:determinism-compare; do
               job="${pair%%:*}" sec="${pair#*:}"
-              # determinism does not run on a PR head (job-level if above): not a failure there.
-              [ "$job:$EVT" = "DET:pull_request" ] && continue
               r=$(res "${!job}" "$sec")
               if [ "$r" != success ]; then
                 echo "$sec failed: $r"

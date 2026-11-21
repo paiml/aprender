@@ -258,7 +258,7 @@ mkrepo "$T/r"; H="$(git -C "$T/r" rev-parse HEAD)"
 tier() { (cd "$ROOT" && env -u GITHUB_SHA -u GITHUB_REF PUSH_BEFORE="$(git -C "$T/r" rev-parse HEAD^1)" ${GSHA:+GITHUB_SHA=$GSHA} ${GREF:+GITHUB_REF=$GREF} bash "$TIER" --event push --repo-root "$T/r" "$@" 2>&1); }
 BASE="$(tier)"
 want "D0 push with no merge_group result -> today's tier (docs-only: none)" "tier=none" "$(grep '^tier=' <<<"$BASE")"
-OUT="$(cd "$ROOT" && env -u GITHUB_SHA -u GITHUB_REF PUSH_BEFORE="$H" bash "$TIER" --event push --repo-root "$T/r" 2>&1)"
+OUT="$(pushd "$ROOT" >/dev/null && env -u GITHUB_SHA -u GITHUB_REF PUSH_BEFORE="$H" bash "$TIER" --event push --repo-root "$T/r" 2>&1)"
 want "D0e push whose before == HEAD (empty diff) -> full, never none" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 hasnt "D0 and no note about a merge_group (no --mg-* given: as before)" "merge_group" "$BASE"
 
@@ -301,19 +301,19 @@ want "T3 a branch push (refs/heads/main) still reuses" "tier=reuse" "$(grep '^ti
 
 # a root commit: today's tier is full (no diff can be derived); a refused result keeps it full
 git init -q -b main "$T/root"; git -C "$T/root" -c user.name=t -c user.email=t@t commit -q --allow-empty -m only
-OUT="$(cd "$ROOT" && env -u GITHUB_SHA PUSH_BEFORE=0000000000000000000000000000000000000000 bash "$TIER" --event push --repo-root "$T/root" --mg-run 7001 --mg-sha "$H" --mg-conclusion success 2>&1)"
+OUT="$(pushd "$ROOT" >/dev/null && env -u GITHUB_SHA PUSH_BEFORE=0000000000000000000000000000000000000000 bash "$TIER" --event push --repo-root "$T/root" --mg-run 7001 --mg-sha "$H" --mg-conclusion success 2>&1)"
 want "D8 a refused result on a root commit keeps today's full" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 
 # merge_group and pull_request never read --mg-*; merge_group's own reuse is unchanged
 git -C "$T/r" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "queue, same tree"
 P="$(git -C "$T/r" rev-parse HEAD~1)"; Q="$(git -C "$T/r" rev-parse HEAD)"
-OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
+OUT="$(pushd "$ROOT" >/dev/null && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
 want "D9 merge_group + PR head success, SAME tree (empty queue diff) -> full: the PR green is never reused (RED against the pre-PR script, which answered reuse)" "tier=full" "$(grep '^tier=' <<<"$OUT")"
-OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
+OUT="$(pushd "$ROOT" >/dev/null && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
 want "D10 merge_group + PR head success + a green --mg-* run, SAME tree -> full: --mg-* is ignored (RED against the pre-PR script)" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 printf "[workspace]\n" > "$T/r/Cargo.toml"; git -C "$T/r" add Cargo.toml; git -C "$T/r" -c user.name=t -c user.email=t@t commit -q -m "queue, root manifest (non-empty diff)"
 P="$(git -C "$T/r" rev-parse HEAD~1)"; Q="$(git -C "$T/r" rev-parse HEAD)"
-OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
+OUT="$(pushd "$ROOT" >/dev/null && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
 want "D9b merge_group + PR head success, NON-EMPTY diff (root manifest) -> full" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 printf 'docs/audits/a.md\n' >"$T/d.txt"
 OUT="$(cd "$ROOT" && bash "$TIER" --event pull_request --repo-root "$T/r" --diff-from "$T/d.txt" --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
@@ -436,8 +436,157 @@ want "X3b no verdict copy still names merge_group:success:1:1" 0 "$(grep -cF 'me
 bash "$ROOT/scripts/ci_mg_reuse.sh" --self-test >"$T/mgst" 2>&1; rc=$?
 want "X4 ci_mg_reuse.sh --self-test (verdict rows incl. push, job wiring) is green" 0 "$rc"
 
+# -- Y: the PR-run arm (#7298; its decision table is scripts/ci_push_reuse.sh --self-test). Structure only, on the surfaces that table cannot see.
+FACTS="$ROOT/scripts/ci_push_reuse_facts.sh"
+want "Y1 the facts reader never derives a fact from workflow text (no tier_reuse, no grep of ci.yml for receipt-judge)" 0 \
+     "$(grep -cE 'tier_reuse|grep .*receipt-judge' "$FACTS")"
+want "Y2 C6 reads the run's creation (created_at, which a re-run never resets), never run_started_at (a re-run resets it) or updated_at" "1:0:0" "$(grep -c 'created_epoch: (.created_at | fromdateiso8601)' "$FACTS"):$(grep -c 'run_started_at | fromdateiso8601' "$FACTS"):$(grep -c 'updated_at' "$FACTS")"
+want "Y3 the facts carry the PR own base_ref and head_ref, the run head_branch and sov_test; never run.pull_requests (empty after the merge)" "1:1:1:1:0" "$(grep -c "base_ref: " "$FACTS"):$(grep -c "head_ref: " "$FACTS"):$(grep -c "head_branch: " "$FACTS"):$(grep -c "sov_test" "$FACTS" | sed "s/^[2-9].*/1/;s/^1[0-9].*/1/"):$(grep -c "pull_requests" "$FACTS")"
+want "Y4 the stamp log is read whole, a failed read is a refusal, and one stamp line is required" 3 \
+     "$(grep -cE 'stamp job log read failed|has \$nstamps stamp lines|stamp and an unavailable line' "$FACTS")"
+want "Y5 the facts reader pipes nothing into grep -q" 0 "$(grep -cE '\| *grep -[a-zA-Z]*q' "$FACTS")"
+# x86=1 / det=1 / wt=1 are written once by the PR-run arm, directly inside the exact-`reuse=yes` branch
+want "Y6 the PR-run arm writes x86=1 once" 1 "$(grep -cF '{ echo "x86=1"; echo "det=1"; echo "cite=$cite"; echo "wt=1"; echo "wt_cite=$cite"; }' "$CI")"
+want "Y7 that write sits directly under the exact reuse=yes test" 1 \
+     "$(grep -B2 -F '{ echo "x86=1"; echo "det=1"; echo "cite=$cite"; echo "wt=1"; echo "wt_cite=$cite"; }' "$CI" | grep -cF 'if [ "$pr" = "reuse=yes" ]; then')"
+want "Y8 a failed facts read leaves the outputs alone (reuse=no, never yes)" 1 "$(grep -cF 'pr="reuse=no reason=the facts could not be read"' "$CI")"
+want "Y9 workspace-test-ran still records the stamp, once" 1 "$(grep -c 'echo "PUSH-REUSE-STAMP tested_sha=' "$CI")"
+want "Y10 workspace-test accepts wt=1 only from a job that succeeded" 1 "$(grep -cF '[ "${WT_SRC_RESULT:-}" = success ]' "$CI")"
+FX="$ROOT/scripts/fixtures/ci_push_reuse"
+want "Y11 a real-shape stamp job log (BOM, CRLF, colour-prefixed echoed script, one emitted stamp) yields the stamp" 1 \
+     "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-with-stamp.fixture" | jq -r 'select(.tree != null and (.sha|length)==40) | 1')"
+want "Y12 a log that only echoes the unavailable text and emits it yields no stamp (null), never a stamp" null \
+     "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-unavailable.fixture")"
+want "Y13 a log with no stamp line yields null" null "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-no-stamp.fixture")"
+want "Y14 a PR run of x86-main that skipped sov.test reads skipped" '"skipped"' "$(bash "$FACTS" --parse-section-log "$FX/x86-main-pr-sections.fixture" sov.test)"
+want "Y15 a run that ran sov.test reads success" '"success"' "$(bash "$FACTS" --parse-section-log "$FX/x86-main-push-sections.fixture" sov.test)"
+want "Y16 a section the log does not carry reads null" null "$(bash "$FACTS" --parse-section-log "$FX/x86-main-push-sections.fixture" no.such.section)"
+# Y17-Y19 (#7314): the SEC010 refusal of a ".." path is exercised (deleting it turns a row red), and a flag with no value exits 2, never loops.
+OUT=$(bash "$FACTS" --parse-stamp-log "$FX/../ci_push_reuse/stamp-job-no-stamp.fixture" 2>/dev/null); RC=$?
+want "Y17 --parse-stamp-log refuses a path with .. (exit 1, nothing printed, the readable file is not parsed)" "1:" "$RC:$OUT"
+OUT=$(bash "$FACTS" --parse-section-log "$FX/../ci_push_reuse/x86-main-push-sections.fixture" sov.test 2>/dev/null); RC=$?
+want "Y18 --parse-section-log refuses a path with .. (exit 1, nothing printed)" "1:" "$RC:$OUT"
+for fl in --repo --sha --before --ref --event --now; do
+  RC=0; timeout 10 bash "$FACTS" "$fl" >/dev/null 2>&1 || RC=$?
+  want "Y19 $fl with no value exits 2 (124 would be the old endless loop)" 2 "$RC"
+  RC=0; timeout 10 bash "$FACTS" --repo a/b --sha 0 --before 0 --ref r --event e "$fl" >/dev/null 2>&1 || RC=$?
+  want "Y19 $fl as the LAST flag with no value exits 2" 2 "$RC"
+done
+
+# Y20 (#7314 lane 1 on cb90e8c): a ROOT commit (no parent) dies at "no parent" with zero gh calls; without `cut -s` the sha itself read as its parent.
+RG="$T/rootrepo"; mkdir -p "$RG/bin"; git init -q -b main "$RG/r" && git -C "$RG/r" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
+printf '#!/bin/sh\necho called >> "%s/gh.calls"\nexit 1\n' "$RG" > "$RG/bin/gh"; chmod +x "$RG/bin/gh"
+RSHA=$(git -C "$RG/r" rev-parse HEAD)
+OUT=$(pushd "$RG/r" >/dev/null && PATH="$RG/bin:$PATH" bash "$FACTS" --repo o/r --sha "$RSHA" --before 0000000000000000000000000000000000000000 --ref refs/heads/main --event push --now 1000 2>&1); RC=$?
+want "Y20 a root commit is refused as 'no parent' before any gh call" "1:1:0" "$RC:$(grep -c 'no parent' <<< "$OUT"):$(wc -l < "$RG/gh.calls" 2> /dev/null || echo 0)"
+
+# -- Z: round 3 of #7314 (fail-closed facts, fork guard on every PR-run self-hosted job, the --now wiring)
+# Z1-Z8: the facts reader's draft and freshness derivation, on saved API objects (no network).
+ZP="$T/zpr.json"
+zpr() { printf '%s' "$1" > "$ZP"; bash "$FACTS" --derive-pr-facts o/r "$ZP" 2>&1; }
+ZBASE='"number":7,"merged":true,"merge_commit_sha":"a","base":{"ref":"main"},"head":{"ref":"f","sha":"b","repo":{"full_name":"o/r"}}'
+want "Z1 draft false reads false" "false" "$(zpr "{$ZBASE,\"draft\":false}" | jq -c '.draft')"
+want "Z2 draft true reads true" "true" "$(zpr "{$ZBASE,\"draft\":true}" | jq -c '.draft')"
+want "Z3 a missing draft reads null (the decision refuses), never false" "null" "$(zpr "{$ZBASE}" | jq -c '.draft')"
+want "Z4 a null draft reads null" "null" "$(zpr "{$ZBASE,\"draft\":null}" | jq -c '.draft')"
+want "Z5 the string \"true\" reads null" "null" "$(zpr "{$ZBASE,\"draft\":\"true\"}" | jq -c '.draft')"
+want "Z5b the number 0 reads null" "null" "$(zpr "{$ZBASE,\"draft\":0}" | jq -c '.draft')"
+ZR="$T/zruns.json"
+zrun() { printf '{"workflow_runs":[{"id":5,"event":"pull_request","path":"p","head_sha":"h","head_branch":"b","status":"completed","conclusion":"success","run_attempt":%s,"created_at":"2026-11-18T10:00:00Z","run_started_at":"%s"}]}' "$1" "$2" > "$ZR"
+  bash "$FACTS" --derive-run-facts "$ZR" 5 5 2>&1; }
+want "Z6 the run's freshness is its created_at (2026-11-18T10:00:00Z = 1794996000)" "1794996000" "$(zrun 1 2026-11-18T10:00:00Z | jq -r '.created_epoch')"
+want "Z7 a re-run (attempt 3) with a run_started_at of a day later does NOT move the freshness time" "1794996000" "$(zrun 3 2026-11-19T09:00:00Z | jq -r '.created_epoch')"
+want "Z8 the run facts carry no started_epoch" "null" "$(zrun 3 2026-11-19T09:00:00Z | jq -r '.started_epoch')"
+printf '{"workflow_runs":[{"id":5,"run_attempt":1,"run_started_at":"2026-11-18T10:00:00Z"}]}' > "$ZR"
+RC=0; bash "$FACTS" --derive-run-facts "$ZR" 5 5 > /dev/null 2>&1 || RC=$?
+want "Z9 a run with no created_at is unreadable (non-zero), never a fresh run" "1" "$([ "$RC" -ne 0 ] && echo 1 || echo 0)"
+# Z10-Z14: every self-hosted job that a pull_request now runs carries the fork guard, and removing it from any one is caught.
+FORKG="(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)"
+FORKW="github.event.pull_request.head.repo.full_name == github.repository"
+jobif() { awk -v J="$2:" '/^  [A-Za-z0-9_-]+:$/ {j = $1} j == J && /^    if:/ {print; exit}' "$1"; }
+forkok() { # forkok FILE JOB: 1 when the job's own if: carries the fork guard
+  case "$(jobif "$1" "$2")" in *"$FORKW"*) echo 1 ;; *) echo 0 ;; esac; }
+for j in x86-main x86-main-advisories determinism workspace-test-shard workspace-test-ran workspace-test-sigma; do
+  want "Z10 $j carries the fork guard in its own if:" 1 "$(forkok "$CI" "$j")"
+  sed "/^  $j:\$/,/^    runs-on:/s/ \&\& (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)//; /^  $j:\$/,/^    runs-on:/s/ \&\& github.event.pull_request.head.repo.full_name == github.repository//" "$CI" > "$T/zf-$j.yml"
+  want "Z11 mutant: $j without the fork guard is caught" 0 "$(forkok "$T/zf-$j.yml" "$j")"
+done
+want "Z12 control: runner-smells keeps the same guard form (the one the others copy)" 1 "$(forkok "$CI" runner-smells)"
+# a fork PR still fails closed: the verdict jobs read the skipped heavy jobs as red (workspace-test: shard result skipped; ci / gate: no sov.gate result)
+want "Z13 workspace-test refuses a non-success shard result (a fork PR skips the shards)" 1 "$(grep -cF '[ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result' "$CI")"
+# #7314: a fork PR skips workspace-test-sigma, and workspace-test refuses anything but its success
+want "Z13b workspace-test refuses a non-success workspace-test-sigma result (a fork PR skips it)" 1 "$(grep -cF '[ "${SIGMA:-}" = success ] || { echo "::error::workspace-test: workspace-test-sigma is' "$CI")"
+want "Z14 ci / gate reads a missing sov.gate result as red" 1 "$(grep -cF 'ci / gate: section result is' "$CI")"
+# Z15: --now is passed to the facts reader (deleting it must turn this red; the reader itself refuses without it)
+NOWARG='--now "$(date +%s)"'
+want "Z15 ci.yml passes $NOWARG to ci_push_reuse_facts.sh" 1 "$(grep -cF "ci_push_reuse_facts.sh --repo \"\$REPO\" --sha \"\$GITHUB_SHA\" --before \"\$PBEFORE\" --ref \"\$GITHUB_REF\" --event \"\$EVT\" $NOWARG" "$CI")"
+sed 's| --now "$(date +%s)"||' "$CI" > "$T/znow.yml"
+want "Z16 mutant: ci.yml without --now is caught" 0 "$(grep -cF "ci_push_reuse_facts.sh --repo \"\$REPO\" --sha \"\$GITHUB_SHA\" --before \"\$PBEFORE\" --ref \"\$GITHUB_REF\" --event \"\$EVT\" $NOWARG" "$T/znow.yml")"
+RC=0; bash "$FACTS" --repo a/b --sha 0000000000000000000000000000000000000000 --before 0 --ref r --event push > /dev/null 2>&1 || RC=$?
+ERR=$(bash "$FACTS" --repo a/b --sha 0000000000000000000000000000000000000000 --before 0 --ref r --event push 2>&1 >/dev/null); RC=$?
+case "$ERR" in *"--now (epoch seconds"*) NOWMSG=named ;; *) NOWMSG="other: $ERR" ;; esac
+want "Z17 the facts reader without --now refuses (exit 1) BECAUSE of --now, not a later check (deleting the --now line turns this red)" "1:named" "$RC:$NOWMSG"
+
+# Y40-Y45 (#7314 lane 2): the stamp / section uniqueness rules RUN on logs with two lines (the one-line fixtures cannot see a relaxed count).
+STAMP_LINE=$(grep -E '^[0-9TZ:.-]+ PUSH-REUSE-STAMP tested_sha=' "$FX/stamp-job-with-stamp.fixture" | tr -d '\r')
+UNAV_LINE=$(grep -E '^[0-9TZ:.-]+ PUSH-REUSE-STAMP unavailable' "$FX/stamp-job-unavailable.fixture" | tr -d '\r')
+printf '%s\n%s\n' "$STAMP_LINE" "$STAMP_LINE" > "$T/two-stamps.log"
+printf '%s\n%s\n%s\n' "$STAMP_LINE" "$STAMP_LINE" "$STAMP_LINE" > "$T/three-stamps.log"
+printf '%s\n%s\n' "$STAMP_LINE" "$UNAV_LINE" > "$T/stamp-and-unavailable.log"
+printf '%s\n' "$STAMP_LINE" > "$T/one-stamp.log"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/one-stamp.log" 2>&1); RC=$?
+want "Y40 control: a log with exactly one stamp line parses (exit 0, one JSON object)" "0:1" "$RC:$(grep -c '"tree"' <<< "$OUT")"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/two-stamps.log" 2>&1); RC=$?
+want "Y41 two stamp lines are a refusal (exit 1, named, no JSON) - a count relaxed to -le 2 turns this red" "1:named:0" "$RC:$(case "$OUT" in *"has 2 stamp lines"*) echo named;; *) echo "other";; esac):$(grep -c '"tree"' <<< "$OUT")"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/three-stamps.log" 2>&1); RC=$?
+want "Y42 three stamp lines are a refusal too" "1" "$RC"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/stamp-and-unavailable.log" 2>&1); RC=$?
+want "Y43 a stamp AND an emitted unavailable line is a refusal (exit 1, named, no JSON)" "1:named:0" "$RC:$(case "$OUT" in *"a stamp and an unavailable line"*) echo named;; *) echo "other";; esac):$(grep -c '"tree"' <<< "$OUT")"
+SEC_LINE=$(grep -E '^[0-9TZ:.-]+ section sov\.test: ' "$FX/x86-main-push-sections.fixture" | tr -d '\r')
+printf '%s\n%s\n' "$SEC_LINE" "$SEC_LINE" > "$T/two-sections.log"
+want "Y44 a section line that appears twice reads null, never a result (exactly-one rule)" null "$(bash "$FACTS" --parse-section-log "$T/two-sections.log" sov.test)"
+printf '%s\n' "$SEC_LINE" > "$T/one-section.log"
+want "Y45 control: the same section line once reads its result" '"success"' "$(bash "$FACTS" --parse-section-log "$T/one-section.log" sov.test)"
+
+# Y46-Y60 (#7314 lane 1): the --now and sha validators, and the ^TS / trailing $ anchors and the BOM strip of the log readers.
+# Every row is one input class a weakened regex would let through; the message must name the check that refused it.
+for nv in abc -1 1e6 1000foo 10.5 '' ' 5' '5 ' '0x10'; do
+  ERR=$(bash "$FACTS" --repo a/b --sha 0000000000000000000000000000000000000000 --before 0 --ref r --event push --now "$nv" 2>&1 >/dev/null); RC=$?
+  case "$ERR" in *"--now (epoch seconds"*) NOWMSG=named ;; *) NOWMSG="other: $ERR" ;; esac
+  want "Y46 --now '$nv' is refused BECAUSE it is not epoch seconds (a weakened ^[0-9]+\$ regex lets it reach a later check)" "1:named" "$RC:$NOWMSG"
+done
+for sv in xyz abcdef0 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 000000000000000000000000000000000000000g 00000000000000000000000000000000000000000; do
+  ERR=$(bash "$FACTS" --repo a/b --sha "$sv" --before 0 --ref r --event push --now 1000 2>&1 >/dev/null); RC=$?
+  case "$ERR" in *"sha is not 40-hex"*) SHAMSG=named ;; *) SHAMSG="other: $ERR" ;; esac
+  want "Y47 --sha '$sv' is refused BECAUSE it is not 40 lowercase hex" "1:named" "$RC:$SHAMSG"
+done
+printf 'junk %s\n' "$STAMP_LINE" > "$T/prefixed-stamp.log"
+want "Y48 a stamp line with text BEFORE the timestamp reads null (the ^ anchor)" null "$(bash "$FACTS" --parse-stamp-log "$T/prefixed-stamp.log" 2>&1)"
+printf '%s extra\n' "$STAMP_LINE" > "$T/suffixed-stamp.log"
+want "Y49 a stamp line with text AFTER the head sha reads null (the trailing \$ anchor)" null "$(bash "$FACTS" --parse-stamp-log "$T/suffixed-stamp.log" 2>&1)"
+printf '%s\n%s\n' "$STAMP_LINE" "junk $STAMP_LINE" > "$T/stamp-and-prefixed.log"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/stamp-and-prefixed.log" 2>&1); RC=$?
+want "Y50 one real stamp plus a junk-prefixed echo of it is ONE stamp (exit 0, one JSON object)" "0:1" "$RC:$(grep -c '"tree"' <<< "$OUT")"
+printf '%s\n%s\n' "$STAMP_LINE" "  $UNAV_LINE" > "$T/stamp-and-indented-unav.log"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/stamp-and-indented-unav.log" 2>&1); RC=$?
+want "Y51 an indented echo of the unavailable line is not an emitted one (the ^ anchor on the unavailable count)" "0:1" "$RC:$(grep -c '"tree"' <<< "$OUT")"
+printf '\xEF\xBB\xBF%s\n' "$STAMP_LINE" > "$T/bom-stamp.log"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/bom-stamp.log" 2>&1); RC=$?
+want "Y52 a stamp line behind a byte-order mark still reads (the BOM strip)" "0:1" "$RC:$(grep -c '"tree"' <<< "$OUT")"
+printf '%s\r\n' "$STAMP_LINE" > "$T/crlf-stamp.log"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/crlf-stamp.log" 2>&1); RC=$?
+want "Y53 a CRLF stamp line still reads (the CR strip)" "0:1" "$RC:$(grep -c '"tree"' <<< "$OUT")"
+printf 'junk %s\n' "$SEC_LINE" > "$T/prefixed-section.log"
+want "Y54 a section line with text BEFORE the timestamp reads null (the ^ anchor)" null "$(bash "$FACTS" --parse-section-log "$T/prefixed-section.log" sov.test)"
+printf '%s x\n' "$SEC_LINE" > "$T/suffixed-section.log"
+want "Y55 a section line with text AFTER the seconds reads null (the trailing \$ anchor)" null "$(bash "$FACTS" --parse-section-log "$T/suffixed-section.log" sov.test)"
+printf '%s\n%s\n' "$SEC_LINE" "junk $SEC_LINE" > "$T/section-and-prefixed.log"
+want "Y56 one real section line plus a junk-prefixed echo is exactly ONE line (reads its result)" '"success"' "$(bash "$FACTS" --parse-section-log "$T/section-and-prefixed.log" sov.test)"
+printf '\xEF\xBB\xBF%s\n' "$SEC_LINE" > "$T/bom-section.log"
+want "Y57 a section line behind a byte-order mark still reads (the BOM strip)" '"success"' "$(bash "$FACTS" --parse-section-log "$T/bom-section.log" sov.test)"
+
 if [ "$fails" -eq 0 ]; then
-  echo "check_ci_push_reuse: OK - push reuses only a merge-queue success on its own sha (x86-main + determinism: only a real run); every doubt runs it"
+  echo "check_ci_push_reuse: OK - a push reuses only a merge-queue success on its own sha, or the PR's own green run when scripts/ci_push_reuse.sh C1-C6 hold (workspace-test, x86-main, determinism: only a real run); every doubt runs the jobs"
   exit 0
 fi
 echo "check_ci_push_reuse: $fails assertion(s) FAILED"
