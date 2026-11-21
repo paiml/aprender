@@ -3,7 +3,8 @@
 //!
 //! Pure fp32 CPU reference ops on row-major slices, validated against the
 //! transformers goldens in `tests/fixtures/qwen4_exp/goldens/` by
-//! `tests/qwen4_exp_embed_parity.rs`. Reference:
+//! `tests/qwen4_exp_embed_parity.rs`. Decode (#7332): [`NgramState`] carries
+//! the n-gram context and [`PleState`] the dilated-conv history. Reference:
 //! `modeling_qwen4_exp.py` @ transformers 36e937ae7 (`RMSNormGated` :170,
 //! `NGramEmbedding` :1037-1178, `PLELayer` :1180-1253).
 
@@ -210,17 +211,59 @@ pub fn ngram_ids(cfg: &NgramConfig, ids: &[i64], ctx: Option<&[i64]>) -> Vec<i64
     out
 }
 
-/// N-gram hashed embedding for one sequence: `[len(ids), embed_dim]`.
-pub fn ngram_embed(cfg: &NgramConfig, table: &[f32], ids: &[i64]) -> Vec<f32> {
+/// Table lookup of hashed ids `[tokens, ngram_heads]` -> `[tokens, embed_dim]`.
+fn lookup(cfg: &NgramConfig, table: &[f32], hashed: &[i64]) -> Vec<f32> {
     let heads = (cfg.ngram_size - 1) * cfg.heads_per_ngram;
-    let w = cfg.embed_dim / heads;
-    ngram_ids(cfg, ids, None)
+    let w = cfg.embed_dim / heads.max(1);
+    hashed
         .iter()
         .flat_map(|&row| {
             let s = row as usize * w;
             table.get(s..s + w).unwrap_or(&[]).iter().copied()
         })
         .collect()
+}
+
+/// N-gram hashed embedding for one sequence: `[len(ids), embed_dim]`.
+pub fn ngram_embed(cfg: &NgramConfig, table: &[f32], ids: &[i64]) -> Vec<f32> {
+    lookup(cfg, table, &ngram_ids(cfg, ids, None))
+}
+
+/// Decode-time n-gram context carry-over (#7332): the last `ngram_size - 1`
+/// token ids of the sequence so far (EOS before the first token).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NgramState {
+    ctx: Vec<i64>,
+}
+
+impl NgramState {
+    /// Fresh state for a new sequence.
+    pub fn new(cfg: &NgramConfig) -> Self {
+        Self {
+            ctx: vec![cfg.eos_token_id; cfg.ngram_size.saturating_sub(1)],
+        }
+    }
+
+    /// The carried context.
+    pub fn context(&self) -> &[i64] {
+        &self.ctx
+    }
+
+    /// Hashed ids for the next chunk `ids`, then carries its tail forward.
+    pub fn ids(&mut self, cfg: &NgramConfig, ids: &[i64]) -> Vec<i64> {
+        let out = ngram_ids(cfg, ids, Some(&self.ctx));
+        let keep = self.ctx.len();
+        let mut hist = std::mem::take(&mut self.ctx);
+        hist.extend_from_slice(ids);
+        self.ctx = hist.split_off(hist.len() - keep);
+        out
+    }
+
+    /// Embedding of the next chunk `ids` (`[len(ids), embed_dim]`).
+    pub fn embed(&mut self, cfg: &NgramConfig, table: &[f32], ids: &[i64]) -> Vec<f32> {
+        let hashed = self.ids(cfg, ids);
+        lookup(cfg, table, &hashed)
+    }
 }
 
 /// `y = x @ w^T` with `w` as `[out, inp]`, `x` as `[rows, inp]`.
@@ -307,13 +350,47 @@ fn gate_value(key: &[f32], query: &[f32], value: &[f32], h: usize, c: usize) -> 
 
 /// PLE for one sequence: `hidden: [seq, C*H]`, `ids: [seq]` -> `[seq, C*H]`.
 pub fn ple_forward(p: &PleParams<'_>, hidden: &[f32], ids: &[i64]) -> Vec<f32> {
-    let (h, c, e) = (p.hidden_size, p.hc_count, p.ngram.embed_dim);
-    let emb = ngram_embed(p.ngram, p.table, ids);
-    let key = grouped_rms_norm(&linear(&emb, p.key_proj, e, c * h), p.norm_key, h, p.eps);
-    let value = linear(&emb, p.value_proj, e, h);
-    let query = grouped_rms_norm(hidden, p.norm_query, h, p.eps);
-    let gv = gate_value(&key, &query, &value, h, c);
-    let normed = grouped_rms_norm(&gv, p.norm_conv, h, p.eps);
-    let conv = dilated_causal_conv_silu(&normed, p.conv_w, c * h, p.kernel, p.ngram.ngram_size);
-    gv.iter().zip(&conv).map(|(a, b)| a + b).collect()
+    PleState::new(p).step(p, hidden, ids)
+}
+
+/// Decode-time PLE state for one sequence (#7332): the n-gram context and the
+/// last `(kernel - 1) * dilation` rows of the conv input (normed gated value,
+/// `[rows, C*H]`, zeros before the first token).
+#[derive(Debug, Clone)]
+pub struct PleState {
+    ngram: NgramState,
+    conv: Vec<f32>,
+}
+
+impl PleState {
+    /// Fresh state for a new sequence.
+    pub fn new(p: &PleParams<'_>) -> Self {
+        let rows = p.kernel.saturating_sub(1) * p.ngram.ngram_size;
+        Self {
+            ngram: NgramState::new(p.ngram),
+            conv: vec![0.0; rows * p.hc_count * p.hidden_size],
+        }
+    }
+
+    /// Carried n-gram context.
+    pub fn ngram(&self) -> &NgramState {
+        &self.ngram
+    }
+
+    /// PLE of the next chunk: `hidden: [n, C*H]`, `ids: [n]` -> `[n, C*H]`.
+    pub fn step(&mut self, p: &PleParams<'_>, hidden: &[f32], ids: &[i64]) -> Vec<f32> {
+        let (h, c, e) = (p.hidden_size, p.hc_count, p.ngram.embed_dim);
+        let emb = self.ngram.embed(p.ngram, p.table, ids);
+        let key = grouped_rms_norm(&linear(&emb, p.key_proj, e, c * h), p.norm_key, h, p.eps);
+        let value = linear(&emb, p.value_proj, e, h);
+        let query = grouped_rms_norm(hidden, p.norm_query, h, p.eps);
+        let gv = gate_value(&key, &query, &value, h, c);
+        let normed = grouped_rms_norm(&gv, p.norm_conv, h, p.eps);
+        let skip = self.conv.len();
+        let mut ext = std::mem::take(&mut self.conv);
+        ext.extend_from_slice(&normed);
+        let conv = dilated_causal_conv_silu(&ext, p.conv_w, c * h, p.kernel, p.ngram.ngram_size);
+        self.conv = ext[ext.len() - skip..].to_vec();
+        gv.iter().zip(&conv[skip..]).map(|(a, b)| a + b).collect()
+    }
 }

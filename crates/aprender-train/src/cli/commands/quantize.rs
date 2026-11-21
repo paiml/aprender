@@ -69,13 +69,13 @@ fn save_quantized_safetensors(
     }
 
     // Metadata
-    let mut metadata = HashMap::new();
+    let mut metadata = std::collections::BTreeMap::new();
     metadata.insert("quantization".to_string(), format!("int{}", args.bits));
     metadata.insert("method".to_string(), format!("{:?}", args.method).to_lowercase());
     metadata.insert("num_tensors".to_string(), quantized_tensors.len().to_string());
 
-    let safetensor_bytes = safetensors::serialize(views, Some(metadata))
-        .map_err(|e| format!("SafeTensors serialization failed: {e}"))?;
+    let safetensor_bytes =
+        crate::io::serialize_with_ordered_metadata(views, &metadata).map_err(|e| e.to_string())?;
 
     std::fs::write(&args.output, safetensor_bytes)
         .map_err(|e| format!("Failed to write output: {e}"))?;

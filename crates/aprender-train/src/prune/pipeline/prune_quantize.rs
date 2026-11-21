@@ -143,7 +143,7 @@ fn prune_and_quantize(
         })
         .collect();
 
-    let mut metadata = std::collections::HashMap::new();
+    let mut metadata = std::collections::BTreeMap::new();
     metadata.insert("sparsity".to_string(), format!("{achieved_sparsity:.4}"));
     metadata.insert(
         "quantization".to_string(),
@@ -153,7 +153,7 @@ fn prune_and_quantize(
         },
     );
 
-    let safetensor_bytes = safetensors::serialize(views, Some(metadata))
+    let safetensor_bytes = crate::io::serialize_with_ordered_metadata(views, &metadata)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
 
     let output_path = output_dir.join(filename);
@@ -199,6 +199,23 @@ mod tests {
         assert_eq!(result.quant_format, PruneQuantFormat::Q4_0);
         assert!(result.output_path.exists());
         assert!(result.file_size > 0);
+    }
+
+    /// #7293: same inputs must give byte-identical output files.
+    #[test]
+    fn test_prune_and_quantize_is_byte_deterministic() {
+        let (weights, shapes) = make_test_weights();
+        let config =
+            PruneQuantConfig { target_sparsity: 0.3, quant_format: PruneQuantFormat::Q4_0 };
+        let tmp = TempDir::new().expect("temp file creation should succeed");
+        let run = |name: &str| {
+            let r = prune_and_quantize(&weights, &shapes, &config, tmp.path(), name).expect("run");
+            std::fs::read(r.output_path).expect("read")
+        };
+        let first = run("a.safetensors");
+        for i in 0..16 {
+            assert_eq!(first, run(&format!("b{i}.safetensors")));
+        }
     }
 
     #[test]

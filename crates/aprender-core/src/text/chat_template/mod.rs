@@ -449,3 +449,4 @@ impl ChatMLTemplate {
 include!("template.rs");
 include!("raw_template.rs");
 include!("ship_008.rs");
+include!("qwen35_thinking.rs");

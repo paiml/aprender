@@ -98,6 +98,7 @@ pub(crate) mod imatrix_classifier;
 pub(crate) mod imatrix_lint;
 pub(crate) mod import;
 pub(crate) mod inspect;
+pub(crate) mod inspect_families;
 pub(crate) mod kernel_explain;
 pub(crate) mod kernel_parity;
 pub(crate) mod kv_timeline_classifier;

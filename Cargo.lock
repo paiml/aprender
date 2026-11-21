@@ -301,6 +301,7 @@ dependencies = [
  "jsonschema",
  "libc",
  "parquet",
+ "percent-encoding",
  "predicates",
  "proptest",
  "rayon",
@@ -320,6 +321,7 @@ dependencies = [
  "tower 0.5.3",
  "unicode-normalization",
  "ureq",
+ "url",
  "which 7.0.3",
 ]
 

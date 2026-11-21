@@ -59,6 +59,10 @@ pub(crate) fn run(
         eprintln!("Warning: --task is not yet supported for inference. Flag ignored.");
     }
 
+    // #7331: a checkpoint known to fit no supported host is refused before
+    // ANYTHING else: no banner, no alias/HF probe, no cache dir, no download.
+    refuse_known_checkpoint(source)?;
+
     // #3817: refuse BEFORE the load when the user forced an accelerator this
     // build has no forward for. Placed above every print, so a refused run emits
     // no banner, no `Source:` line and no generation — the caller sees a named
@@ -294,6 +298,147 @@ fn declared_architecture(source: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// A checkpoint that is KNOWN, from its published config and index, to be
+/// unrunnable here: `(repo id, model_type, approx bf16 bytes)`. The facts come from
+/// the checkpoint's `config.json` / `model.safetensors.index.json` (#7318); the
+/// table lists what we know we cannot run, never what we support.
+const KNOWN_UNRUNNABLE_CHECKPOINTS: &[(&str, &str, u64)] = &[(
+    "Qwen/Qwen3.8-2.4T-A95B",
+    "qwen3_5_moe_text",
+    4_900_000_000_000,
+)];
+
+/// #7331: the refusal text for a checkpoint in [`KNOWN_UNRUNNABLE_CHECKPOINTS`], or
+/// `None`. Pure string work on the argument: it reads no file, opens no socket and
+/// allocates nothing proportional to the model, so it can run before everything.
+/// The match is on the repo id alone, any case, as [`checkpoint_repo_id`] normalises it:
+/// the first two path segments of every source form, bare `org/repo/file` included, since
+/// `apr run` promotes that to `hf://` and downloads it (PR #7356 lane 2). A longer repo name
+/// that merely starts with the id, or a non-Hugging-Face host, is not refused.
+pub(crate) fn known_checkpoint_refusal(source: &str) -> Option<String> {
+    let id = checkpoint_repo_id(source)?;
+    let (name, model_type, bytes) = KNOWN_UNRUNNABLE_CHECKPOINTS
+        .iter()
+        .find(|(name, _, _)| name.eq_ignore_ascii_case(&id))?;
+    #[cfg(feature = "inference")]
+    let forward = realizar::capability::no_cuda_forward_reason(model_type)
+        .unwrap_or_else(|| format!("no CUDA forward for architecture '{model_type}'"));
+    #[cfg(not(feature = "inference"))]
+    let forward = format!("no CUDA forward for architecture '{model_type}'");
+    Some(refusal_text(name, model_type, *bytes, &forward))
+}
+
+/// The #7331 refusal sentence. `forward` is the capability reason: when it is only the
+/// generic "no CUDA forward for architecture …" it is not repeated after the clause that
+/// already says so, and the sentence before "Refused …" always ends in exactly one full
+/// stop (PR #7356 round 3, lane 2 finding 4).
+fn refusal_text(name: &str, model_type: &str, bytes: u64, forward: &str) -> String {
+    // The capability reason is a whole refusal of its own ("this build has no CUDA forward
+    // for architecture 'X': <why>. Re-run without --gpu ... This is a refusal, ..."). Keep
+    // only <why>: the clause before it already says there is no CUDA forward, and the
+    // CPU advice and the second refusal sentence contradict this refusal (PR #7356 round 4,
+    // lane 2 F1).
+    let mut forward = forward.trim();
+    for cut in [" Re-run without", " This is a refusal"] {
+        if let Some(i) = forward.find(cut) {
+            forward = &forward[..i];
+        }
+    }
+    let forward = forward.trim().trim_end_matches('.');
+    let forward = match forward
+        .strip_prefix("this build has no CUDA forward for architecture")
+        .or_else(|| forward.strip_prefix("no CUDA forward for architecture"))
+    {
+        // "'X': <why>" or just "'X'": keep what follows the colon.
+        Some(rest) => rest.split_once(':').map_or("", |(_, why)| why.trim()),
+        None => forward,
+    };
+    let forward = if forward.is_empty() {
+        String::new()
+    } else {
+        format!(": {forward}")
+    };
+    // TB with one decimal: 4_900_000_000_000 -> "4.9 TB".
+    let tb = bytes as f64 / 1e12;
+    format!(
+        "refusing to run {name}: the checkpoint is about {tb:.1} TB in bf16 \
+         (model_type {model_type}), which exceeds every supported host, and there is \
+         no CUDA forward for it{forward}. Refused before any download or allocation: \
+         nothing was downloaded and nothing was loaded (#7331)."
+    )
+}
+
+/// Hosts that serve Hugging Face repos at `/<org>/<repo>/…`.
+const HF_HOSTS: &[&str] = &["huggingface.co", "www.huggingface.co", "hf.co", "www.hf.co"];
+
+/// The one normaliser for [`known_checkpoint_refusal`] (PR #7356 lane 2, rounds 2-3): the
+/// `org/repo` a run source names, or `None` when it names no Hugging Face repo.
+///
+/// Every form reaches it: `hf://org/repo[/file]`; `http(s)://` on any of [`HF_HOSTS`], with
+/// or without the scheme, including `/api/models/org/repo`; and a bare scheme-less
+/// `org/repo[/file]`, which `run.rs::resolve_model_source` promotes to `hf://` when it is
+/// not on disk. URLs go through a real URL parser (`url`, WHATWG), so the host is compared
+/// after the parser drops userinfo and the port and lowercases it, and a trailing-dot host
+/// (`huggingface.co.`) is the same host. The path is then canonicalised: percent-decoded
+/// (`Qwen%2FQwen3.8-…`), `api/models/` dropped, and from the repo segment an `@revision`,
+/// a `:tag` and a `.git` suffix. A `?query` and `#fragment` are dropped. Any other scheme
+/// or host names no repo.
+fn checkpoint_repo_id(source: &str) -> Option<String> {
+    let path = if let Some((scheme, rest)) = source.split_once("://") {
+        if scheme.eq_ignore_ascii_case("hf") {
+            rest.split(['?', '#']).next().unwrap_or("").to_string()
+        } else {
+            hub_path(source)?
+        }
+    } else {
+        // Scheme-less: a host-qualified form if its host is a Hugging Face host, else a
+        // bare `org/repo[/file]`.
+        hub_path(&format!("https://{source}"))
+            .unwrap_or_else(|| source.split(['?', '#']).next().unwrap_or("").to_string())
+    };
+    let path = percent_encoding::percent_decode_str(&path).decode_utf8_lossy();
+    let path = path.strip_prefix('/').unwrap_or(&path);
+    let path = path.strip_prefix("api/models/").unwrap_or(path);
+    let mut segs = path.split('/').filter(|s| !s.is_empty());
+    let org = segs.next()?;
+    let repo = segs.next()?;
+    let repo = repo.split('@').next().unwrap_or(repo);
+    let repo = repo.split(':').next().unwrap_or(repo);
+    let repo = match repo.len().checked_sub(4) {
+        Some(n) if repo.is_char_boundary(n) && repo[n..].eq_ignore_ascii_case(".git") => &repo[..n],
+        _ => repo,
+    };
+    if repo.is_empty() {
+        return None;
+    }
+    Some(format!("{org}/{repo}"))
+}
+
+/// The (still percent-encoded) path of an `http(s)` URL whose host is one of [`HF_HOSTS`],
+/// else `None`. The host comes from the URL parser, so userinfo and port are not part of
+/// it; a single trailing dot is trimmed.
+fn hub_path(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
+    let host = parsed.host_str()?;
+    let host = host.strip_suffix('.').unwrap_or(host);
+    HF_HOSTS
+        .iter()
+        .any(|h| h.eq_ignore_ascii_case(host))
+        .then(|| parsed.path().to_string())
+}
+
+/// Exit 12 (`NotImplemented`) for a known-unrunnable checkpoint. Every `apr run` entry
+/// calls it first: the dispatch arm, [`run`] and [`run_batch`].
+pub(crate) fn refuse_known_checkpoint(source: &str) -> Result<()> {
+    match known_checkpoint_refusal(source) {
+        Some(reason) => Err(CliError::NotImplemented(reason)),
+        None => Ok(()),
+    }
 }
 
 /// #3817: `apr run --gpu` on an architecture with no CUDA forward refuses by
@@ -919,6 +1064,8 @@ pub(crate) fn run_batch(
     constraint: &super::run::ConstraintArgs,
 ) -> Result<()> {
     use realizar::{run_batch_inference, BatchInferenceConfig};
+    // #7331: before the constraint check, the parse and `resolve_model` (the download).
+    refuse_known_checkpoint(source)?;
     if constraint.is_set() {
         return Err(crate::error::CliError::ConstraintRefused(
             crate::error::ConstraintRefusal {
