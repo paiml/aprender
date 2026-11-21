@@ -295,7 +295,7 @@ infra_rows() {
                 sha="?"
                 if [ "$bytes" -eq 0 ]; then
                     why="assert=$jassert log=0B"
-                elif printf '%s\n' "$log" | grep -q 'tested-sha: '; then
+                elif [[ $log == *'tested-sha: '* ]]; then
                     why="assert=$jassert log=${bytes}B invalid tested-sha"
                 else
                     why="assert=$jassert log=${bytes}B no tested-sha line"
