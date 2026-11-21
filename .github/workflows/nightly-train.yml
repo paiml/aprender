@@ -32,8 +32,8 @@ jobs:
           echo "$out (runner=${RUNNER_NAME:-unknown})"
       - name: The judge's case table and mutants (a red table prints no verdict)
         run: |
-          bash scripts/check_nightly_train_pool.sh --self-test
-          bash scripts/check_nightly_train_pool.sh
+          setsid --wait bash scripts/check_nightly_train_pool.sh --self-test
+          setsid --wait bash scripts/check_nightly_train_pool.sh
           bash scripts/release/nightly_train.sh --self-test
           bash scripts/release/nightly_train.sh --mutants
           # the gate/LAB test reads the workflows with yq; the clean-room image has none, so fetch the pinned one
