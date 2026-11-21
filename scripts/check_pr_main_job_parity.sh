@@ -70,10 +70,10 @@ rows() {
       def ex($e; $x):
         ($e | gsub("\\$\\{\\{|\\}\\}"; " ")
             | gsub("github\\s*\\[\\s*\u0027event_name\u0027\\s*\\]|github\\s*\\.\\s*event_name"; "github.event_name"; "i")
-            | gsub("github\\.event_name\\s*==\\s*\u0027(?<n>[a-z_]+)\u0027"; if .n == $x then "1" else "0" end)
-            | gsub("\u0027(?<n>[a-z_]+)\u0027\\s*==\\s*github\\.event_name"; if .n == $x then "1" else "0" end)
-            | gsub("github\\.event_name\\s*!=\\s*\u0027(?<n>[a-z_]+)\u0027"; if .n == $x then "0" else "1" end)
-            | gsub("\u0027(?<n>[a-z_]+)\u0027\\s*!=\\s*github\\.event_name"; if .n == $x then "0" else "1" end)
+            | gsub("github\\.event_name\\s*==\\s*\u0027(?<n>[a-z_]+)\u0027"; if .n == $x then "@1" else "@0" end)
+            | gsub("\u0027(?<n>[a-z_]+)\u0027\\s*==\\s*github\\.event_name"; if .n == $x then "@1" else "@0" end)
+            | gsub("github\\.event_name\\s*!=\\s*\u0027(?<n>[a-z_]+)\u0027"; if .n == $x then "@0" else "@1" end)
+            | gsub("\u0027(?<n>[a-z_]+)\u0027\\s*!=\\s*github\\.event_name"; if .n == $x then "@0" else "@1" end)
             | gsub("\u0027[^\u0027]*\u0027"; " S ")
             | if test("github\\.event_name") or test("\\bgithub\\b(?!\\s*\\.)";"i") then "?" else . end
             | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")
@@ -83,20 +83,35 @@ rows() {
         | ("\\(|\\)|&&|\\|\\||!(?!=)|(?:[^()&|!]|!(?==))+") as $re
         | [ $c | scan($re) | select(test("\\S"))
             | if . == "(" or . == ")" or . == "&&" or . == "||" or . == "!" then .
-              elif test("^\\s*[01]\\s*$") then gsub("\\s"; "")
-              elif test("\\?") then "?"
+              elif test("^\\s*@[01]\\s*$") then gsub("[\\s@]"; "")
+              elif test("^\\s*true\\s*$") then "1"
+              elif test("^\\s*false\\s*$") then "0"
+              elif test("[?@]") then "?"
               else "u" end ]
         | if length == 0 then "1" else join(" ") end;
       (.on // {}) as $on
       | (if ($on|type)=="string" then [$on] elif ($on|type)=="array" then $on else ($on|keys) end) as $ev
-      | (if ($on|type)=="object" and ($on.push|type)=="object"
-           then (($on.push.branches // null) as $b | ($on.push.tags // null) as $t
-                 | if $b==null and $t!=null then false
-                   else ($b==null or ($b|map(select(.=="main" or .=="master" or test("\\*")))|length>0)) end)
+      | (def mainish: .=="main" or .=="master" or test("[*?+\\[]");
+         if ($on|type)=="object" and ($on.push|type)=="object"
+           then (($on.push.branches // null) as $b | ($on.push["branches-ignore"] // null) as $bi | ($on.push.tags // null) as $t
+                 | if $b!=null then ($b|map(select(mainish))|length>0)
+                   elif $bi!=null then (($bi|map(select(.=="main" or .=="master"))|length)==0)
+                   elif $t!=null then false
+                   else true end)
            else ($ev|index("push")!=null) end) as $pushmain
+      | (if ($on|type)=="object" and ($on.pull_request|type)=="object"
+           then (($on.pull_request.branches // null) as $b | ($on.pull_request["branches-ignore"] // null) as $bi
+                 | if $b!=null then ($b|map(select(.=="main" or .=="master" or test("[*?+\\[]")))|length>0)
+                   elif $bi!=null then (($bi|map(select(.=="main" or .=="master"))|length)==0)
+                   else true end)
+           else true end) as $prbr
       | (.jobs // {}) | to_entries[]
-      | .key as $j | ((.value.if // "")|tostring) as $e
-      | [$f, $j, (if $pushmain then "1" else "0" end), (if $ev|index("pull_request") then "1" else "0" end),
+      | .key as $j
+      | ((.value|if type=="object" and has("if") then (.if|tostring) else "" end)) as $je
+      | ((.value|if type=="object" and (.steps|type)=="array" and (.steps|length)>0 and all(.steps[]; type=="object" and has("if"))
+            then (.steps | map("(" + (.if|tostring) + ")") | join(" || ")) else "" end)) as $se
+      | (if $je=="" then $se elif $se=="" then $je else "(" + $je + ") && (" + $se + ")" end) as $e
+      | [$f, $j, (if $pushmain then "1" else "0" end), (if ($ev|index("pull_request")) and $prbr then "1" else "0" end),
          (if $ev|index("merge_group") then "1" else "0" end), ex($e;"push"), ex($e;"pull_request"), ex($e;"merge_group")] | @tsv') || return 1
   done
 }
@@ -126,9 +141,16 @@ function branch(p, k) {   # sets tp (state of the then branch) and rm (state of 
 function cur() { return sp > 0 ? fpr[sp] : 0 }
 function push(t, p) { sp++; ft[sp] = t; fpr[sp] = p; frm[sp] = p; fbase[sp] = p }
 function pop(t) { if (sp > 0 && ft[sp] == t) sp--; else bad = 1 }
-function exits(s) {
+function exits(s,   r, m) {
   gsub(/"[^"]*"/, "", s); gsub(/\047[^\047]*\047/, "", s)
-  return s ~ /(^|[[:space:]&|{(])exit([[:space:]]+0)?[[:space:]]*($|[}&|)])/
+  r = s
+  while (match(r, /(^|[[:space:]&|{(])exit/)) {
+    m = substr(r, RSTART + RLENGTH); r = m
+    if (m ~ /^[A-Za-z0-9_]/) continue
+    gsub(/[0-9]*[<>]+&?[^[:space:];&|)}]*/, "", m)
+    if (m ~ /^([[:space:]]+0+)?[[:space:]]*($|[}&|)])/) return 1
+  }
+  return 0
 }
 function docond(kw, c,   p, k) {
   k = kind(c)
@@ -140,7 +162,7 @@ function stmt(s,   h, op, rest, k, eff, p) {
   s = trim(s); if (s == "") return
   if (pend != "") { p = pend; pend = ""; docond(p, s); return }
   if (s ~ /^(then|do)([[:space:]]|$)/) {
-    if (s ~ /^do/) push("L", cur())
+    if (s ~ /^do/) { push("L", (lst == "") ? cur() : lst); lst = "" }
     sub(/^(then|do)[[:space:]]*/, "", s); stmt(s); return
   }
   if (s ~ /^(if|elif)([[:space:]]|$)/) {
@@ -155,7 +177,17 @@ function stmt(s,   h, op, rest, k, eff, p) {
   if (s ~ /^fi([[:space:]]|$)/) { pop("I"); return }
   if (s ~ /^done([[:space:]]|$)/) { pop("L"); return }
   if (s ~ /^esac([[:space:]]|$)/) { pop("C"); return }
-  if (s ~ /^for[[:space:]]|^while[[:space:]]|^until[[:space:]]/) return
+  if (s ~ /^(while|until)[[:space:]]/) {
+    # the body runs while the condition holds (while) or while it fails (until)
+    op = (s ~ /^while/); rest = s; sub(/^(while|until)[[:space:]]+/, "", rest); k = kind(rest); p = cur()
+    if (k == "T") lst = op ? maybe(p) : -1
+    else if (k == "F") lst = op ? -1 : maybe(p)
+    else if (k == "U") lst = maybe(p)
+    else lst = p
+    if (lst == 0) lst = "0"
+    return
+  }
+  if (s ~ /^for[[:space:]]/) return
   if (s ~ /^case[[:space:]]/) {
     push("C", cur())
     if (match(s, /[[:space:]]in([[:space:]]|$)/)) stmt(substr(s, RSTART + RLENGTH))
@@ -173,27 +205,60 @@ function stmt(s,   h, op, rest, k, eff, p) {
   if (s ~ /^\{/) { push("G", cur()); sub(/^\{[[:space:]]*/, "", s); stmt(s); return }
   if (match(s, /(&&|\|\|)[[:space:]]*\{/)) {
     h = substr(s, 1, RSTART - 1); op = substr(s, RSTART, 2); rest = substr(s, RSTART + RLENGTH)
-    k = kind(h); p = cur()
-    if (k == "T") eff = (op == "&&") ? maybe(p) : -1
-    else if (k == "F") eff = (op == "||") ? maybe(p) : -1
-    else if (k == "U") eff = maybe(p)
-    else eff = p
-    push("G", eff); stmt(rest); return
+    push("G", chainstate(h, op)); stmt(rest); return
   }
-  eff = cur()
-  if (s ~ /^(\[\[?|test)[[:space:]]/ && match(s, /(&&|\|\|)/)) {
-    h = substr(s, 1, RSTART - 1); op = substr(s, RSTART, 2); k = kind(h)
-    if (k == "T") eff = (op == "&&") ? maybe(eff) : -1
-    else if (k == "F") eff = (op == "||") ? maybe(eff) : -1
-    else if (k == "U") eff = maybe(eff)
-  }
-  if (eff == 1 && exits(s)) hit = 1
+  if (split_chain(s) > 1) { chainstate(s, ""); return }
+  if (cur() == 1 && exits(s)) hit = 1
 }
-function feed(line,   i, c, n, buf2, q, d) {
-  n = length(line); q = ""
+function un(a, b) { return (a == 1 || b == 1) ? 1 : ((a == 0 || b == 0) ? 0 : -1) }
+# split_chain(s): splits s at && and || outside quotes, $( ), ( ) and [[ ]]; operands in copnd[1..n], the operator before
+# operand i in cop[i]. Returns n.
+function split_chain(s,   i, n, c, q, d, b, cn, two) {
+  nop = 1; copnd[1] = ""; cop[1] = ""; q = ""; d = 0; b = 0; n = length(s)
+  for (i = 1; i <= n; i++) {
+    c = substr(s, i, 1); two = substr(s, i, 2)
+    if (q != "") { copnd[nop] = copnd[nop] c; if (c == q) q = ""; continue }
+    if (c == "\"" || c == "\047") { q = c; copnd[nop] = copnd[nop] c; continue }
+    if (two == "[[") b++
+    if (two == "]]" && b > 0) b--
+    if (c == "(") d++
+    if (c == ")" && d > 0) d--
+    if (d == 0 && b == 0 && (two == "&&" || two == "||")) { nop++; cop[nop] = two; copnd[nop] = ""; i++; continue }
+    copnd[nop] = copnd[nop] c
+  }
+  return nop
+}
+# chainstate(h, op): evaluates the && / || chain h under the current frame; ok / ko are the PR states under which the chain so far
+# succeeded / failed. An operand that exits 0 in a PR state is a hit. Returns the PR state under which the operand after op runs.
+function chainstate(h, op,   i, r, k, sc, fl, ok, ko, o) {
+  split_chain(h); ok = cur(); ko = -1
+  for (i = 1; i <= nop; i++) {
+    o = trim(copnd[i])
+    r = (i == 1) ? cur() : ((cop[i] == "&&") ? ok : ko)
+    k = kind(o)
+    if (k == "T") { sc = maybe(r); fl = -1 }
+    else if (k == "F") { sc = -1; fl = maybe(r) }
+    else if (k == "U") { sc = maybe(r); fl = maybe(r) }
+    else { sc = r; fl = r }
+    if (r == 1 && exits(o)) hit = 1
+    if (i == 1) { ok = sc; ko = fl }
+    else if (cop[i] == "&&") { ok = sc; ko = un(ko, fl) }
+    else { ok = un(ok, sc); ko = fl }
+  }
+  return (op == "&&") ? ok : ko
+}
+# feed(line): one script line. Quote state (q) and the open statement (cur_s) persist across lines, so a quote that spans lines and
+# a statement continued by a trailing && || | or backslash are read as one. A \ escapes the next character (so \" does not close a
+# string); a # that starts a word ends the line, and a comment after a trailing && still continues the statement.
+function feed(line,   i, c, n, bsl) {
+  n = length(line); bsl = 0
   for (i = 1; i <= n; i++) {
     c = substr(line, i, 1)
-    if (q != "") { cur_s = cur_s c; if (c == q) q = ""; continue }
+    if (q != "") {
+      if (q == "\"" && c == "\\" && i < n) { cur_s = cur_s c substr(line, i + 1, 1); i++; continue }
+      cur_s = cur_s c; if (c == q) q = ""; continue
+    }
+    if (c == "\\") { if (i == n) { bsl = 1; break } cur_s = cur_s c substr(line, i + 1, 1); i++; continue }
     if (c == "\"" || c == "\047") { q = c; cur_s = cur_s c; continue }
     if (c == "#" && (i == 1 || substr(line, i - 1, 1) ~ /[[:space:]]/) && dep == 0) break
     if (c == "$" && substr(line, i + 1, 1) == "(") { dep++; cur_s = cur_s c; continue }
@@ -205,18 +270,21 @@ function feed(line,   i, c, n, buf2, q, d) {
     }
     cur_s = cur_s c
   }
-  if (q != "") cur_s = cur_s " "; else { stmt(cur_s); cur_s = "" }
+  if (q != "") { cur_s = cur_s "\n"; return }
+  if (bsl) { cur_s = cur_s " "; return }
+  if (cur_s ~ /(&&|\|\||\|)[[:space:]]*$/) { cur_s = cur_s " "; return }
+  stmt(cur_s); cur_s = ""
 }
 {
   raw = $0
-  if (raw ~ /^[[:space:]]*#/) next
+  if (q == "" && raw ~ /^[[:space:]]*#/) next
   t = raw; gsub(/\$\{\{[^}]*\}\}/, "X", t)
   if (t ~ /pull_request/) mention = 1
+  if (raw ~ /\$\{\{[^}]*["\047]pull_request["\047][^}]*\}\}/) { mention = 1; opaque = 1 }
   if (t ~ /<<|(^|[[:space:]&|;{(])eval[[:space:]]|^[[:space:]]*function[[:space:]]/) opaque = 1
-  if (raw ~ /(\\|&&|\|)[[:space:]]*$/) { sub(/\\[[:space:]]*$/, "", raw); acc = acc raw " "; next }
-  feed(acc raw); acc = ""
+  feed(raw)
 }
-END { if (acc != "") feed(acc); if (cur_s != "") stmt(cur_s); if (mention && (opaque || bad || sp != 0 || pend != "")) hit = 1; exit !hit }
+END { if (cur_s != "") stmt(cur_s); if (mention && (opaque || bad || sp != 0 || pend != "")) hit = 1; exit !hit }
 AWK
 
 # VIOLATION 2 rows: "<file>\t<job>" for each job whose run script exits 0 on a pull_request branch.
@@ -970,6 +1038,194 @@ jobs:
           echo pull_request
           if
 "
+  # Quorum round 3 (lane 1 findings 1b-1e, lane 1 findings 2a-2e): helpers take literal text, no shell escaping.
+  tj() { local b; b="$(cat)"; t "$1" "$2" "" "$H"$'\n'"$b"$'\n'; }    # job yaml on stdin, default on: header
+  tw() { local b; b="$(cat)"; t "$1" "$2" "" "$b"$'\n'; }            # whole workflow on stdin
+  ts() { # name, expected rc; run script on stdin
+    local b; b="$(sed 's/^/          /')"
+    t "$1" "$2" "" "$H"$'\n  a:\n    runs-on: x\n    steps:\n      - run: |\n'"$b"$'\n'
+  }
+  tj "1b chained comparison on event_name fails closed (rc 2)" 2 <<'EOF'
+  a: {runs-on: x, if: "github.event_name != 'pull_request' == true", steps: []}
+EOF
+  tj "1b event_name inside a comparison with an unknown fails closed (rc 2)" 2 <<'EOF'
+  a: {runs-on: x, if: "github.event_name == 'push' == needs.x.result", steps: []}
+EOF
+  tj "1b a number containing 1 or 0 next to an unknown stays unknown, not an event result: green" 0 <<'EOF'
+  a: {runs-on: x, if: "github.run_number == 10", steps: []}
+EOF
+  tj "1e false literal on the PR disjunct is false: push-only job is RED" 1 <<'EOF'
+  a: {runs-on: x, if: "github.event_name == 'push' || (github.event_name == 'pull_request' && false)", steps: []}
+EOF
+  tj "1e true literal does not exclude the PR: green" 0 <<'EOF'
+  a: {runs-on: x, if: "github.event_name == 'push' || (github.event_name == 'pull_request' && true)", steps: []}
+EOF
+  tj "1e if: true is green" 0 <<'EOF'
+  a: {runs-on: x, if: true, steps: []}
+EOF
+  tj "1e if: false (YAML boolean) never runs on push, so nothing to cover: green" 0 <<'EOF'
+  a: {runs-on: x, if: false, steps: []}
+  b: {runs-on: x, steps: []}
+EOF
+  tj "1e && false on a push job means it never runs on push, so nothing to cover: green" 0 <<'EOF'
+  a: {runs-on: x, if: "github.event_name == 'push' && false", steps: []}
+  b: {runs-on: x, steps: []}
+EOF
+  tw "1c push branches glob without a star (mai?) reaches main: push-only job is RED" 1 <<'EOF'
+on: {push: {branches: ["mai?"]}, pull_request: {}}
+jobs:
+  a: {runs-on: x, if: "github.event_name == 'push'", steps: []}
+EOF
+  tw "1c push branches [dev] never reaches main: green" 0 <<'EOF'
+on: {push: {branches: [dev]}, pull_request: {}}
+jobs:
+  a: {runs-on: x, if: "github.event_name == 'push'", steps: []}
+  b: {runs-on: x, steps: []}
+EOF
+  tw "1c push tags plus branches-ignore (not main) still runs on a main push: RED" 1 <<'EOF'
+on: {push: {tags: ["v*"], branches-ignore: [docs]}, pull_request: {}}
+jobs:
+  a: {runs-on: x, if: "github.event_name == 'push'", steps: []}
+EOF
+  tw "1c push branches-ignore [main] never runs on main: green" 0 <<'EOF'
+on: {push: {branches-ignore: [main]}, pull_request: {}}
+jobs:
+  a: {runs-on: x, if: "github.event_name == 'push'", steps: []}
+  b: {runs-on: x, steps: []}
+EOF
+  tw "1c pull_request filtered to another base branch does not cover a push to main: RED" 1 <<'EOF'
+on: {push: {branches: [main]}, pull_request: {branches: [release]}}
+jobs:
+  a: {runs-on: x, steps: []}
+EOF
+  tw "1c pull_request branches-ignore [main] does not cover a push to main: RED" 1 <<'EOF'
+on: {push: {branches: [main]}, pull_request: {branches-ignore: [main]}}
+jobs:
+  a: {runs-on: x, steps: []}
+EOF
+  tw "1c pull_request branches [main] covers it: green" 0 <<'EOF'
+on: {push: {branches: [main]}, pull_request: {branches: [main]}}
+jobs:
+  a: {runs-on: x, steps: []}
+EOF
+  tj "1d every step skipped on a PR by a step if: the job is a no-op there: RED" 1 <<'EOF'
+  a:
+    runs-on: x
+    steps:
+      - {run: a, if: "github.event_name != 'pull_request'"}
+      - {run: b, if: "github.event_name != 'pull_request'"}
+EOF
+  tj "1d one step without an if: runs on a PR: green" 0 <<'EOF'
+  a:
+    runs-on: x
+    steps:
+      - {run: a, if: "github.event_name != 'pull_request'"}
+      - {run: b}
+EOF
+  tj "1d a step if: that can hold on a PR (always()) keeps the job on a PR: green" 0 <<'EOF'
+  a:
+    runs-on: x
+    steps:
+      - {run: a, if: "github.event_name != 'pull_request'"}
+      - {run: b, if: "always()"}
+EOF
+  tj "1d job if on a PR and a step set that does not run on a PR: RED" 1 <<'EOF'
+  a:
+    runs-on: x
+    if: "github.event_name != 'merge_group'"
+    steps:
+      - {run: a, if: "github.event_name == 'push'"}
+EOF
+  ts "2a [ other ] && [ pr ] && exit 0 is RED" 1 <<'EOF'
+[ "${PRL:-}" = success ] && [ "${EVT:-}" = pull_request ] && exit 0
+check_heavy
+EOF
+  ts "2a [ != pr ] && cmd || exit 0 passes a PR through the || arm: RED" 1 <<'EOF'
+[ "$EVT" != pull_request ] && check_heavy || exit 0
+check_heavy
+EOF
+  ts "2a [ other ] && [ != pr ] && exit 0 only exits off a PR: green" 0 <<'EOF'
+[ "${PRL:-}" = success ] && [ "${EVT:-}" != pull_request ] && exit 0
+check_heavy
+EOF
+  ts "2a cmd && [ pr ] || exit 0 exits when the test fails, which is off a PR: green" 0 <<'EOF'
+check_heavy && [ "$EVT" = pull_request ] || exit 0
+check_heavy
+EOF
+  ts "2a a && b && c chain with a [[ x && y ]] operand is not split inside the brackets: green" 0 <<'EOF'
+[[ "$A" = 1 && "$B" = 2 ]] && echo ok
+check_heavy
+EOF
+  ts "2b while [ pr ]; do exit 0; done is RED" 1 <<'EOF'
+while [ "$EVT" = pull_request ]; do exit 0; done
+check_heavy
+EOF
+  ts "2b while [ != pr ]; do exit 0 is off a PR: green" 0 <<'EOF'
+while [ "$EVT" != pull_request ]; do exit 0; done
+check_heavy
+EOF
+  ts "2b until [ != pr ]; do exit 0 runs on a PR: RED" 1 <<'EOF'
+until [ "$EVT" != pull_request ]; do exit 0; done
+check_heavy
+EOF
+  ts "2b until [ pr ]; do exit 0 is off a PR: green" 0 <<'EOF'
+until [ "$EVT" = pull_request ]; do exit 0; done
+check_heavy
+EOF
+  ts "2b while true; do ... done inside a PR branch keeps the PR state: RED" 1 <<'EOF'
+if [ "$EVT" = pull_request ]; then
+  while true; do exit 0; done
+fi
+EOF
+  ts "2c \${{ event_name == 'pull_request' }} spliced into a test is RED (opaque)" 1 <<'EOF'
+if [ "${{ github.event_name == 'pull_request' }}" = true ]; then exit 0; fi
+check_heavy
+EOF
+  ts "2c \${{ github.event.pull_request.number }} alone is not a PR test: green" 0 <<'EOF'
+bash free.sh "${{ github.event.pull_request.number || github.ref_name }}"
+check_heavy
+EOF
+  ts "2d exit 00 on a PR is RED" 1 <<'EOF'
+if [ "$EVT" = pull_request ]; then exit 00; fi
+check_heavy
+EOF
+  ts "2d exit 0 >/dev/null on a PR is RED" 1 <<'EOF'
+if [ "$EVT" = pull_request ]; then exit 0 >/dev/null; fi
+check_heavy
+EOF
+  ts "2d exit 0 2>&1 on a PR is RED" 1 <<'EOF'
+[ "$EVT" = pull_request ] && exit 0 2>&1
+check_heavy
+EOF
+  ts "2d exit 10 and exit 1 on a PR are failures: green" 0 <<'EOF'
+if [ "$EVT" = pull_request ]; then exit 10; fi
+if [ "$EVT" = pull_request ]; then exit 1; fi
+check_heavy
+EOF
+  ts "2d a word starting with exit (exit_code=0) is not an exit: green" 0 <<'EOF'
+if [ "$EVT" = pull_request ]; then exit_code=0; fi
+check_heavy
+EOF
+  ts "2e inline comment after a trailing && still continues to exit 0: RED" 1 <<'EOF'
+[ "$EVT" = pull_request ] && # skip on PR
+  exit 0
+check_heavy
+EOF
+  ts "2e escaped quote inside a string does not hide the next test: RED" 1 <<'EOF'
+echo "x\""; [ "$EVT" = pull_request ] && exit 0
+check_heavy
+EOF
+  ts "2e a quote that spans lines keeps the following test readable: RED" 1 <<'EOF'
+echo "a
+b"; [ "$EVT" = pull_request ] && exit 0
+check_heavy
+EOF
+  ts "2e pull_request && exit 0 text inside a multi-line quote is data, not code: green" 0 <<'EOF'
+echo "on pull_request
+[ x = pull_request ] && exit 0
+done"
+check_heavy
+EOF
   ei() { # name, expected rc, eval_if input: calls eval_if directly (--eval-if)
     local o; o="$(bash "$0" --eval-if "$3" 2>/dev/null)"; local rc=$?
     [ "$rc" = "$2" ] && echo "ok   $1" || { echo "FAIL $1 (rc $rc, want $2, out $o)"; fails=1; }
