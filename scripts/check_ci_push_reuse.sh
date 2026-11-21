@@ -523,7 +523,30 @@ want "Z15 ci.yml passes $NOWARG to ci_push_reuse_facts.sh" 1 "$(grep -cF "ci_pus
 sed 's| --now "$(date +%s)"||' "$CI" > "$T/znow.yml"
 want "Z16 mutant: ci.yml without --now is caught" 0 "$(grep -cF "ci_push_reuse_facts.sh --repo \"\$REPO\" --sha \"\$GITHUB_SHA\" --before \"\$PBEFORE\" --ref \"\$GITHUB_REF\" --event \"\$EVT\" $NOWARG" "$T/znow.yml")"
 RC=0; bash "$FACTS" --repo a/b --sha 0000000000000000000000000000000000000000 --before 0 --ref r --event push > /dev/null 2>&1 || RC=$?
-want "Z17 the facts reader without --now refuses (exit 1)" 1 "$RC"
+ERR=$(bash "$FACTS" --repo a/b --sha 0000000000000000000000000000000000000000 --before 0 --ref r --event push 2>&1 >/dev/null); RC=$?
+case "$ERR" in *"--now (epoch seconds"*) NOWMSG=named ;; *) NOWMSG="other: $ERR" ;; esac
+want "Z17 the facts reader without --now refuses (exit 1) BECAUSE of --now, not a later check (deleting the --now line turns this red)" "1:named" "$RC:$NOWMSG"
+
+# Y40-Y45 (#7314 lane 2): the stamp / section uniqueness rules RUN on logs with two lines (the one-line fixtures cannot see a relaxed count).
+STAMP_LINE=$(grep -E '^[0-9TZ:.-]+ PUSH-REUSE-STAMP tested_sha=' "$FX/stamp-job-with-stamp.fixture" | tr -d '\r')
+UNAV_LINE=$(grep -E '^[0-9TZ:.-]+ PUSH-REUSE-STAMP unavailable' "$FX/stamp-job-unavailable.fixture" | tr -d '\r')
+printf '%s\n%s\n' "$STAMP_LINE" "$STAMP_LINE" > "$T/two-stamps.log"
+printf '%s\n%s\n%s\n' "$STAMP_LINE" "$STAMP_LINE" "$STAMP_LINE" > "$T/three-stamps.log"
+printf '%s\n%s\n' "$STAMP_LINE" "$UNAV_LINE" > "$T/stamp-and-unavailable.log"
+printf '%s\n' "$STAMP_LINE" > "$T/one-stamp.log"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/one-stamp.log" 2>&1); RC=$?
+want "Y40 control: a log with exactly one stamp line parses (exit 0, one JSON object)" "0:1" "$RC:$(grep -c '"tree"' <<< "$OUT")"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/two-stamps.log" 2>&1); RC=$?
+want "Y41 two stamp lines are a refusal (exit 1, named, no JSON) - a count relaxed to -le 2 turns this red" "1:named:0" "$RC:$(case "$OUT" in *"has 2 stamp lines"*) echo named;; *) echo "other";; esac):$(grep -c '"tree"' <<< "$OUT")"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/three-stamps.log" 2>&1); RC=$?
+want "Y42 three stamp lines are a refusal too" "1" "$RC"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/stamp-and-unavailable.log" 2>&1); RC=$?
+want "Y43 a stamp AND an emitted unavailable line is a refusal (exit 1, named, no JSON)" "1:named:0" "$RC:$(case "$OUT" in *"a stamp and an unavailable line"*) echo named;; *) echo "other";; esac):$(grep -c '"tree"' <<< "$OUT")"
+SEC_LINE=$(grep -E '^[0-9TZ:.-]+ section sov\.test: ' "$FX/x86-main-push-sections.fixture" | tr -d '\r')
+printf '%s\n%s\n' "$SEC_LINE" "$SEC_LINE" > "$T/two-sections.log"
+want "Y44 a section line that appears twice reads null, never a result (exactly-one rule)" null "$(bash "$FACTS" --parse-section-log "$T/two-sections.log" sov.test)"
+printf '%s\n' "$SEC_LINE" > "$T/one-section.log"
+want "Y45 control: the same section line once reads its result" '"success"' "$(bash "$FACTS" --parse-section-log "$T/one-section.log" sov.test)"
 
 if [ "$fails" -eq 0 ]; then
   echo "check_ci_push_reuse: OK - a push reuses only a merge-queue success on its own sha, or the PR's own green run when scripts/ci_push_reuse.sh C1-C6 hold (workspace-test, x86-main, determinism: only a real run); every doubt runs the jobs"

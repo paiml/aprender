@@ -79,6 +79,13 @@ self_test() {
     mutant ci-gate-no-draft-flag '/^  ci-gate:/,/^  gate:/{/DRAFT: \$/d}'
     mutant sigma-step-runs-on-draft '/Σ-executed/{n;d}'
     mutant third-state 's/^  gate:$/  gate:\n    continue-on-error: true/'
+    # one mutant per verdict job and per condition (#7314 lane 2: dropping workspace-test from the verdict loop survived, only gate and ci-gate were mutated)
+    mutant workspace-test-no-draft-flag '/^  workspace-test:/,/^  [A-Za-z0-9_-]+:/{/DRAFT: \$/d}'
+    mutant workspace-test-no-draft-exit '/^  workspace-test:/,/^  [A-Za-z0-9_-]+:/{/echo "draft PR: the shards/d}'
+    mutant ci-gate-no-draft-exit '/echo "ci \/ gate: draft PR/d'
+    mutant gate-no-draft-flag '/^  gate:/,/^  [A-Za-z0-9_-]+:/{/DRAFT: \$/d}'
+    mutant workspace-test-third-state 's/^  workspace-test:$/  workspace-test:\n    continue-on-error: true/'
+    mutant ci-gate-third-state 's/^  ci-gate:$/  ci-gate:\n    continue-on-error: true/'
     return "$fails"
 }
 
