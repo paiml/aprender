@@ -121,7 +121,7 @@ pub fn load_qwen35_layers(model: &GGUFModel, data: &[u8]) -> Result<Vec<Qwen35La
     // is not 0), a non-integer value is refused, and nextn >= block_count (no decoder layer
     // left) is refused rather than loading an empty stack.
     let nextn = nextn_predict_layers(model)?;
-    if nextn >= num_layers {
+    if nextn > 0 && nextn >= num_layers {
         return Err(crate::error::RealizarError::InvalidShape {
             reason: format!(
                 "Qwen3.5 loader: nextn_predict_layers {nextn} >= block_count {num_layers}; \
