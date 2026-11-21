@@ -50,10 +50,19 @@ fn oversized_checkpoint_refusal_names_size_and_missing_forward() {
     ] {
         let reason = known_checkpoint_refusal(spelling)
             .unwrap_or_else(|| panic!("{spelling} must be refused up front"));
-        assert!(reason.contains("Qwen3.8-2.4T-A95B"), "names the model: {reason}");
+        assert!(
+            reason.contains("Qwen3.8-2.4T-A95B"),
+            "names the model: {reason}"
+        );
         assert!(reason.contains("TB"), "names the size: {reason}");
-        assert!(reason.contains("qwen3_5_moe_text"), "names the arch: {reason}");
-        assert!(reason.contains("no CUDA forward"), "names the missing forward: {reason}");
+        assert!(
+            reason.contains("qwen3_5_moe_text"),
+            "names the arch: {reason}"
+        );
+        assert!(
+            reason.contains("no CUDA forward"),
+            "names the missing forward: {reason}"
+        );
         assert!(reason.contains("#7331"), "names the ticket: {reason}");
         assert!(
             reason.contains("nothing was downloaded"),
@@ -101,17 +110,44 @@ fn other_checkpoints_are_not_refused_by_the_oversized_table() {
 #[test]
 fn checkpoint_repo_id_canonicalises_every_url_form() {
     for (source, want) in [
-        ("https://huggingface.co:443/Qwen/Qwen3.8-2.4T-A95B/resolve/main/x", Some("Qwen/Qwen3.8-2.4T-A95B")),
-        ("https://huggingface.co./Qwen/Qwen3.8-2.4T-A95B", Some("Qwen/Qwen3.8-2.4T-A95B")),
-        ("https://user@huggingface.co/Qwen/Qwen3.8-2.4T-A95B", Some("Qwen/Qwen3.8-2.4T-A95B")),
-        ("hf://Qwen/Qwen3.8-2.4T-A95B:Q4_K_M", Some("Qwen/Qwen3.8-2.4T-A95B")),
-        ("https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B.git", Some("Qwen/Qwen3.8-2.4T-A95B")),
-        ("hf://Qwen%2FQwen3.8-2.4T-A95B", Some("Qwen/Qwen3.8-2.4T-A95B")),
-        ("hf://Qwen/Qwen3.8-2.4T-A95B@v1:Q4.git", Some("Qwen/Qwen3.8-2.4T-A95B")),
+        (
+            "https://huggingface.co:443/Qwen/Qwen3.8-2.4T-A95B/resolve/main/x",
+            Some("Qwen/Qwen3.8-2.4T-A95B"),
+        ),
+        (
+            "https://huggingface.co./Qwen/Qwen3.8-2.4T-A95B",
+            Some("Qwen/Qwen3.8-2.4T-A95B"),
+        ),
+        (
+            "https://user@huggingface.co/Qwen/Qwen3.8-2.4T-A95B",
+            Some("Qwen/Qwen3.8-2.4T-A95B"),
+        ),
+        (
+            "hf://Qwen/Qwen3.8-2.4T-A95B:Q4_K_M",
+            Some("Qwen/Qwen3.8-2.4T-A95B"),
+        ),
+        (
+            "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B.git",
+            Some("Qwen/Qwen3.8-2.4T-A95B"),
+        ),
+        (
+            "hf://Qwen%2FQwen3.8-2.4T-A95B",
+            Some("Qwen/Qwen3.8-2.4T-A95B"),
+        ),
+        (
+            "hf://Qwen/Qwen3.8-2.4T-A95B@v1:Q4.git",
+            Some("Qwen/Qwen3.8-2.4T-A95B"),
+        ),
         ("Qwen/Qwen3-0.6B", Some("Qwen/Qwen3-0.6B")),
-        ("https://hf.co/api/models/Qwen/Qwen3-0.6B?x=1", Some("Qwen/Qwen3-0.6B")),
+        (
+            "https://hf.co/api/models/Qwen/Qwen3-0.6B?x=1",
+            Some("Qwen/Qwen3-0.6B"),
+        ),
         ("https://example.com/Qwen/Qwen3.8-2.4T-A95B", None),
-        ("https://huggingface.co.evil.example/Qwen/Qwen3.8-2.4T-A95B", None),
+        (
+            "https://huggingface.co.evil.example/Qwen/Qwen3.8-2.4T-A95B",
+            None,
+        ),
         ("s3://Qwen/Qwen3.8-2.4T-A95B", None),
         ("hf://Qwen/.git", None),
         ("hf://Qwen", None),
@@ -156,7 +192,6 @@ fn oversized_refusal_text_is_exact_on_the_default_path() {
     assert_eq!(real.matches("nothing was loaded").count(), 1, "{real}");
     assert!(!real.contains("--gpu") && !real.contains("CPU"), "{real}");
 }
-
 
 /// Every path under `dir`, sorted, or `None` when it does not exist. Lane 2 finding 5
 /// (round 3): the old `existed_before || !cache.exists()` passed for any refusal order
@@ -224,13 +259,26 @@ fn apr_run_refuses_before_download_or_allocation() {
         false,
         None,
         0,
-        ConstraintArgs { json_schema: None, grammar: None },
+        ConstraintArgs {
+            json_schema: None,
+            grammar: None,
+        },
     )
     .expect_err("the 2.4T checkpoint must be refused");
-    assert!(start.elapsed() < std::time::Duration::from_secs(5), "refusal is instant");
-    assert_eq!(err.exit_code_value(), 12, "NotImplemented: this build cannot do that");
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(5),
+        "refusal is instant"
+    );
+    assert_eq!(
+        err.exit_code_value(),
+        12,
+        "NotImplemented: this build cannot do that"
+    );
     let text = err.to_string();
-    assert!(text.contains("Qwen3.8-2.4T-A95B") && text.contains("TB"), "{text}");
+    assert!(
+        text.contains("Qwen3.8-2.4T-A95B") && text.contains("TB"),
+        "{text}"
+    );
     assert_eq!(
         cache_listing(&cache),
         before,
@@ -256,7 +304,10 @@ fn apr_run_batch_refuses_before_download_or_allocation() {
         40,
         true,
         false,
-        &ConstraintArgs { json_schema: None, grammar: None },
+        &ConstraintArgs {
+            json_schema: None,
+            grammar: None,
+        },
     )
     .expect_err("the 2.4T checkpoint must be refused on the batch path");
     assert_eq!(err.exit_code_value(), 12, "{err}");
