@@ -111,6 +111,12 @@ function atom(a,   lit, eq, la) {
     if (a ~ /!=/) return eq ? "F" : "T"
     return eq ? "T" : "F"
   }
+  # Any other use of github.event.pull_request that is not a plain field access (`.draft`, `.head.repo...`) is unjudgeable, not "may run":
+  # a bare `!github.event.pull_request`, `github.event[\047pull_request\047] == null`, `null == github.event.pull_request`, or a field
+  # compared to null / the empty string is push-only (null on push, an object on a PR) in a spelling the exact form above does not match.
+  if (la ~ /github\.event *\[/ || la ~ /github\.event\.pull_request([^.a-z_0-9]|$)/ || (la ~ /github\.event\.pull_request\./ && la ~ /(==|!=) *(null|\047\047)|(null|\047\047) *(==|!=)/)) {
+    err = "github.event.pull_request used in a form the check does not understand (only == null, != null and plain field reads are judged): " a; return "U"
+  }
   if (la == "true") return "T"   # GitHub reads TRUE/True/true alike
   if (la == "false") return "F"
   if (la ~ /^(-?0|-?0\.0+|-?0x0+|-?0e[+-]?0+|nan|\047\047|null)$/) return "F"   # the falsy literals: 0, -0, 0.0, empty string, null
@@ -801,6 +807,33 @@ jobs:
 "
   tf "github.event.pull_request != null is green (an object on a PR)" 0 ci.yml "$H
   a: {runs-on: x, if: \"github.event.pull_request != null || github.event_name == 'push'\", steps: []}
+"
+  tf "github.event['pull_request'] == null (bracket form of the push-only test) is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event['pull_request'] == null\", steps: []}
+"
+  tf "!github.event.pull_request (negated bare object) is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"!github.event.pull_request\", steps: []}
+"
+  tf "null == github.event.pull_request (reversed operands) is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"null == github.event.pull_request\", steps: []}
+"
+  tf "github.event.pull_request == '' (empty string compare) is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event.pull_request == ''\", steps: []}
+"
+  tf "github.event.pull_request.number == null (a field null on push) is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event.pull_request.number == null\", steps: []}
+"
+  tf "github.event.pull_request.number == '' (a field empty on push) is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event.pull_request.number == ''\", steps: []}
+"
+  tf "github.event[dq pull_request dq] (double-quoted bracket) is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event[\\\"pull_request\\\"]\", steps: []}
+"
+  tf "a push-only term inside a wrapped expression is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"\${{ !github.event.pull_request && vars.X == 'y' }}\", steps: []}
+"
+  tf "github.event.pull_request.draft read as a plain field stays green" 0 ci.yml "$H
+  a: {runs-on: x, if: \"!github.event.pull_request.draft\", steps: []}
 "
   # symlinked workflow files are scanned (find -type f skipped them)
   rm -f "${w:?}"/*; : > "$d/ex"

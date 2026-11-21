@@ -548,6 +548,43 @@ want "Y44 a section line that appears twice reads null, never a result (exactly-
 printf '%s\n' "$SEC_LINE" > "$T/one-section.log"
 want "Y45 control: the same section line once reads its result" '"success"' "$(bash "$FACTS" --parse-section-log "$T/one-section.log" sov.test)"
 
+# Y46-Y60 (#7314 lane 1): the --now and sha validators, and the ^TS / trailing $ anchors and the BOM strip of the log readers.
+# Every row is one input class a weakened regex would let through; the message must name the check that refused it.
+for nv in abc -1 1e6 1000foo 10.5 '' ' 5' '5 ' '0x10'; do
+  ERR=$(bash "$FACTS" --repo a/b --sha 0000000000000000000000000000000000000000 --before 0 --ref r --event push --now "$nv" 2>&1 >/dev/null); RC=$?
+  case "$ERR" in *"--now (epoch seconds"*) NOWMSG=named ;; *) NOWMSG="other: $ERR" ;; esac
+  want "Y46 --now '$nv' is refused BECAUSE it is not epoch seconds (a weakened ^[0-9]+\$ regex lets it reach a later check)" "1:named" "$RC:$NOWMSG"
+done
+for sv in xyz abcdef0 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 000000000000000000000000000000000000000g 00000000000000000000000000000000000000000; do
+  ERR=$(bash "$FACTS" --repo a/b --sha "$sv" --before 0 --ref r --event push --now 1000 2>&1 >/dev/null); RC=$?
+  case "$ERR" in *"sha is not 40-hex"*) SHAMSG=named ;; *) SHAMSG="other: $ERR" ;; esac
+  want "Y47 --sha '$sv' is refused BECAUSE it is not 40 lowercase hex" "1:named" "$RC:$SHAMSG"
+done
+printf 'junk %s\n' "$STAMP_LINE" > "$T/prefixed-stamp.log"
+want "Y48 a stamp line with text BEFORE the timestamp reads null (the ^ anchor)" null "$(bash "$FACTS" --parse-stamp-log "$T/prefixed-stamp.log" 2>&1)"
+printf '%s extra\n' "$STAMP_LINE" > "$T/suffixed-stamp.log"
+want "Y49 a stamp line with text AFTER the head sha reads null (the trailing \$ anchor)" null "$(bash "$FACTS" --parse-stamp-log "$T/suffixed-stamp.log" 2>&1)"
+printf '%s\n%s\n' "$STAMP_LINE" "junk $STAMP_LINE" > "$T/stamp-and-prefixed.log"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/stamp-and-prefixed.log" 2>&1); RC=$?
+want "Y50 one real stamp plus a junk-prefixed echo of it is ONE stamp (exit 0, one JSON object)" "0:1" "$RC:$(grep -c '"tree"' <<< "$OUT")"
+printf '%s\n%s\n' "$STAMP_LINE" "  $UNAV_LINE" > "$T/stamp-and-indented-unav.log"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/stamp-and-indented-unav.log" 2>&1); RC=$?
+want "Y51 an indented echo of the unavailable line is not an emitted one (the ^ anchor on the unavailable count)" "0:1" "$RC:$(grep -c '"tree"' <<< "$OUT")"
+printf '\xEF\xBB\xBF%s\n' "$STAMP_LINE" > "$T/bom-stamp.log"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/bom-stamp.log" 2>&1); RC=$?
+want "Y52 a stamp line behind a byte-order mark still reads (the BOM strip)" "0:1" "$RC:$(grep -c '"tree"' <<< "$OUT")"
+printf '%s\r\n' "$STAMP_LINE" > "$T/crlf-stamp.log"
+OUT=$(bash "$FACTS" --parse-stamp-log "$T/crlf-stamp.log" 2>&1); RC=$?
+want "Y53 a CRLF stamp line still reads (the CR strip)" "0:1" "$RC:$(grep -c '"tree"' <<< "$OUT")"
+printf 'junk %s\n' "$SEC_LINE" > "$T/prefixed-section.log"
+want "Y54 a section line with text BEFORE the timestamp reads null (the ^ anchor)" null "$(bash "$FACTS" --parse-section-log "$T/prefixed-section.log" sov.test)"
+printf '%s x\n' "$SEC_LINE" > "$T/suffixed-section.log"
+want "Y55 a section line with text AFTER the seconds reads null (the trailing \$ anchor)" null "$(bash "$FACTS" --parse-section-log "$T/suffixed-section.log" sov.test)"
+printf '%s\n%s\n' "$SEC_LINE" "junk $SEC_LINE" > "$T/section-and-prefixed.log"
+want "Y56 one real section line plus a junk-prefixed echo is exactly ONE line (reads its result)" '"success"' "$(bash "$FACTS" --parse-section-log "$T/section-and-prefixed.log" sov.test)"
+printf '\xEF\xBB\xBF%s\n' "$SEC_LINE" > "$T/bom-section.log"
+want "Y57 a section line behind a byte-order mark still reads (the BOM strip)" '"success"' "$(bash "$FACTS" --parse-section-log "$T/bom-section.log" sov.test)"
+
 if [ "$fails" -eq 0 ]; then
   echo "check_ci_push_reuse: OK - a push reuses only a merge-queue success on its own sha, or the PR's own green run when scripts/ci_push_reuse.sh C1-C6 hold (workspace-test, x86-main, determinism: only a real run); every doubt runs the jobs"
   exit 0

@@ -104,7 +104,22 @@ check() {   # check <ci.yml>: rc 0 when W1-W5 hold
     done
     [ "$has_fg" = 1 ] ||   # m:nofork
         { printf 'FAIL  W10 the determinism job lacks the same-repo fork guard (a fork PR would queue a self-hosted job)\n'; bad=1; }
-    ! grep -q -i -E "event_name|\|\||\[" <<<"$rest" ||   # m:nopr
+    # What is left is split on `&&` and every conjunct must be one of the three the job is meant to carry; any other conjunct
+    # (`!github.event.pull_request`, `github.event.pull_request == null`, `github.ref == ..`, an `||`, a bracket, an event_name) can turn the job
+    # off on a pull_request head without naming the event, so an allow-list, not a deny-list.
+    needs_re="^needs\.[a-z0-9_-]+\.outputs\.[a-z0-9_]+ != '[01]'\$"
+    rest_ok=1; rest_body="${rest#*if:}"; rest_body="${rest_body//\$\{\{/}"; rest_body="${rest_body//\}\}/}"
+    while IFS= read -r conj; do
+        conj="${conj#"${conj%%[![:space:]]*}"}"; conj="${conj%"${conj##*[![:space:]]}"}"
+        [ -n "$conj" ] || continue   # the cut fork guard leaves an empty slot between two &&
+        shopt -s nocasematch
+        case "$conj" in
+            '!cancelled()'|"github.event.pull_request.draft != true") ;;
+            *) [[ "$conj" =~ $needs_re ]] || rest_ok=0 ;;
+        esac
+        shopt -u nocasematch
+    done < <(printf '%s\n' "${rest_body//&&/$'\n'}")
+    [ "$rest_ok" = 1 ] ||   # m:nopr
         { printf 'FAIL  W10 the determinism job is event-guarded off a pull_request head, or its if: has an || / [..] clause outside the fork guard (it must run on a PR as on a push to main)\n'; bad=1; }
     # W10c a draft owes no heavy job (x86-main and the shards carry the same clause): determinism must skip a draft.
     grep -q -F "github.event.pull_request.draft != true" <<<"$(printf '%s\n' "$j" | grep -E '^    if:')" ||   # m:nodraft
@@ -181,6 +196,8 @@ selftest() {
     check "$d/w2.yml" > /dev/null 2>&1; row W2 RED $? "no if: (default success()) skips the job when x86-main fails"
     plant "$d/w2b.yml" 's/^    if: \$\{\{ !cancelled\(\) (&& needs\.mg-reuse\.outputs\.det != .1. .*)\}\}$/    if: ${{ success() \1}}/'
     check "$d/w2b.yml" > /dev/null 2>&1; row W2b RED $? "if: success() skips the job when x86-main fails"
+    plant "$d/w2c.yml" 's/^(    if: \$\{\{ )!cancelled\(\) \&\& (.*)$/\1\2/'
+    check "$d/w2c.yml" > /dev/null 2>&1; row W2c RED $? "the !cancelled() conjunct dropped with the fork guard and draft clause intact (only W2 can see it)"
     plant "$d/w3.yml" '/^      FAT_ARTIFACT_WAIT_S: "0"$/d'
     check "$d/w3.yml" > /dev/null 2>&1; row W3 RED $? "no FAT_ARTIFACT_WAIT_S: the driver waits its 3600 s default"
     plant "$d/w3b.yml" 's/^      FAT_ARTIFACT_WAIT_S: "0"$/      FAT_ARTIFACT_WAIT_S: "600"/'
@@ -200,6 +217,18 @@ selftest() {
     check "$d/x7b.yml" > /dev/null 2>&1; row X7b RED $? "the fork guard replaced by github.event_name == 'push' (determinism stops running on a PR head)"
     plant "$d/x8.yml" "s/^(    if: .*) \\}\\}\$/\\1 || true }}/"
     check "$d/x8.yml" > /dev/null 2>&1; row X8 RED $? "an if: that ends in || true (the job runs on everything, drafts and forks included)"
+    plant "$d/x8b.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& !github.event.pull_request }}/"
+    check "$d/x8b.yml" > /dev/null 2>&1; row X8b RED $? "an if: that gains && !github.event.pull_request (off on every PR head without naming the event)"
+    plant "$d/x8c.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& github.event.pull_request == null }}/"
+    check "$d/x8c.yml" > /dev/null 2>&1; row X8c RED $? "an if: that gains && github.event.pull_request == null (push only)"
+    plant "$d/x8d.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& github.ref == 'refs\/heads\/main' }}/"
+    check "$d/x8d.yml" > /dev/null 2>&1; row X8d RED $? "an if: that gains && github.ref == main (push only)"
+    plant "$d/x8e.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& github.event['pull_request'] == null }}/"
+    check "$d/x8e.yml" > /dev/null 2>&1; row X8e RED $? "an if: that gains the bracket form of the push-only test"
+    plant "$d/x8f.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& null == github.event.pull_request }}/"
+    check "$d/x8f.yml" > /dev/null 2>&1; row X8f RED $? "an if: that gains the reversed null test"
+    plant "$d/x8g.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& vars.ANYTHING == 'y' }}/"
+    check "$d/x8g.yml" > /dev/null 2>&1; row X8g RED $? "an if: that gains an unknown conjunct (allow-list, not deny-list)"
     plant "$d/x9.yml" "s/\\(github\\.event_name != 'pull_request' \\|\\| github\\.event\\.pull_request\\.head\\.repo\\.full_name == github\\.repository\\)/(github.event_name != 'pull_request' || github.repository == github.event.pull_request.head.repo.full_name)/"
     check "$d/x9.yml" > /dev/null 2>&1; row X9 GREEN $? "the fork guard with its equality operands swapped is the same guard (control: the check is not a literal match)"
     plant_file "$CI" "$d/x3.yml" '/^  gate:$/,/^    steps:$/!{s/^( +)(r=\$\(res "\$\{!job\}" "\$sec"\))$/\1[ "$job:$EVT" = "DET:pull_request" ] \&\& continue\n\1\2/}'

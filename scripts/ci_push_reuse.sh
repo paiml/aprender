@@ -204,6 +204,17 @@ self_test() {
   row "PR number large" yes "" '.pr.number = 123456'
   row "five shards expected, five present" yes "" '.expect_shards=5 | .run.jobs |= map(if .name|startswith("workspace-test-shard") then .name |= sub(", 4\\)"; ", 5)") else . end) | addj("workspace-test-shard (5, 5)";"success")'
 
+  # ---- #7314 lane 1: the helper predicates (isint, sha) and the shard floor, one row per input class
+  row "H1 now a fraction is not an epoch" no C6-fresh '.now = 1003600.5'
+  row "H2 now negative is not an epoch" no C6-fresh '.now = -1'
+  row "H3 created_epoch negative" no C6-fresh '.run.created_epoch = -2'
+  row "H4 created_epoch a fraction" no C6-fresh '.run.created_epoch = 1000000.5'
+  row "H3b run id and newest_id both -1" no C4-run-identity '.run.id = -1 | .run.newest_id = -1'
+  row "H5 expect_shards zero with no shard jobs" no C4-shards '.expect_shards = 0 | .run.jobs |= map(select(.name | startswith("workspace-test-shard") | not)) | .run.jobs_total = (.run.jobs | length)'
+  row "H6 expect_shards a fraction" no C4-shards '.expect_shards = 4.5'
+  row "H7 head sha 7-hex abbreviation" no C2-head-sha '.pr.head_sha = "abcdef0"'
+  row "H8 head sha 40 uppercase hex" no C2-head-sha '.pr.head_sha = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"'
+
   # ---- C1
   row "C1 event pull_request" no C1-event '.event="pull_request"'
   row "C1 event workflow_dispatch" no C1-event '.event="workflow_dispatch"'

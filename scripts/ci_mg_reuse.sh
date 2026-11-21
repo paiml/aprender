@@ -430,6 +430,8 @@ self_test() {
   sed "s|^determinism\tsuccess\$|determinism\tfailure|" <<< "$GREEN_JOBS" | { cat; sh4 1 2 3 4; ran success; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-x86fail"
   { cat <<< "$GREEN_JOBS"; sh4 1 3 4; printf 'workspace-test-shard (2, 4)\tfailure\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-shard-failed"
   { cat <<< "$GREEN_JOBS"; sh4 1 2 3; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-partial"
+  # #7314 lane 1: MORE shard names than the matrix total (5 of 4); a relaxed equality (-ge) would read it as complete. ran success, so only the count can refuse it.
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; printf 'workspace-test-shard (5, 4)\tsuccess\n'; ran success; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-extra-shard"
   { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; printf 'workspace-test-shard (5, 12)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-mixed-m"
   run_obj 1001 "$H" completed | jq '.run_attempt = ""' | runs_json 0 > "$F/runs.no-attempt"
   { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard\tskipped\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-draft"
@@ -449,6 +451,7 @@ self_test() {
   wd greenverdict-zero-shards   0 "$M" "$B" "$H" runs.ok jobs.ok
   wd one-shard-failed-runs      0 "$M" "$B" "$H" runs.ok jobs.wt-shard-failed
   wd partial-shards-runs        0 "$M" "$B" "$H" runs.ok jobs.wt-partial
+  wd extra-shard-over-total-runs 0 "$M" "$B" "$H" runs.ok jobs.wt-extra-shard
   wd mixed-shard-totals-runs    0 "$M" "$B" "$H" runs.ok jobs.wt-mixed-m
   wd empty-attempt-no-cite-runs 0 "$M" "$B" "$H" runs.no-attempt jobs.wt-ok
   wd changed-tree-runs          0 "$M_TREE" "$B" "$H" runs.ok jobs.wt-ok
