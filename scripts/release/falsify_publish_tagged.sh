@@ -13,18 +13,13 @@ if [ "${1:-}" = --mutants ]; then
     PUB_TAGGED_SRC="$M/m.sh" bash "$0" > /dev/null 2>&1 && { echo "MUTANT $1 SURVIVED"; miss=$((miss+1)); }; }
   mut dirty-tree-allowed 's/^  \[ -z "\$(git status --porcelain 2>\/dev\/null)" \] || die.*$/  :/'
   mut tag-fetch-forced 's|"refs/tags/\$T:refs/tags/\$T" \|\| die|"+refs/tags/$T:refs/tags/$T" \|\| die|'
-  mut bundle-of-any-commit 's|^  B="models-crux/\$SHA"$|  B="models-crux/$(git ls-tree --name-only "$REMOTE/$EVBR:models-crux" \| grep -v keep \| head -n 1)"|'
-  mut checksum-unchecked 's/^  (cd "\$C" \&\& sha256sum .*$/  :/'
-  mut uncovered-file-allowed 's/^    grep -q -F -x -e "\$f" <(sed.*$/    :/'
-  mut verdict-commit-unread 's/^  for want in "commit=\$SHA" /  for want in /'
-  mut verdict-version-unread 's/ "version=\$V" / /'
-  mut verdict-state-unread 's/ "state=green"; do$/; do/'
-  mut verdict-substring 's/^    grep -q -F -x -e "\$want" "\$C\/verdict"/    grep -q -F -e "$want" "$C\/verdict"/'
+  mut crux-wait-skipped 's/^  \$CRUX_WAIT .*$/  :/'
+  mut wait-tries-zeroed 's/^  WAIT_TRIES="\${PUB_TAGGED_WAIT_TRIES:-30}"$/  WAIT_TRIES=0/'
   mut no-checkout 's/^  git checkout -q --detach "\$SHA" || die.*$/  :/'
-  mut cert-unchecked 's/^  \[ -s "evidence\/crux\/\$V\/prompt-certification.json" \] || die.*$/  :/'
+  mut cert-unchecked 's/^  \[ -s "evidence\/crux\/\$V\/prompt-certification\.json" \] || die.*$/  :/'
   mut dry-run-ignored 's/^  if \[ "\$DRY" = 1 \]; then$/  if false; then/'
   mut crux-dir-not-handed 's/^  export MODEL_LADDER_CRUX_DIR="\$C" /  export /'
-  mut cert-not-handed 's/ CRUX_CERT="\$PWD\/evidence\/crux\/\$V\/prompt-certification.json"$//'
+  mut cert-not-handed 's/ CRUX_CERT="\$PWD\/evidence\/crux\/\$V\/prompt-certification\.json"$//'
   mut publish-red-swallowed 's/^  \$PUBLISH || die.*$/  $PUBLISH || :/'
   mut publish-skipped 's/^  \$PUBLISH || die.*$/  :/'
   mut scratch-left-behind "s/^  trap 'rm -rf -- .*$/  :/"
@@ -83,12 +78,49 @@ row() { # name want_rc want_out_regex want_calls(0|1) dry
 exit ${PUBRC:-0}
 STUB
   chmod +x "$r/publish"
-  ( cd "$r/clone" && PUB_TAGGED_PUBLISH="$r/publish" PUB_TAGGED_TMP="$r/tmp" bash "$SRC" "${VERARG-$FXV}" "$dry" ) > "$r/out" 2>&1; rc=$?
+  mkdir -p "$r/bin"
+  if [ -n "${DELAYED:-}" ]; then
+    G clone -q -b nightly-evidence "$r/origin.git" "$r/prod" >> "$r/seed.log" 2>&1 || { echo "FAIL $name: producer clone failed"; fails=$((fails+1)); return; }
+    printf '%s\n%s\n%s\n%s\n%s\n' "$r" "$tagsha" "$FXV" "${DELAYED_AT:-1}" "${DELAYED_STATE:-green}" > "$r/sleep.env"
+    cat > "$r/bin/sleep" <<'SLEEPSTUB'
+#!/usr/bin/env bash
+{ read -r r; read -r sha; read -r fxv; read -r at; read -r st; } < "${0%/*}/../sleep.env"
+[ -e "$r/pushed" ] && exit 0
+cur=$(cat "$r/polls" 2>/dev/null) || cur=0
+if [ "$cur" -ge "$at" ]; then
+  : > "$r/pushed"
+  (
+    # bashrs disable-line=SEC010
+    cd "$r/prod" || exit 1
+    # bashrs disable-line=SEC010
+    mkdir -p "models-crux/$sha"
+    echo '{"host":"lambda"}' > "models-crux/$sha/lambda-gpu.json"
+    echo '{"host":"gx10"}' > "models-crux/$sha/gx10-gpu.json"
+    printf 'commit=%s\nsha9=%s\nversion=%s\nmeasure=crux\nt1_rc=0\nstate=%s\n' "$sha" "${sha:0:9}" "$fxv" "$st" > "models-crux/$sha/verdict"
+    # bashrs disable-line=SEC010
+    (cd "models-crux/$sha" && sha256sum gx10-gpu.json lambda-gpu.json verdict > SHA256SUMS)
+    git -c user.name=t -c user.email=t@example.invalid add -A && git -c user.name=t -c user.email=t@example.invalid commit -q -m delayed && git push -q origin nightly-evidence
+  ) >> "$r/seed.log" 2>&1
+else
+  echo "$(( cur + 1 ))" > "$r/polls"
+fi
+exit 0
+SLEEPSTUB
+    chmod +x "$r/bin/sleep"
+    echo 1 > "$r/polls"
+  fi
+  ( cd "$r/clone" && PATH="$r/bin:$PATH" PUB_TAGGED_PUBLISH="$r/publish" PUB_TAGGED_TMP="$r/tmp" PUB_TAGGED_CRUX_WAIT="${CRUXWAIT:-bash $HERE/crux_bundle_wait.sh}" PUB_TAGGED_WAIT_TRIES="${WAITTRIES-0}" PUB_TAGGED_POLL="${WAITPOLL-0}" bash "$SRC" "${VERARG-$FXV}" "$dry" ) > "$r/out" 2>&1; rc=$?
   [ -z "${DBG:-}" ] || cat "$r/out"
   refs1=$(git -C "$r/origin.git" for-each-ref | sort)
   [ "$rc" = "$wrc" ] || { echo "FAIL $name: rc=$rc want $wrc: $(tail -n 1 "$r/out")"; fails=$((fails+1)); return; }
   grep -q -E -e "$want" "$r/out" || { echo "FAIL $name: output lacks /$want/: $(tail -n 1 "$r/out")"; fails=$((fails+1)); return; }
-  [ "$refs0" = "$refs1" ] || { echo "FAIL $name: a ref on origin changed"; fails=$((fails+1)); return; }
+  if [ -n "${DELAYED:-}" ]; then
+    refs0_non_ev=$(printf '%s\n' "$refs0" | grep -v 'refs/heads/nightly-evidence$' || true)
+    refs1_non_ev=$(printf '%s\n' "$refs1" | grep -v 'refs/heads/nightly-evidence$' || true)
+    [ "$refs0_non_ev" = "$refs1_non_ev" ] || { echo "FAIL $name: a non-evidence ref on origin changed"; fails=$((fails+1)); return; }
+  else
+    [ "$refs0" = "$refs1" ] || { echo "FAIL $name: a ref on origin changed"; fails=$((fails+1)); return; }
+  fi
   [ -z "$(ls -A "$r/tmp")" ] || { echo "FAIL $name: scratch dir left behind"; fails=$((fails+1)); return; }
   if [ "$wcalls" = 0 ]; then
     [ ! -e "$r/calls" ] || { echo "FAIL $name: publish was called"; fails=$((fails+1)); return; }
@@ -118,6 +150,9 @@ VERDICTPREFIX=1 row green_as_substring_refuses       1 "verdict has no line 'sta
 TAMPER=1 row tampered_receipt_refuses                1 'SHA256SUMS does not hold' 0 0
 UNCOVERED=1 row uncovered_receipt_refuses            1 'extra-gpu\.json is not covered by SHA256SUMS' 0 0
 NOCERT=1 row no_committed_cert_refuses               1 'carries no evidence/crux/1\.2\.3/prompt-certification\.json' 0 0
+NOBUNDLE=1 DELAYED=1 DELAYED_AT=2 WAITTRIES=3 WAITPOLL=1 row delayed_bundle_arriving_on_poll_publishes 0 'PUBLISHED v1\.2\.3 at [0-9a-f]{40}' 1 0
+NOBUNDLE=1 DELAYED=1 DELAYED_AT=2 DELAYED_STATE=red WAITTRIES=3 WAITPOLL=1 row delayed_red_bundle_refuses 1 "verdict has no line 'state=green'" 0 0
+NOBUNDLE=1 WAITTRIES=2 WAITPOLL=0 row wait_budget_exhausted_refuses 1 'no CRUX bundle for [0-9a-f]{40} on nightly-evidence after 2 poll\(s\)' 0 0
 # the script itself holds no ref-moving or tagging command
 if grep -n -E 'git (push|tag)\b|--force|gh release' "$SRC" | grep -v -E '^[0-9]+:\s*#'; then
   echo "FAIL source carries a push, tag or force"; fails=$((fails+1)); else echo "ok   source_has_no_push_tag_or_force"; fi
