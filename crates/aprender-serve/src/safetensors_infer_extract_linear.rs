@@ -185,15 +185,27 @@ fn qwen4_exp_mtp_safetensors_convert_refuses_mtp_tensors_by_name() {
         ..Default::default()
     };
     let src = |names: &[&str]| {
-        MapSource(names.iter().map(|n| ((*n).to_string(), vec![0.0])).collect())
+        MapSource(
+            names
+                .iter()
+                .map(|n| ((*n).to_string(), vec![0.0]))
+                .collect(),
+        )
     };
-    let with_mtp = src(&["model.embed_tokens.weight", "mtp.fc.weight", "mtp.norm.weight"]);
+    let with_mtp = src(&[
+        "model.embed_tokens.weight",
+        "mtp.fc.weight",
+        "mtp.norm.weight",
+    ]);
     let msg = SafetensorsToAprConverter::convert_from_source(&with_mtp, &config)
         .err()
         .expect("must refuse")
         .to_string();
     assert!(msg.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{msg}");
-    assert!(msg.contains("mtp.fc.weight") && msg.contains("mtp.norm.weight"), "{msg}");
+    assert!(
+        msg.contains("mtp.fc.weight") && msg.contains("mtp.norm.weight"),
+        "{msg}"
+    );
     // Without mtp.* the forward refusal still fires, without the MTP id.
     let trunk = src(&["model.embed_tokens.weight"]);
     let msg = SafetensorsToAprConverter::convert_from_source(&trunk, &config)
