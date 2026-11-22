@@ -1,0 +1,19 @@
+- id: PMAT-7343
+  github_issue: 7343
+  item_type: task
+  title: README contract count enforced on PR light path (#7343)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-22T21:12:27Z
+  updated: 2026-11-22T21:12:27Z
+  spec: null
+  acceptance_criteria:
+  - a PR that adds or removes a contract file either regenerates the README block itself or goes red on its own PR run (not only on main afterwards).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6532
