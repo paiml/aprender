@@ -404,7 +404,7 @@ self_test() {
 }
 
 # --filter-ok: the filter compiles and returns a verdict on an empty object (used by --mutants to tell a kill from a syntax error)
-filter_ok() { local v; v=$(jq -r --argjson __r null --arg __h "" "$JQ_PROG" <<< '{}' 2> /dev/null) && [[ $v =~ ^(ok|[A-Za-z0-9-]+)$ ]]; }
+filter_ok() { local v re='^(ok|[A-Za-z0-9-]+)$'; v=$(jq -r --argjson __r null --arg __h "" "$JQ_PROG" <<< '{}' 2> /dev/null) && [[ $v =~ $re ]]; }
 
 mutants() {
   command -v perl > /dev/null 2>&1 || { echo "mutants: perl missing - not_measured"; return 1; }
