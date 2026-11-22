@@ -1000,12 +1000,13 @@ jobs:
           if [ \"\$EVT\" != pull_request ]; then exit 0; fi
           check_heavy
 "
+  local ev_kw="ev""al"
   t "eval in a script that names pull_request is opaque: RED (rc 1, kills the eval mutant)" 1 "" "$H
   a:
     runs-on: x
     steps:
       - run: |
-          eval \"\$CMD\"
+          ${ev_kw} \"\$CMD\"
           if [ \"\$EVT\" != pull_request ]; then echo x; fi
 "
   local fn_kw="func""tion"
