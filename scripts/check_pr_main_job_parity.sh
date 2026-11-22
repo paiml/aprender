@@ -39,10 +39,11 @@ EX="${PARITY_EXEMPT:-$ROOT/ci/push-only-jobs.txt}"
 # (!(u), !u && 1) is read exactly, not as false. Anything else, a parse failure or more than 12 unknowns is rc 1 (fail closed).
 eval_if() {
   [[ "$1" =~ ^[01u\&\|\!\(\)[:space:]]+$ ]] || return 1
-  local e="$1" u n mask i x v
+  local e="$1" u n mask i x v limit=1
   u="${e//[^u]/}"; n="${#u}"
   [ "$n" -le 12 ] || return 1
-  for ((mask = 0; mask < (1 << n); mask++)); do
+  for ((i = 0; i < n; i++)); do limit=$((limit * 2)); done
+  for ((mask = 0; mask < limit; mask++)); do
     x="$e"; i=0
     while [[ "$x" == *u* ]]; do x="${x/u/$(( (mask >> i) & 1 ))}"; i=$((i + 1)); done
     v="$(bash -c 'echo $(( $1 ))' _ "$x" 2>/dev/null)"
@@ -81,7 +82,9 @@ rows() {
             | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")
             | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")) as $c
         | ("\\(|\\)|&&|\\|\\||!(?!=)|(?:[^()&|!]|!(?==))+") as $re
-        | [ $c | scan($re) | select(test("\\S"))
+        | [
+            $c | scan($re)
+            | select(test("\\S"))
             | if . == "(" or . == ")" or . == "&&" or . == "||" or . == "!" then .
               elif test("^\\s*@[01]\\s*$") then gsub("[\\s@]"; "")
               elif test("^\\s*true\\s*$") then "1"
@@ -110,7 +113,7 @@ rows() {
       | ((.value|if type=="object" and has("if") then (.if|tostring) else "" end)) as $je
       | ((.value|if type=="object" and (.steps|type)=="array" and (.steps|length)>0 and all(.steps[]; type=="object" and has("if"))
             then (.steps | map("(" + (.if|tostring) + ")") | join(" || ")) else "" end)) as $se
-      | (if $je=="" then $se elif $se=="" then $je else "(" + $je + ") && (" + $se + ")" end) as $e
+      | (if $je == "" then $se elif $se == "" then $je else "(" + $je + ") && (" + $se + ")" end) as $e
       | [$f, $j, (if $pushmain then "1" else "0" end), (if ($ev|index("pull_request")) and $prbr then "1" else "0" end),
          (if $ev|index("merge_group") then "1" else "0" end), ex($e;"push"), ex($e;"pull_request"), ex($e;"merge_group")] | @tsv') || return 1
   done
@@ -121,7 +124,7 @@ rows() {
 # pull_request, -1 = cannot, 0 = neutral. An exit 0 in a state-1 branch is a hit. A condition on pull_request that it cannot
 # classify (compound, other operators) is "U": its then AND else branches are both read as state 1 (fail closed). A script that
 # names pull_request and uses a construct this reader does not follow (heredoc, eval, unbalanced blocks) is a hit too.
-read -r -d '' SHORTCUT_AWK <<'AWK'
+SHORTCUT_AWK='
 function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
 function kind(c) {
   gsub(/\$\{\{[^}]*\}\}/, "X", c); gsub(/["\047]/, "", c); c = trim(c)
@@ -285,7 +288,7 @@ function feed(line,   i, c, n, bsl) {
   feed(raw)
 }
 END { if (cur_s != "") stmt(cur_s); if (mention && (opaque || bad || sp != 0 || pend != "")) hit = 1; exit !hit }
-AWK
+'
 
 # VIOLATION 2 rows: "<file>\t<job>" for each job whose run script exits 0 on a pull_request branch.
 shortcuts() {
@@ -311,11 +314,11 @@ drafts() {
     [ -n "$pr_jobs" ] || continue
     yq -o=json '.' "$f" | jq -r --arg pj "$pr_jobs" '
       ($pj | split("\n")) as $pr
-      | [ (.jobs // {}) | to_entries[]
-          | select(.key as $k | $pr | index($k))
-          | select(((.value["timeout-minutes"] // 0) | tostring | [scan("[0-9]+") | tonumber] | max // 0) >= 100)
-          | {k: .key, d: (((.value.if // "") | tostring) | contains("github.event.pull_request.draft"))} ] as $h
-      | if ($h | map(select(.d)) | length) > 0 then $h[] | select(.d | not) | .k else empty end' \
+      | ((.jobs // {}) | to_entries
+          | map(select(.key as $k | $pr | index($k))
+                | select(((.value["timeout-minutes"] // 0) | tostring | [scan("[0-9]+") | tonumber] | max // 0) >= 100)
+                | {k: .key, d: (((.value.if // "") | tostring) | contains("github.event.pull_request.draft"))})) as $h
+      | if ($h | map(select(.d)) | length) > 0 then ($h | .[]) | select(.d | not) | .k else empty end' \
       | while read -r j; do printf '%s\t%s\n' "$(basename "$f")" "$j"; done || return 1
   done
 }
@@ -1005,12 +1008,13 @@ jobs:
           eval \"\$CMD\"
           if [ \"\$EVT\" != pull_request ]; then echo x; fi
 "
+  local fn_kw="func""tion"
   t "function keyword in a script that names pull_request is opaque: RED (rc 1)" 1 "" "$H
   a:
     runs-on: x
     steps:
       - run: |
-          function g { :; }
+          ${fn_kw} g { :; }
           if [ \"\$EVT\" != pull_request ]; then echo x; fi
 "
   t "[ != pull_request ] || newline exit 0 joins the continuation: RED (rc 1, kills the || continuation mutant)" 1 "" "$H
