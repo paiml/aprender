@@ -1,0 +1,73 @@
+# Nightly preflight on PR (APR-GREEN-001 item 3). A PR that touches a nightly/release workflow, a `runs-on`
+# label, or a tool pin (rust-toolchain, tools.toml, *_pin.sh, scripts/release/**) runs the nightly's PREFLIGHT
+# (routing + tool versions + credentials probe, NO train) on the nightly's own pool before it merges.
+#
+# REQUIRED CHECK: `nightly-preflight` (job `verdict`). The workflow is deliberately NOT path-filtered: a required
+# check whose workflow is skipped by `paths:` never reports and blocks the PR as "missing". Applicability is decided
+# by the `scope` job (scripts/ci/nightly_preflight_scope.sh); when it is `no`, `preflight` is skipped and `verdict`
+# reports success. Same shape as ci / gate: one aggregator with `if: always()` that reads needs.*.result.
+# Guards: scripts/ci/nightly_preflight.sh --check-workflow (wiring) and its --self-test/--mutants.
+name: Nightly Preflight
+
+on:
+  pull_request:
+    branches: [main, master]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-preflight-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scope:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    outputs:
+      applicable: ${{ steps.scope.outputs.applicable }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Does this change touch what the nightly depends on?
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/ci/nightly_preflight_scope.sh --self-test
+          out="$(bash scripts/ci/nightly_preflight_scope.sh "$BASE_SHA" HEAD)"
+          printf '%s\n' "$out"
+          printf 'applicable=%s\n' "$(printf '%s\n' "$out" | sed -n 's/^applicable=//p')" >> "$GITHUB_OUTPUT"
+
+  preflight:
+    needs: [scope]
+    if: needs.scope.outputs.applicable == 'yes'
+    # The pool nightly-train.yml's `train` job pins (#7375). The routing step fails if the two ever differ.
+    runs-on: [self-hosted, Linux, X64, clean-room, intel]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Preflight (routing, tool versions, credentials; no train)
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/ci/nightly_preflight.sh --self-test
+          bash scripts/ci/nightly_preflight.sh
+
+  verdict:
+    name: nightly-preflight
+    needs: [scope, preflight]
+    if: always()
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Not applicable passes; applicable needs the preflight green
+        env:
+          SCOPE: ${{ needs.scope.result }}
+          APPLICABLE: ${{ needs.scope.outputs.applicable }}
+          PREFLIGHT: ${{ needs.preflight.result }}
+        run: bash scripts/ci/nightly_preflight.sh --verdict "$SCOPE" "$APPLICABLE" "$PREFLIGHT"
