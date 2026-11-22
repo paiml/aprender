@@ -1,4 +1,4 @@
-# measured 2026-11-22T04:25:32Z
+# measured 2026-11-22T05:55:33Z
 lambda-labs	apr	GREEN	ok (installed v0.75.3@982ebfd, target v0.75.3@982ebfd)
 lambda-labs	pv	GREEN	ok (installed v0.75.3@982ebfd, target v0.75.3@982ebfd)
 lambda-labs	forjar	GREEN	ok (installed nightly@0bbdcd8, target nightly@0bbdcd8)
@@ -10,7 +10,7 @@ lambda-labs	rmedia	GREEN	ok (installed nightly@1e5d3aa, target nightly@1e5d3aa)
 lambda-labs	apex	GREEN	ok (installed v-apex-0.1.0-rc.2@f2e20b6, target v-apex-0.1.0-rc.2@f2e20b6)
 lambda-labs	rmedia-courier	GREEN	ok (installed nightly@1e5d3aa, target nightly@1e5d3aa)
 lambda-labs	ollama	GREEN	ok (installed 0.40.17, target v0.40.17)
-lambda-labs	llama.cpp	RED	behind-upstream (installed b12619, target b12627)
+lambda-labs	llama.cpp	GREEN	ok (installed b12627, target b12627)
 gx10	apr	GREEN	ok (installed v0.75.3@982ebfd, target v0.75.3@982ebfd)
 gx10	pv	GREEN	ok (installed v0.75.3@982ebfd, target v0.75.3@982ebfd)
 gx10	forjar	GREEN	ok (installed nightly@0bbdcd8, target nightly@0bbdcd8)
