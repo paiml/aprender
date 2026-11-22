@@ -5,6 +5,14 @@ required ci.yml workspace-test
 allow push-only advisory-andon.yml andon - -- scheduled advisory alarm (cron + push refresh); C324 non-blocking
 allow push-only book.yml deploy - -- GitHub Pages deploy after merge; PR runs book build on same runner labels
 allow push-only ci.yml mg-reuse - -- reads merge_group run on sha to decide push reuse (T43/#4748); no PR equivalent
+allow not-required book.yml build - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml chapter-examples-compile - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml chapter-examples-run - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml book-integration-tests - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml contract-enforcement - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml namespace-discipline - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml summary-integrity - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required install-script.yml test - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
 allow not-required ci.yml runner-smells - -- runs on PR and push identically; joins gate needs after 3 green nights (C324 rule 7)
 allow attr ci.yml workspace-test-shard matrix.shard -- push 4-way vs merge_group 3-way shard partition
 allow attr ci.yml workspace-test-shard matrix.shards -- push 4-way vs merge_group 3-way shard partition

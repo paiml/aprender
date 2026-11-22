@@ -7,7 +7,8 @@ wf_dir="$root/.github/workflows"; allow="$root/.github/one-gate-allow.txt"; mode
 SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT
 while [ $# -gt 0 ]; do
   case "$1" in
-    --workflows) wf_dir=$2; shift 2 ;; --allow) allow=$2; shift 2 ;;
+    --workflows) [ $# -ge 2 ] || { echo "usage: $0 [--workflows DIR] [--allow FILE] | --self-test" >&2; exit 2; }; wf_dir=$2; shift 2 ;;
+    --allow) [ $# -ge 2 ] || { echo "usage: $0 [--workflows DIR] [--allow FILE] | --self-test" >&2; exit 2; }; allow=$2; shift 2 ;;
     --self-test) mode=self-test; shift ;;
     -h|--help) echo "usage: $0 [--workflows DIR] [--allow FILE] | --self-test"; exit 0 ;;
     *) echo "usage: $0 [--workflows DIR] [--allow FILE] | --self-test" >&2; exit 2 ;;
@@ -18,7 +19,7 @@ run_check() {
   local dir=$1 al=$2 files=() f
   [ -d "$dir" ] || { echo "one-gate: no workflows dir $dir" >&2; return 2; }
   [ -r "$al" ] || { echo "one-gate: unreadable allow-list $al" >&2; return 2; }
-  for f in "$dir"/*.yml; do [ -f "$f" ] && files+=("$f"); done
+  for f in "$dir"/*.yml "$dir"/*.yaml; do [ -f "$f" ] && files+=("$f"); done
   [ "${#files[@]}" -gt 0 ] || { echo "one-gate: no workflows in $dir (fail closed)" >&2; return 2; }
   awk -f <(cat <<'AWK'
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
@@ -38,15 +39,31 @@ function strip_c(s,    i, c, q, out) {
   return trim(out)
 }
 function norm_list(s,    n, i, a, out) { s = trim(s); gsub(/^\[|\]$/, "", s); n = split(s, a, ","); out = ""; for (i = 1; i <= n; i++) out = out (i > 1 ? " " : "") unq(a[i]); return out }
+function br_match_main(pat,    neg, rx, i, ch) {
+  if (pat == "") return -1
+  neg = 0; if (substr(pat, 1, 1) == "!") { neg = 1; pat = substr(pat, 2) }
+  rx = "^"
+  for (i = 1; i <= length(pat); i++) {
+    ch = substr(pat, i, 1)
+    if (ch == "*") {
+      if (substr(pat, i+1, 1) == "*") { rx = rx ".*"; i++ } else rx = rx "[^/]*"
+    } else if (ch == "?") rx = rx "[^/]"
+    else if (index(".+^$()[]{}|\\", ch) > 0) rx = rx "\\" ch
+    else rx = rx ch
+  }
+  rx = rx "$"
+  return ("main" ~ rx) ? (neg ? 0 : 1) : -1
+}
 function truthy(v) { return (v != "" && v != "false" && v != "0") }
 function lookup(n) {
   if (n == "true" || n == "false" || n ~ /^[0-9]+$/) return n
   if (n == "github.event_name") return EV
   if (n == "github.ref") return (EV == "push" ? "refs/heads/main" : (EV == "pull_request" ? "refs/pull/1/merge" : "refs/heads/gh-readonly-queue/main/pr-1"))
-  if (n == "github.ref_name") return (EV == "push" ? "main" : ""); if (n == "github.repository") return "paiml/aprender"
+  if (n == "github.ref_name") return (EV == "push" ? "main" : (EV == "pull_request" ? "1/merge" : "gh-readonly-queue/main/pr-1"))
+  if (n == "github.repository") return "paiml/aprender"
   if (n == "github.event.pull_request.draft") return (EV == "pull_request" ? "false" : "")
   if (n == "github.event.pull_request.head.repo.full_name") return (EV == "pull_request" ? "paiml/aprender" : "")
-  if (n ~ /^needs\.[^.]+\.result$/) return "success"; return ""
+  if (n ~ /^needs\.[^.]+\.result$/) return "success"; unk = 1; return ""
 }
 function tok(s,    m) {
   nt = 0; s = trim(s)
@@ -62,7 +79,7 @@ function isop(o) { return (tp <= nt && tk[tp] == "O" o) }
 function pOr(   v, w) { v = pAnd(); while (isop("||")) { tp++; w = pAnd(); if (!truthy(v)) v = w }; return v }
 function pAnd(   v, w) { v = pCmp(); while (isop("&&")) { tp++; w = pCmp(); if (truthy(v)) v = w }; return v }
 function pCmp(   v, w, o) { v = pPrim(); while (isop("==") || isop("!=")) { o = substr(tk[tp], 2); tp++; w = pPrim(); v = ((o == "==") == (v == w)) ? "true" : "false" }; return v }
-function pPrim(   t, n, v, a) {
+function pPrim(   t, n, v, a, b, u0, ua, ub) {
   if (tp > nt) { bad = 1; return "" }; t = tk[tp++]
   if (t == "O!") { v = pPrim(); return truthy(v) ? "false" : "true" }
   if (t == "O(") { v = pOr(); if (isop(")")) tp++; else bad = 1; return v }
@@ -70,16 +87,26 @@ function pPrim(   t, n, v, a) {
   if (substr(t, 1, 1) == "I") {
     n = substr(t, 2)
     if (isop("(")) {
-      tp++; a = ""; if (!isop(")")) { a = pOr(); while (isop(",")) { tp++; pOr() } }; if (isop(")")) tp++; else bad = 1
-      if (n == "cancelled" || n == "failure") return "false"
-      if (n == "always" || n == "success" || n == "contains" || n == "startsWith" || n == "endsWith") return "true"
-      if (n == "fromJSON" || n == "toJSON" || n == "format") return a; return ""
+      tp++; u0 = unk; unk = 0; a = ""; b = ""; ua = 0; ub = 0
+      if (!isop(")")) {
+        a = pOr(); ua = unk
+        if (isop(",")) { tp++; unk = 0; b = pOr(); ub = unk }
+        while (isop(",")) { tp++; pOr() }
+      }
+      if (isop(")")) tp++; else bad = 1
+      if (n == "cancelled" || n == "failure") { unk = u0; return "false" }
+      if (n == "always" || n == "success") { unk = u0; return "true" }
+      if (n == "contains") { unk = u0; return (ua || ub) ? "true" : ((index(tolower(a), tolower(b)) > 0) ? "true" : "false") }
+      if (n == "startsWith") { unk = u0; return (ua || ub) ? "true" : ((b == "" || tolower(substr(a, 1, length(b))) == tolower(b)) ? "true" : "false") }
+      if (n == "endsWith") { unk = u0; return (ua || ub) ? "true" : ((b == "" || (length(a) >= length(b) && tolower(substr(a, length(a) - length(b) + 1)) == tolower(b))) ? "true" : "false") }
+      if (n == "fromJSON" || n == "toJSON" || n == "format") { unk = (u0 || ua || ub); return a }
+      unk = u0; return ""
     }
     return lookup(n)
   }
   bad = 1; return ""
 }
-function ev_expr(e, ev,    v) { EV = ev; bad = 0; tok(e); tp = 1; if (bad) return "UNPARSEABLE"; v = pOr(); if (bad || tp <= nt) return "UNPARSEABLE"; gsub(/ /, "", v); return v }
+function ev_expr(e, ev,    v) { EV = ev; bad = 0; unk = 0; tok(e); tp = 1; if (bad) return "UNPARSEABLE"; v = pOr(); if (bad || tp <= nt) return "UNPARSEABLE"; gsub(/ /, "", v); return v }
 function resolve(raw, ev,    e) { raw = unq(raw); if (match(raw, /^\$\{\{.*\}\}$/)) { e = substr(raw, 4, length(raw)-5); return ev_expr(e, ev) }; gsub(/ /, "", raw); return raw }
 function ifval(raw, ev,    e) { raw = trim(raw); if (raw == "") return 1; if (match(raw, /^\$\{\{.*\}\}$/)) raw = substr(raw, 4, length(raw)-5); e = ev_expr(raw, ev); if (e == "UNPARSEABLE") { unparse[wf_ "|" job_] = raw; return 1 }; return truthy(e) }
 function viol(kind, w, j, d, msg,    key) { gsub(/ /, "_", d); key = kind "|" w "|" j "|" d; if (key in allowed) { used[key] = 1; return }; printf "RED %s: %s %s: %s  [allow %s %s %s %s]\n", kind, w, (j == "-" ? "" : j), msg, kind, w, j, d; bad_n++ }
@@ -92,15 +119,15 @@ fno == 1 {
 }
 { raw = $0; line = strip_c($0); if (line == "") next }
 raw ~ /^on:[ \t]*(.*)/ { top = "on"; v = trim(substr(line, 4)); if (v ~ /push/) { trig[wf "|push"] = 1; push_main[wf] = 1 }; if (v ~ /pull_request/) trig[wf "|pull_request"] = 1; if (v ~ /merge_group/) trig[wf "|merge_group"] = 1; next }
-raw ~ /^jobs:[ \t]*$/ { top = "jobs"; ontrig = ""; next }
+raw ~ /^jobs:/ && line ~ /^jobs:[ \t]*$/ { top = "jobs"; ontrig = ""; next }
 raw ~ /^[^ \t#]/ { top = ""; ontrig = ""; job = ""; next }
 top == "on" && raw ~ /^  [A-Za-z0-9_-]+:/ { ontrig = line; sub(/:.*/, "", ontrig); in_br = 0; in_paths = 0; if (ontrig == "push" || ontrig == "pull_request" || ontrig == "merge_group") trig[wf "|" ontrig] = 1; if (ontrig == "push") push_main[wf] = 1; next }
-top == "on" && ontrig == "push" && raw ~ /^    branches:/ { v = trim(substr(line, index(line, ":")+1)); in_paths = 0; push_main[wf] = 0; if (v != "") { if ((" " norm_list(v) " ") ~ / main /) push_main[wf] = 1 } else in_br = 1; next }
-top == "on" && ontrig == "push" && in_br && raw ~ /^      -[ \t]*/ { if (unq(substr(line, 3)) == "main") push_main[wf] = 1; next }
+top == "on" && ontrig == "push" && raw ~ /^    branches:/ { v = trim(substr(line, index(line, ":")+1)); in_paths = 0; push_main[wf] = 0; if (v != "") { n = split(norm_list(v), ba, " "); for (i=1; i<=n; i++) { bm = br_match_main(ba[i]); if (bm >= 0) push_main[wf] = bm } } else in_br = 1; next }
+top == "on" && ontrig == "push" && in_br && raw ~ /^      -[ \t]*/ { bm = br_match_main(unq(substr(line, 3))); if (bm >= 0) push_main[wf] = bm; next }
 top == "on" && (ontrig == "push" || ontrig == "pull_request") && raw ~ /^    paths:/ { v = trim(substr(line, index(line, ":")+1)); in_br = 0; in_paths = 0; if (v != "") { n = split(norm_list(v), pa, " "); for (i=1; i<=n; i++) if (pa[i]!="") ppaths[wf "|" ontrig "|" pa[i]] = 1 } else in_paths = 1; next }
 top == "on" && in_paths && raw ~ /^      -[ \t]*/ { ppaths[wf "|" ontrig "|" unq(substr(line, 3))] = 1; next }
 top == "on" && raw ~ /^    [A-Za-z0-9_-]+:/ { in_br = 0; in_paths = 0; next }
-top == "jobs" && raw ~ /^  [A-Za-z0-9_-]+:[ \t]*$/ { job = line; sub(/:.*/, "", job); jobs[wf "|" job] = 1; jsec = ""; sidx = 0; in_mat = 0; next }
+top == "jobs" && raw ~ /^  [A-Za-z0-9_-]+:/ && line ~ /^[A-Za-z0-9_-]+:[ \t]*$/ { job = line; sub(/:.*/, "", job); jobs[wf "|" job] = 1; jsec = ""; sidx = 0; in_mat = 0; next }
 top == "jobs" && job != "" && raw ~ /^    if:[ \t]*/ { v = trim(substr(line, index(line, ":")+1)); jsec = (v == ">-" || v == "|-") ? "ifml" : ""; if (jsec == "") jif[wf "|" job] = v; next }
 top == "jobs" && jsec == "ifml" && raw ~ /^      / { jif[wf "|" job] = trim(jif[wf "|" job] " " line); next }
 top == "jobs" && job != "" && raw ~ /^    needs:[ \t]*/ { v = trim(substr(line, index(line, ":")+1)); if (v != "") { needs[wf "|" job] = norm_list(v); jsec = "" } else jsec = "needs"; next }
@@ -108,12 +135,12 @@ top == "jobs" && jsec == "needs" && raw ~ /^      -[ \t]*/ { needs[wf "|" job] =
 top == "jobs" && job != "" && raw ~ /^    runs-on:[ \t]*/ { v = trim(substr(line, index(line, ":")+1)); if (v != "") { rawattr[wf "|" job "|runs-on"] = v; jsec = "" } else { jsec = "runs-on"; rawattr[wf "|" job "|runs-on"] = "" }; next }
 top == "jobs" && jsec == "runs-on" && raw ~ /^      -[ \t]*/ { v = unq(substr(line, 3)); cur = rawattr[wf "|" job "|runs-on"]; rawattr[wf "|" job "|runs-on"] = (cur == "" ? "[" v "]" : substr(cur, 1, length(cur)-1) "," v "]"); next }
 top == "jobs" && job != "" && raw ~ /^    (uses|container|image):[ \t]*/ { pinv[wf "|" job, ++npin[wf "|" job]] = trim(substr(line, index(line, ":")+1)); jsec = ""; next }
-top == "jobs" && job != "" && raw ~ /^    env:[ \t]*$/ { jsec = "env"; next }
+top == "jobs" && job != "" && raw ~ /^    env:/ && line ~ /^env:[ \t]*$/ { jsec = "env"; next }
 top == "jobs" && jsec == "env" && raw ~ /^      [A-Za-z0-9_-]+:[ \t]*/ { k = line; sub(/:.*/, "", k); rawattr[wf "|" job "|env." k] = trim(substr(line, index(line, ":")+1)); next }
-top == "jobs" && job != "" && raw ~ /^    strategy:[ \t]*$/ { jsec = "strategy"; in_mat = 0; next }
-top == "jobs" && jsec == "strategy" && raw ~ /^      matrix:[ \t]*$/ { in_mat = 1; next }
+top == "jobs" && job != "" && raw ~ /^    strategy:/ && line ~ /^strategy:[ \t]*$/ { jsec = "strategy"; in_mat = 0; next }
+top == "jobs" && jsec == "strategy" && raw ~ /^      matrix:/ && line ~ /^matrix:[ \t]*$/ { in_mat = 1; next }
 top == "jobs" && jsec == "strategy" && in_mat && raw ~ /^        [A-Za-z0-9_-]+:[ \t]*/ { k = line; sub(/:.*/, "", k); v = trim(substr(line, index(line, ":")+1)); if (k != "include" && k != "exclude" && v != "") rawattr[wf "|" job "|matrix." k] = v; next }
-top == "jobs" && job != "" && raw ~ /^    steps:[ \t]*$/ { jsec = "steps"; sidx = 0; next }
+top == "jobs" && job != "" && raw ~ /^    steps:/ && line ~ /^steps:[ \t]*$/ { jsec = "steps"; sidx = 0; next }
 top == "jobs" && jsec == "steps" && raw ~ /^      -[ \t]*/ { sidx++; nstep[wf "|" job] = sidx; v = trim(substr(line, 2)); if (v ~ /^name:[ \t]*/) sname[wf "|" job, sidx] = unq(substr(v, 6)); else if (v ~ /^uses:[ \t]*/) { s = trim(substr(v, 6)); suses[wf "|" job, sidx] = s; pinv[wf "|" job, ++npin[wf "|" job]] = s } else if (v ~ /^if:[ \t]*/) sif[wf "|" job, sidx] = trim(substr(v, 4)); next }
 top == "jobs" && jsec == "steps" && sidx > 0 && raw ~ /^        (name|uses|if):[ \t]*/ { k = line; sub(/:.*/, "", k); v = trim(substr(line, index(line, ":")+1)); if (k == "name") sname[wf "|" job, sidx] = unq(v); else if (k == "uses") { suses[wf "|" job, sidx] = v; pinv[wf "|" job, ++npin[wf "|" job]] = v } else if (k == "if") sif[wf "|" job, sidx] = v; next }
 top == "jobs" && jsec == "steps" && sidx > 0 && raw ~ /^          toolchain:[ \t]*/ { pinv[wf "|" job, ++npin[wf "|" job]] = trim(substr(line, index(line, ":")+1)); next }
@@ -123,22 +150,24 @@ END {
   if (n_pw == 0) { print "one-gate: no push-to-main workflows found (fail closed)" > "/dev/stderr"; exit 2 }
   split("push pull_request merge_group", EVS, " ")
   for (key in jobs) { split(key, p, "|"); w = p[1]; j = p[2]; if (!(w in pwfs)) continue; wf_ = w; job_ = j; for (e = 1; e <= 3; e++) ran[key "|" EVS[e]] = (((w "|" EVS[e]) in trig) && ifval(jif[key], EVS[e])) ? 1 : 0 }
-  for (rk in req) { split(rk, q, "|"); hasreq[q[1]] = 1; stack[++sn] = rk; inclos[rk] = 1 }
+  for (rk in req) { stack[++sn] = rk; inclos[rk] = 1 }
   while (sn > 0) { cur = stack[sn--]; n = split(needs[cur], nn, " "); split(cur, cp, "|"); for (i = 1; i <= n; i++) { nk = cp[1] "|" nn[i]; if (!(nk in inclos)) { inclos[nk] = 1; stack[++sn] = nk } } }
   for (key in jobs) {
     split(key, p, "|"); w = p[1]; j = p[2]; if (!(w in pwfs) || !ran[key "|push"]) continue; wf_ = w; job_ = j
     if (!(ran[key "|pull_request"] || ran[key "|merge_group"])) viol("push-only", w, j, "-", "runs on push to main but on neither pull_request nor merge_group")
-    if ((w in hasreq) && !(key in inclos)) viol("not-required", w, j, "-", "runs on push to main but not in needs closure of any required job")
+    else if (!(key in inclos)) viol("not-required", w, j, "-", "runs on push to main but not in needs closure of any required job")
     for (e = 2; e <= 3; e++) {
       ev = EVS[e]; if (!ran[key "|" ev]) continue
       for (ak in rawattr) { split(ak, ap, "|"); if (ap[1] == w && ap[2] == j) { a1 = resolve(rawattr[ak], "push"); a2 = resolve(rawattr[ak], ev); if (a1 != a2) viol("attr", w, j, ap[3], ap[3] " differs: push=" a1 " vs " ev "=" a2) } }
       for (si = 1; si <= nstep[key]; si++) { snm = (sname[key, si] != "" ? sname[key, si] : (suses[key, si] != "" ? suses[key, si] : "#" si)); if (ifval(sif[key, si], "push") && !ifval(sif[key, si], ev)) viol("step", w, j, snm, "step runs on push but not on " ev) }
     }
     for (ak in rawattr) { split(ak, ap, "|"); if (ap[1] == w && ap[2] == j && resolve(rawattr[ak], "push") == "UNPARSEABLE") viol("attr", w, j, ap[3], ap[3] " unparseable (fail closed)") }
-    for (i = 1; i <= npin[key]; i++) if (pinv[key, i] ~ /github\.event_name/) viol("pin", w, j, "-", "event-dependent pin: " pinv[key, i])
+    for (i = 1; i <= npin[key]; i++) if (pinv[key, i] ~ /github\.(event_name|ref|ref_name|event\.pull_request)/) viol("pin", w, j, "-", "event-dependent pin: " pinv[key, i])
   }
   for (key in unparse) { split(key, p, "|"); viol("attr", p[1], p[2], "if", "if unparseable: " unparse[key]) }
-  for (pk in ppaths) { split(pk, q, "|"); if (q[2] == "push" && (q[1] "|pull_request") in trig) { has_pr = 0; for (qk in ppaths) { split(qk, qq, "|"); if (qq[1] == q[1] && qq[2] == "pull_request") { has_pr = 1; break } }; if (has_pr && !((q[1] "|pull_request|" q[3]) in ppaths)) viol("paths", q[1], "-", q[3], "push path missing from pull_request paths: " q[3]) } }
+  for (pk in ppaths) { split(pk, q, "|"); if (q[1] in pwfs) has_p[q[1] "|" q[2]] = 1 }
+  for (w in pwfs) if (((w "|pull_request") in trig) && ((w "|pull_request") in has_p) && !((w "|push") in has_p)) viol("paths", w, "-", "push-unfiltered", "pull_request has paths filter but push has none")
+  for (pk in ppaths) { split(pk, q, "|"); if ((q[1] in pwfs) && q[2] == "push" && ((q[1] "|pull_request") in trig) && ((q[1] "|pull_request") in has_p) && !((q[1] "|pull_request|" q[3]) in ppaths)) viol("paths", q[1], "-", q[3], "push path missing from pull_request paths: " q[3]) }
   for (key in allowed) if (!(key in used)) { printf "RED stale allow-list line: allow %s\n", key; bad_n++ }
   if (bad_n > 0) { printf "one-gate parity: %d difference(s)\n", bad_n; exit 1 }
   print "one-gate parity: OK"
@@ -172,7 +201,24 @@ case_run "M8 env differs by event" 1 "" "s/^  build:\$/  build:\n    env:\n     
 case_run "M9 stale allow line is RED" 1 $'allow attr ci.yml build runs-on -- unused\n' ""
 case_run "M10 allow without reason is RED" 1 $'allow push-only ci.yml shard -\n' "s/^  shard:\$/  shard:\n    if: github.event_name == ${Q}push${Q}/"
 case_run "A1 allow-listed exception passes" 0 $'allow push-only ci.yml shard - -- reviewed exception\n' "s/^  shard:\$/  shard:\n    if: github.event_name == ${Q}push${Q}/"
+case_run "M11 startsWith(github.ref) push-only job" 1 "" "s/^  shard:\$/  shard:\n    if: startsWith(github.ref, ${Q}refs\/heads\/main${Q})/"
+case_run "M12 contains(github.event_name) push-only step" 1 "" "s/^      - name: test\$/      - if: contains(github.event_name, ${Q}push${Q})\n        name: test/"
+case_run "M13 endsWith(github.ref) push-only job" 1 "" "s/^  shard:\$/  shard:\n    if: endsWith(github.ref, ${Q}\/main${Q})/"
+case_run "M14 asymmetric paths (PR filtered, push unfiltered)" 1 "" 's/^  pull_request:$/  pull_request:\n    paths: ["book\/**"]/'
+case_run "M15 asymmetric paths (push path missing from PR)" 1 "" 's/^  push:$/  push:\n    paths: ["src\/**"]/; s/^  pull_request:$/  pull_request:\n    paths: ["book\/**"]/'
+case_run "M17 wildcard branches [*] catches push-only" 1 "" "s/branches: \[main\]/branches: [${Q}*${Q}]/; s/^  shard:\$/  shard:\n    if: github.event_name == ${Q}push${Q}/"
+case_run "M18 wildcard branches [**] catches push-only" 1 "" "s/branches: \[main\]/branches: [${Q}**${Q}]/; s/^  shard:\$/  shard:\n    if: github.event_name == ${Q}push${Q}/"
+case_run "M19 github.ref event-dependent pin" 1 "" "s/^  build:\$/  build:\n    container: \${{ github.ref == ${Q}refs\/heads\/main${Q} \&\& ${Q}img:1${Q} || ${Q}img:2${Q} }}/"
+case_run "M20 job header with inline comment" 1 "" "s/^  shard:\$/  shard: # inline comment\n    if: github.event_name == ${Q}push${Q}/"
+case_run "A2 unknown-context contains() stays truthy on push" 0 $'allow step ci.yml shard test -- post-merge step\n' "s/^      - name: test\$/      - if: always() \&\& github.event_name == ${Q}push${Q} \&\& contains(steps.wait.outputs.deferred, ${Q}codecov${Q})\n        name: test/"
+rm -rf -- "${st:?}/wf"; mkdir -p "$st/wf"; base_ci >"$st/wf/ci.yml"
+printf 'on:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\njobs:\n  extra:\n    runs-on: [self-hosted]\n    steps: [{name: ok, run: echo ok}]\n' >"$st/wf/extra.yaml"
+printf 'required ci.yml gate\n' >"$st/allow.txt"
+rc=0; "$0" --workflows "$st/wf" --allow "$st/allow.txt" >"$st/out" 2>&1 || rc=$?
+[ "$rc" -eq 1 ] && grep -q '^RED not-required: extra.yaml extra:' "$st/out" && printf 'ok   M16 not-required without required entry + .yaml (rc=%s)\n' "$rc" || { printf 'FAIL M16: want rc=1 got rc=%s\n' "$rc"; sed 's/^/     /' "$st/out"; fail=1; }
 mkdir -p "$st/empty"; rc=0; "$0" --workflows "$st/empty" --allow "$st/allow.txt" >"$st/out" 2>&1 || rc=$?
 [ "$rc" -eq 2 ] && printf 'ok   V1 empty workflows fails closed (rc=%s)\n' "$rc" || { printf 'FAIL V1: want rc=2 got rc=%s\n' "$rc"; fail=1; }
+rc=0; "$0" --workflows >"$st/out" 2>&1 || rc=$?
+[ "$rc" -eq 2 ] && printf 'ok   V2 missing --workflows arg fails closed (rc=%s)\n' "$rc" || { printf 'FAIL V2: want rc=2 got rc=%s\n' "$rc"; sed 's/^/     /' "$st/out"; fail=1; }
 [ "$fail" -eq 0 ] || { echo "one-gate self-test: FAILED"; exit 1; }
 echo "one-gate self-test: all cases pass"
