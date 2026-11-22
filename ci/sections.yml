@@ -1742,13 +1742,13 @@ jobs:
       # Text-only, no build. Self-test first (Verification Discipline #7).
       - name: "Receipt-wiring guard case table (both polarities of the if:)"
         run: setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
-      # PMAT-7229: the R3 (check_reconcile) self-test. R3 exempts ruleset-locked heads; this keeps both twins and the nested nightly/a/b case RED-able.
-      - name: R3 reconcile self-test (exemption twins; PMAT-7229)
+      # PMAT-7229 / #7373: the R3 (check_reconcile) self-test. R3 exempts ruleset-locked heads, archives dead branches non-blockingly, and kills mutants.
+      - name: R3 reconcile self-test (exemption twins + R3 archive; PMAT-7229, #7373)
         run: |
           set -euo pipefail
           out=$(setsid --wait bash scripts/check_reconcile.sh --self-test 2>&1) || { printf '%s\n' "$out"; echo "::error::check_reconcile.sh --self-test is red"; exit 1; }
           printf '%s\n' "$out" | tail -n 3
-          case "$out" in *"self-test OK: 33 case(s)."*) ;; *) echo "::error::check_reconcile.sh --self-test did not report 33 cases"; exit 1 ;; esac
+          case "$out" in *"self-test OK: 54 case(s)."*) ;; *) echo "::error::check_reconcile.sh --self-test did not report 54 cases"; exit 1 ;; esac
       - name: The PR-review receipt guard is wired job-level, not path-filtered
         run: setsid --wait bash scripts/check_pr_review_wiring.sh
       # #4441 passed FAT_SECRET_PR_REVIEW_SIGNING_KEY_B (no "64"), so pr-review-sign
