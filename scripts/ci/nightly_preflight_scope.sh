@@ -36,17 +36,21 @@ path_reason() { # path -> reason on stdout when the path alone makes the PR appl
 
 classify() { # classify PATHSFILE [DIFFFILE]
   local paths="$1" diff="${2:-}" n=0 hit=0 p r f=""
-  while IFS= read -r p; do
+  while IFS= read -r p || [ -n "$p" ]; do
     [ -n "$p" ] || continue
     n=$((n + 1))
     case "$p" in '"'*) echo "reason=quoted path $p, cannot judge"; hit=1; continue ;; esac
     r="$(path_reason "$p")"
     if [ -n "$r" ]; then echo "reason=$r"; hit=1; fi
   done < "$paths"
-  if [ -n "$diff" ] && [ -r "$diff" ]; then
+  if [ $# -ge 2 ]; then
+    if [ -z "$diff" ] || [ ! -r "$diff" ] || [ -d "$diff" ]; then
+      echo "reason=unreadable diff ${diff:-<empty>}, cannot judge"; echo "applicable=yes"; return 0
+    fi
     # a +/- line naming runs-on, in a hunk of a workflow file
-    while IFS= read -r p; do
+    while IFS= read -r p || [ -n "$p" ]; do
       case "$p" in
+        "+++ /dev/null") ;;
         "+++ b/.github/workflows/"* | "--- a/.github/workflows/"*) f="${p#??? ?/}" ;;
         "+++ "* | "--- "*) f="" ;;
         [+-]*)
@@ -65,7 +69,7 @@ from_git() { # BASE HEAD
   d="$(mktemp -d "${TMPDIR:-/tmp}/npf-scope.XXXXXX")" || return 2
   mb="$(git merge-base "$base" "$head" 2>/dev/null)" || { echo "reason=no merge-base for $base $head"; echo "applicable=yes"; rm -rf -- "${d:?}"; return 0; }
   if ! git -c core.quotepath=off diff --no-renames --name-only "$mb" "$head" > "$d/paths" 2>/dev/null \
-    || ! git diff --no-renames -U0 "$mb" "$head" -- .github/workflows > "$d/diff" 2>/dev/null; then
+    || ! git -c core.quotepath=off diff --no-renames -U0 "$mb" "$head" -- .github/workflows > "$d/diff" 2>/dev/null; then
     echo "reason=git diff failed"; echo "applicable=yes"; rm -rf -- "${d:?}"; return 0
   fi
   classify "$d/paths" "$d/diff"
@@ -114,6 +118,30 @@ self_test() {
   printf 'tools.toml\n' > "$d/p"
   got="$(classify "$d/p")"
   if grep -q '^reason=tool pin tools.toml$' <<< "$got"; then echo "  ok    reason_line"; else echo "  BAD   reason_line"; bad=$((bad + 1)); fi
+  # Finding 1: deleted workflow file containing runs-on
+  expect deleted_workflow_runs_on yes '.github/workflows/ci.yml\n' '--- a/.github/workflows/ci.yml\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-jobs:\n-  build:\n-    runs-on: [self-hosted, intel]\n'
+  # Finding 2: non-ASCII workflow path in git diff
+  mkdir -p "$d/g/.github/workflows"
+  git -C "$d/g" init -q 2>/dev/null
+  git -C "$d/g" config user.email t@example.com
+  git -C "$d/g" config user.name t
+  printf 'jobs:\n  b:\n    runs-on: ubuntu-latest\n' > "$d/g/.github/workflows/$(printf 'caf\303\251.yml')"
+  git -C "$d/g" add . && git -C "$d/g" commit -q -m init
+  local base_sha head_sha
+  base_sha="$(git -C "$d/g" rev-parse HEAD)"
+  printf 'jobs:\n  b:\n    runs-on: [self-hosted, intel]\n' > "$d/g/.github/workflows/$(printf 'caf\303\251.yml')"
+  git -C "$d/g" add . && git -C "$d/g" commit -q -m change
+  head_sha="$(git -C "$d/g" rev-parse HEAD)"
+  got="$(GIT_DIR="$d/g/.git" from_git "$base_sha" "$head_sha" | grep '^applicable=')"
+  if [ "$got" = "applicable=yes" ]; then echo "  ok    non_ascii_workflow_git_diff"; else echo "  BAD   non_ascii_workflow_git_diff: got '$got' want 'applicable=yes'"; bad=$((bad + 1)); fi
+  # Finding 3: last path without trailing newline
+  expect last_path_no_trailing_nl yes 'src/lib.rs\ntools.toml'
+  # Finding 4: unreadable or missing DIFF arg fails closed
+  printf 'src/lib.rs\n' > "$d/p"
+  got="$(bash "$HERE/$(basename "${BASH_SOURCE[0]}")" --classify "$d/p" "$d/does_not_exist.diff" | grep '^applicable=')"
+  if [ "$got" = "applicable=yes" ]; then echo "  ok    missing_diff_fail_closed"; else echo "  BAD   missing_diff_fail_closed: got '$got' want 'applicable=yes'"; bad=$((bad + 1)); fi
+  got="$(bash "$HERE/$(basename "${BASH_SOURCE[0]}")" --classify "$d/p" "" | grep '^applicable=')"
+  if [ "$got" = "applicable=yes" ]; then echo "  ok    empty_diff_arg_fail_closed"; else echo "  BAD   empty_diff_arg_fail_closed: got '$got' want 'applicable=yes'"; bad=$((bad + 1)); fi
   echo "$PROG self-test: $bad broke"
   [ "$bad" = 0 ]
 }
@@ -145,6 +173,10 @@ if [ "$hit" = 1 ]; then echo "applicable=yes"; else echo "applicable=no"; fi	ech
 "+++ "* | "--- "*) f="" ;;	"+++ "* | "--- "*) f="$f" ;;
 "+++ b/.github/workflows/"* | "--- a/.github/workflows/"*) f="${p#??? ?/}" ;;	"--- a/.github/workflows/"*) f="${p#??? ?/}" ;;
 case "$p" in '"'*) echo "reason=quoted path $p, cannot judge"; hit=1; continue ;; esac	case "$p" in '"'*) continue ;; esac
+"+++ /dev/null") ;;	"+++ /dev/null") f="" ;;
+git -c core.quotepath=off diff --no-renames -U0	git diff --no-renames -U0
+while IFS= read -r p || [ -n "$p" ]; do	while IFS= read -r p; do
+if [ -z "$diff" ] || [ ! -r "$diff" ] || [ -d "$diff" ]; then	if false; then
 M
   echo "$PROG mutants: $n planted, $bad not killed"
   [ "$bad" = 0 ]
@@ -155,7 +187,10 @@ if [ $# -eq 2 ] && [ "${1#-}" = "$1" ]; then from_git "$1" "$2"; exit $?; fi
 case "${1:-}" in
   --self-test) self_test; exit $? ;;
   --mutants) mutants; exit $? ;;
-  --classify) [ -r "${2:-}" ] || { echo "$PROG: unreadable paths file" >&2; exit 2; }; classify "$2" "${3:-}"; exit 0 ;;
+  --classify)
+    [ -r "${2:-}" ] && [ ! -d "${2:-}" ] || { echo "$PROG: unreadable paths file" >&2; exit 2; }
+    if [ $# -ge 3 ]; then classify "$2" "$3"; else classify "$2"; fi
+    exit 0 ;;
   -h | --help | "") echo "usage: $PROG BASE HEAD | --classify PATHS [DIFF] | --self-test | --mutants"; [ -n "${1:-}" ]; exit $? ;;
 esac
 [ $# -eq 2 ] || { echo "usage: $PROG BASE HEAD" >&2; exit 2; }

@@ -24,7 +24,7 @@ job_block() { # workflow job
 }
 job_runs_on() { # workflow job -> normalized runs-on text (labels lower-cased, sorted, one line)
   job_block "$1" "$2" 2> /dev/null | awk '/^    runs-on:/{sub(/^    runs-on:[ ]*/, ""); sub(/[ ]+#.*$/, ""); print; exit}' \
-    | tr '[],"' '    ' | tr '[:upper:]' '[:lower:]' | tr -s ' ' '\n' | grep -v '^$' | sort | paste -sd' ' -
+    | tr "[],\"'" '     ' | tr '[:upper:]' '[:lower:]' | tr -s ' ' '\n' | grep -v '^$' | sort | paste -sd' ' -
 }
 
 step_routing() {
@@ -84,16 +84,16 @@ verdict() {
 check_workflow() {
   local f="$1" bad=0 t
   [ -r "$f" ] || { echo "unreadable $f"; return 2; }
-  t="$(grep -Ev '^[[:space:]]*#' "$f")"
+  t="$(awk '{sub(/(^|[[:space:]]+)#.*$/, ""); sub(/[[:space:]]+$/, ""); if ($0 != "") print}' "$f")"
   chk() { if bash -c "$2" <<< "$t" > /dev/null 2>&1; then echo "  ok    $1"; else echo "  BAD   $1"; bad=1; fi; }
   chk on_pull_request "grep -Eq '^  pull_request:'"
   chk on_merge_group "grep -Eq '^  merge_group:'"
   chk no_paths_filter "! grep -Eq '^[[:space:]]+paths(-ignore)?:'"
   chk no_continue_on_error "! grep -Eq 'continue-on-error'"
   chk aggregator_named "grep -Eq '^    name: nightly-preflight\$'"
-  chk aggregator_always "awk '/^  verdict:/{j=1;next} /^  [a-z0-9-]+:\$/{j=0} j&&/^    if: always\\(\\)/{f=1} END{exit f?0:1}'"
-  chk preflight_on_intel_pool "awk '/^  preflight:/{j=1;next} /^  [a-z0-9-]+:\$/{j=0} j&&/runs-on:.*intel/{f=1} END{exit f?0:1}'"
-  chk preflight_gated_on_scope "awk '/^  preflight:/{j=1;next} /^  [a-z0-9-]+:\$/{j=0} j&&/needs.scope.outputs.applicable == .yes./{f=1} END{exit f?0:1}'"
+  chk aggregator_always "awk '/^  verdict:/{j=1;next} /^  [A-Za-z0-9_-]+:/{j=0} j&&/^    if: always\\(\\)/{f=1} END{exit f?0:1}'"
+  chk preflight_on_intel_pool "awk '/^  preflight:/{j=1;next} /^  [A-Za-z0-9_-]+:/{j=0} j&&/runs-on:.*intel/{f=1} END{exit f?0:1}'"
+  chk preflight_gated_on_scope "awk '/^  preflight:/{j=1;next} /^  [A-Za-z0-9_-]+:/{j=0} j&&/needs.scope.outputs.applicable == .yes./{f=1} END{exit f?0:1}'"
   chk runs_preflight_script "grep -Eq '^ +bash scripts/ci/nightly_preflight\\.sh\$'"
   chk runs_scope_script "grep -Eq 'nightly_preflight_scope\\.sh \"\\\$BASE_SHA\"'"
   chk aggregator_uses_verdict "grep -Eq 'nightly_preflight\\.sh --verdict'"
@@ -139,6 +139,8 @@ self_test() {
   t rustc_absent_red 1 env NPF_ROOT="$w" NPF_POOL_CMD=true NPF_TOOLS_CMD=true NPF_PROBE_CMD=true NPF_RUSTC="$d/nope" bash "$SELF"
   fixture "$P" '[self-hosted, Linux, X64, clean-room]'
   t preflight_pool_drift_red 1 env NPF_ROOT="$w" NPF_POOL_CMD=true NPF_TOOLS_CMD=true NPF_PROBE_CMD=true NPF_RUSTC="$d/rustc" bash "$SELF"
+  fixture "['self-hosted', 'Linux', 'X64', 'clean-room', 'intel']" "$P"
+  t single_quoted_runs_on_green 0 env NPF_ROOT="$w" NPF_POOL_CMD=true NPF_TOOLS_CMD=true NPF_PROBE_CMD=true NPF_RUSTC="$d/rustc" bash "$SELF"
   fixture '[self-hosted, Linux, X64, clean-room]' '[self-hosted, Linux, X64, clean-room]'
   t train_on_bare_pool_is_the_7375_defect_red 1 env NPF_ROOT="$w" NPF_POOL_CMD=false NPF_TOOLS_CMD=true NPF_PROBE_CMD=true NPF_RUSTC="$d/rustc" bash "$SELF"
   rm -f "${w:?}/.github/workflows/nightly-preflight.yml"
@@ -159,11 +161,88 @@ self_test() {
     name: nightly-preflight	    name: nightly-preflight-x
     if: always()	    if: success()
     runs-on: [self-hosted, Linux, X64, clean-room, intel]	    runs-on: [self-hosted, Linux, X64, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room, intel]	    runs-on: ubuntu-latest # intel
     if: needs.scope.outputs.applicable == 'yes'	    if: true
           bash scripts/ci/nightly_preflight.sh	          echo skipped
           out="$(bash scripts/ci/nightly_preflight_scope.sh 	          out="$(echo scope
         run: bash scripts/ci/nightly_preflight.sh --verdict	        run: echo verdict
 W
+  # Finding 5: underscore/uppercase job boundaries must prevent subsequent helper jobs from satisfying verdict/preflight checks
+  cat > "$d/wf_boundary_verdict.yml" <<'WF'
+on:
+  pull_request:
+  merge_group:
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          out="$(bash scripts/ci/nightly_preflight_scope.sh "$BASE_SHA" HEAD)"
+  preflight:
+    if: needs.scope.outputs.applicable == 'yes'
+    runs-on: [self-hosted, intel]
+    steps:
+      - run: |
+          bash scripts/ci/nightly_preflight.sh
+  verdict:
+    name: nightly-preflight
+    steps:
+      - run: echo noop
+  verdict_Helper:
+    if: always()
+    steps:
+      - run: bash scripts/ci/nightly_preflight.sh --verdict
+WF
+  t wf_job_boundary_verdict_red 1 bash "$SELF" --check-workflow "$d/wf_boundary_verdict.yml"
+  cat > "$d/wf_boundary_pool.yml" <<'WF'
+on:
+  pull_request:
+  merge_group:
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          out="$(bash scripts/ci/nightly_preflight_scope.sh "$BASE_SHA" HEAD)"
+  preflight:
+    if: needs.scope.outputs.applicable == 'yes'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          bash scripts/ci/nightly_preflight.sh
+  preflight_Helper:
+    runs-on: [self-hosted, intel]
+  verdict:
+    name: nightly-preflight
+    if: always()
+    steps:
+      - run: bash scripts/ci/nightly_preflight.sh --verdict
+WF
+  t wf_job_boundary_preflight_pool_red 1 bash "$SELF" --check-workflow "$d/wf_boundary_pool.yml"
+  cat > "$d/wf_boundary_gate.yml" <<'WF'
+on:
+  pull_request:
+  merge_group:
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          out="$(bash scripts/ci/nightly_preflight_scope.sh "$BASE_SHA" HEAD)"
+  preflight:
+    runs-on: [self-hosted, intel]
+    steps:
+      - run: |
+          bash scripts/ci/nightly_preflight.sh
+  preflight_helper:
+    if: needs.scope.outputs.applicable == 'yes'
+  verdict:
+    name: nightly-preflight
+    if: always()
+    steps:
+      - run: bash scripts/ci/nightly_preflight.sh --verdict
+WF
+  t wf_job_boundary_preflight_gate_red 1 bash "$SELF" --check-workflow "$d/wf_boundary_gate.yml"
   echo "$PROG self-test: $bad broke"
   [ "$bad" = 0 ]
 }
@@ -194,6 +273,11 @@ for s in routing tools credentials	for s in routing tools
 [ "$bad" -eq 0 ] && echo "PREFLIGHT OK	echo "PREFLIGHT OK
 chk no_paths_filter "! grep	chk no_paths_filter "grep
 chk no_continue_on_error "! grep -Eq 'continue-on-error'"	chk no_continue_on_error "true"
+tr "[],\"'" '     '	tr '[],"' '    '
+sub(/(^|[[:space:]]+)#.*$/, "");	if (/^[[:space:]]*#/) next;
+chk aggregator_always "awk '/^  verdict:/{j=1;next} /^  [A-Za-z0-9_-]+:/{j=0}	chk aggregator_always "awk '/^  verdict:/{j=1;next} /^  [a-z0-9-]+:\$/{j=0}
+chk preflight_on_intel_pool "awk '/^  preflight:/{j=1;next} /^  [A-Za-z0-9_-]+:/{j=0}	chk preflight_on_intel_pool "awk '/^  preflight:/{j=1;next} /^  [a-z0-9-]+:\$/{j=0}
+chk preflight_gated_on_scope "awk '/^  preflight:/{j=1;next} /^  [A-Za-z0-9_-]+:/{j=0}	chk preflight_gated_on_scope "awk '/^  preflight:/{j=1;next} /^  [a-z0-9-]+:\$/{j=0}
 M
   echo "$PROG mutants: $n planted, $bad not killed"
   [ "$bad" = 0 ]
