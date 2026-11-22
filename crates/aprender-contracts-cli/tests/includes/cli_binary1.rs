@@ -92,6 +92,58 @@
         );
     }
 
+    /// #7357 call-site falsifier: `--strict-test-binding --strict` over a
+    /// directory whose contract cites a test fn that does not exist must END
+    /// `Result: FAIL` with a non-zero exit. Reverting the `report.arm(...)`
+    /// call in `run` (leaving `with_requested_gates` intact) turns this green
+    /// run into a `PASS` / exit 0, which the unit test of the helper cannot see.
+    #[test]
+    fn pv_lint_strict_test_binding_dangling_ref_fails_the_run() {
+        let scratch = tempfile::tempdir().expect("scratch cwd is creatable");
+        let dir = scratch.path().join("contracts");
+        std::fs::create_dir_all(&dir).expect("fixture dir is creatable");
+        std::fs::copy(
+            contract_path("pv-artifact-kinds-v1.yaml"),
+            dir.join("pv-artifact-kinds-v1.yaml"),
+        )
+        .expect("fixture contract is copyable");
+        let yaml = std::fs::read_to_string(dir.join("pv-artifact-kinds-v1.yaml"))
+            .expect("fixture is readable");
+        let injected = yaml.replacen(
+            "falsification_tests:\n",
+            "falsification_tests:\n  - id: FALSIFY-DANGLING-001\n    rule: dangling\n    prediction: none\n    name: MUTANT_7357_fn_that_exists_nowhere\n    if_fails: investigate\n",
+            1,
+        );
+        assert_ne!(yaml, injected, "fixture must gain a dangling falsification test");
+        std::fs::write(dir.join("pv-artifact-kinds-v1.yaml"), injected)
+            .expect("fixture is writable");
+
+        let output = Command::new(pv_bin())
+            .current_dir(scratch.path())
+            .arg("lint")
+            .arg(&dir)
+            .arg("--strict-test-binding")
+            .arg("--strict")
+            .output()
+            .expect("failed to run pv");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("MUTANT_7357_fn_that_exists_nowhere"),
+            "the dangling ref must be reported: {stdout}"
+        );
+        assert!(
+            stdout.lines().any(|l| l.contains("PV-VER-002")
+                && l.contains("MUTANT_7357_fn_that_exists_nowhere")),
+            "the dangling ref must be reported as PV-VER-002: {stdout}"
+        );
+        assert!(
+            stdout.contains("Result: FAIL") && !stdout.contains("Result: PASS"),
+            "a dangling ref under --strict-test-binding --strict must print Result: FAIL: {stdout}"
+        );
+        // Measured: a rejected lint (`reject: lint failed`) exits 1.
+        assert_eq!(output.status.code(), Some(1), "reject exit code: {stdout}");
+    }
+
     #[test]
     fn pv_scaffold_softmax() {
         let output = Command::new(pv_bin())

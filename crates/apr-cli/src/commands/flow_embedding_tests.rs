@@ -199,3 +199,10 @@ mod flow_embedding_tests {
         assert_eq!(name("9"), "pooling_type 9");
     }
 }
+
+/// The `--no-default-features` refusal names the same architecture realizar does (#7294).
+#[cfg(test)]
+#[test]
+fn embedding_arch_matches_realizar() {
+    assert_eq!(EMBEDDING_ARCH, realizar::model_kind::EMBEDDING_GEMMA2_ARCH);
+}

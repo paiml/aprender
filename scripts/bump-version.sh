@@ -361,10 +361,16 @@ if ! set_workspace_version "$REPO_ROOT" "$NEW"; then
     exit 1
 fi
 # Refresh the lockfile for the new member versions; offline, no resolution change.
-if ! ( cd "$REPO_ROOT" && cargo update --workspace --offline ) >/dev/null 2>&1; then
+upd_log="$(mktemp "${TMPDIR:-/tmp}/bump-cargo-update.XXXXXX")" || exit 1
+if ! ( cd "$REPO_ROOT" && cargo update --workspace --offline ) >"$upd_log" 2>&1; then
     printf 'FAIL  could not refresh Cargo.lock for %s\n' "$NEW" >&2
+    printf -- '--- last 15 lines of cargo output ---\n' >&2
+    tail -n 15 "$upd_log" >&2
+    printf -- '--- hint: --offline needs every dependency in the local registry; run with a populated CARGO_HOME ---\n' >&2
+    rm -f "$upd_log"
     exit 1
 fi
+rm -f "$upd_log"
 
 # THE PART --workspace CANNOT REACH.
 printf -- '--- crates/facades (excluded from the root workspace) ---\n'

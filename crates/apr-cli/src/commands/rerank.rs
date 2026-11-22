@@ -789,6 +789,7 @@ mod tests {
 
     /// APR-EMBED-001 EG-5 (I-3): an EmbeddingGemma 2 GGUF is refused by kind, naming `apr embed`,
     /// before the vocabulary is read. EG-0 measured exit 5 on a missing `vocab.txt` naming no verb.
+    #[cfg(feature = "inference")]
     #[test]
     fn falsify_eg5_rerank_refuses_embedding_gguf_before_the_vocab() {
         use std::io::Write;

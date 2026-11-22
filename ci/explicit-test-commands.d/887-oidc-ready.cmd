@@ -1,0 +1,2 @@
+# 0.76 OIDC trusted publisher: oidc_ready.sh case table (workflow, doc-sync, crates.io attestation rows) and 13 planted-defect mutants; live workflow-only check must pass, the full check must stay red until the owner attests every crate
+out=$(bash scripts/release/oidc_ready.sh --self-test 2>&1); rc=$?; printf '%s\n' "$out" | tail -n 8; [ "$rc" -eq 0 ] && [[ "$out" == *"--- 18/18 case rows ---"* ]] && [[ "$out" == *"--- 13/13 mutants killed ---"* ]] && bash scripts/release/oidc_ready.sh --workflow-only > /dev/null

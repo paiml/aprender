@@ -492,3 +492,5 @@ mod tests_huggingface;
 mod tests_sanitize;
 #[path = "tests_ct_proptest.rs"]
 mod tests_ct_proptest;
+#[path = "tests_qwen4_exp.rs"]
+mod tests_qwen4_exp;

@@ -70,9 +70,14 @@ pub(crate) fn run(
         .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect: {e}")))?;
 
     // APR-EMBED-001 EG-1: an embedding model is drawn by kind, never as a decoder with an LM head.
+    #[cfg(feature = "inference")]
     if let Some(embedding) = embedding_flow(&report)? {
         return run_embedding_flow(apr_path, &report, &embedding, component, json_output);
     }
+    // Without `inference` the kind reader is not linked, so an embedding file is refused by name
+    // rather than drawn as a decoder (#7294).
+    #[cfg(not(feature = "inference"))]
+    refuse_embedding_without_inference(&report)?;
 
     let tensor_names: Vec<String> = report.tensors.iter().map(|t| t.name.clone()).collect();
     let arch = detect_architecture(&tensor_names);
@@ -566,8 +571,31 @@ fn print_decoder_block(tensor_names: &[String], _verbose: bool) {
     println!("└─────────────────────────────────────────────────────────────┘");
 }
 
+/// The EmbeddingGemma 2 architecture string; `embedding_arch_matches_realizar` pins it to realizar's.
+#[cfg(any(not(feature = "inference"), test))]
+const EMBEDDING_ARCH: &str = "gemma-embedding2";
+
+/// A build without `inference` cannot draw the embedding path, so it refuses an embedding file instead of
+/// drawing it as a decoder with an LM head.
+#[cfg(not(feature = "inference"))]
+fn refuse_embedding_without_inference(
+    report: &aprender::format::rosetta::InspectionReport,
+) -> Result<(), CliError> {
+    match report.metadata.get("general.architecture") {
+        Some(arch) if arch.eq_ignore_ascii_case(EMBEDDING_ARCH) => {
+            Err(CliError::FeatureDisabled(format!(
+                "'{arch}' is an embedding model: `apr flow` draws it only with the `inference` feature \
+                 (built with --no-default-features)"
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
 include!("flow_print_cross.rs");
+#[cfg(feature = "inference")]
 include!("flow_embedding.rs");
+#[cfg(feature = "inference")]
 include!("flow_embedding_tests.rs");
 include!("flow_coverage_tests.rs");
 include!("flow_03.rs");
