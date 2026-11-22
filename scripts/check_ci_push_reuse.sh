@@ -537,11 +537,13 @@ printf '%s\n' "$STAMP_LINE" > "$T/one-stamp.log"
 OUT=$(bash "$FACTS" --parse-stamp-log "$T/one-stamp.log" 2>&1); RC=$?
 want "Y40 control: a log with exactly one stamp line parses (exit 0, one JSON object)" "0:1" "$RC:$(grep -c '"tree"' <<< "$OUT")"
 OUT=$(bash "$FACTS" --parse-stamp-log "$T/two-stamps.log" 2>&1); RC=$?
-want "Y41 two stamp lines are a refusal (exit 1, named, no JSON) - a count relaxed to -le 2 turns this red" "1:named:0" "$RC:$(case "$OUT" in *"has 2 stamp lines"*) echo named;; *) echo "other";; esac):$(grep -c '"tree"' <<< "$OUT")"
+case "$OUT" in *"has 2 stamp lines"*) STAMP_MSG=named ;; *) STAMP_MSG=other ;; esac
+want "Y41 two stamp lines are a refusal (exit 1, named, no JSON) - a count relaxed to -le 2 turns this red" "1:named:0" "$RC:$STAMP_MSG:$(grep -c '"tree"' <<< "$OUT")"
 OUT=$(bash "$FACTS" --parse-stamp-log "$T/three-stamps.log" 2>&1); RC=$?
 want "Y42 three stamp lines are a refusal too" "1" "$RC"
 OUT=$(bash "$FACTS" --parse-stamp-log "$T/stamp-and-unavailable.log" 2>&1); RC=$?
-want "Y43 a stamp AND an emitted unavailable line is a refusal (exit 1, named, no JSON)" "1:named:0" "$RC:$(case "$OUT" in *"a stamp and an unavailable line"*) echo named;; *) echo "other";; esac):$(grep -c '"tree"' <<< "$OUT")"
+case "$OUT" in *"a stamp and an unavailable line"*) STAMP_MSG=named ;; *) STAMP_MSG=other ;; esac
+want "Y43 a stamp AND an emitted unavailable line is a refusal (exit 1, named, no JSON)" "1:named:0" "$RC:$STAMP_MSG:$(grep -c '"tree"' <<< "$OUT")"
 SEC_LINE=$(grep -E '^[0-9TZ:.-]+ section sov\.test: ' "$FX/x86-main-push-sections.fixture" | tr -d '\r')
 printf '%s\n%s\n' "$SEC_LINE" "$SEC_LINE" > "$T/two-sections.log"
 want "Y44 a section line that appears twice reads null, never a result (exactly-one rule)" null "$(bash "$FACTS" --parse-section-log "$T/two-sections.log" sov.test)"
