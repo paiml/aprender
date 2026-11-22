@@ -263,10 +263,11 @@ infra_gh() {
 }
 
 # infra_rows C [GET] -> the TSV judge_cpu reads, newest run first; stops at the first run that tested C (an empty C
-# reads them all). GET PATH prints an API path's body (infra_curl by default). Any read that fails, a job log's
-# included, fails the whole read: a log that could not be fetched is never a run that tested nothing.
+# reads them all). GET PATH prints an API path's body (infra_curl by default). When INFRA_DIAG is set, appends one
+# diagnostic TSV row per inspected run (id attempt jst jcon sha why), including runs with no matching job. Any read
+# that fails, a job log's included, fails the whole read: a log that could not be fetched is never a run that tested nothing.
 infra_rows() {
-    local get=${2:-infra_curl} runs ids id att jobs jid jst jcon jassert sha log logs=0
+    local get=${2:-infra_curl} diag=${INFRA_DIAG:-} runs ids id att jobs jid jst jcon jassert sha log bytes why logs=0
     runs="$("$get" "repos/$INFRA_REPO/actions/workflows/$INFRA_WORKFLOW/runs?per_page=$INFRA_RUNS")" || return 1
     ids="$(printf '%s\n' "$runs" | jq -r '.workflow_runs[] | "\(.id) \(.run_attempt)"')" || return 1
     while read -r id att; do
@@ -274,14 +275,34 @@ infra_rows() {
         jobs="$("$get" "repos/$INFRA_REPO/actions/runs/$id/jobs?per_page=100")" || return 1
         jid=""; jst=""; jcon=""; jassert=""
         read -r jid jst jcon jassert < <(printf '%s\n' "$jobs" | infra_job)
-        [ -n "$jid" ] || continue
+        if [ -z "$jid" ]; then
+            [ -z "$diag" ] || printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$att" "absent" "-" "?" "no job '$INFRA_JOB', assert=absent/- log=not_fetched" >> "$diag"
+            continue
+        fi
         sha="?"
-        if log_proves "$jst" "$jassert" && [ "$logs" -lt "$INFRA_MAX_LOGS" ]; then
+        if ! log_proves "$jst" "$jassert"; then
+            why="assert=$jassert log=not_fetched"
+        elif [ "$logs" -ge "$INFRA_MAX_LOGS" ]; then
+            why="assert=$jassert log cap reached $logs/$INFRA_MAX_LOGS"
+        else
             logs=$((logs + 1))
             log="$("$get" "repos/$INFRA_REPO/actions/jobs/$jid/logs")" || return 1  # MUTANT-ANCHOR: m27
+            bytes="$(printf '%s' "$log" | wc -c)"
             sha="$(printf '%s\n' "$log" | tested_sha)"
-            [ -n "$sha" ] || sha="?"
+            if [ -n "$sha" ]; then
+                why="assert=$jassert log=${bytes}B"
+            else
+                sha="?"
+                if [ "$bytes" -eq 0 ]; then
+                    why="assert=$jassert log=0B"
+                elif [[ $log == *'tested-sha: '* ]]; then
+                    why="assert=$jassert log=${bytes}B invalid tested-sha"
+                else
+                    why="assert=$jassert log=${bytes}B no tested-sha line"
+                fi
+            fi
         fi
+        [ -z "$diag" ] || printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$att" "$jst" "$jcon" "$sha" "$why" >> "$diag"
         tsv "$id" "$att" "$jst" "$jcon" "$sha"
         [ "$sha" != "$1" ] || return 0
     done <<< "$ids"
@@ -315,11 +336,13 @@ measured_cpu() {
     # MUTANT-ANCHOR: m31
     fl=$((lim / 5)); [ "$fl" -le "$RATE_FLOOR" ] || fl=$RATE_FLOOR  # MUTANT-ANCHOR: m30
     [ "$rem" -ge "$fl" ] || { echo "not_measured: core remaining $rem under $fl" >&2; return 2; }  # MUTANT-ANCHOR: m29
+    local INFRA_DIAG="$INFRA_CACHE/diag.tsv"
+    : > "$INFRA_DIAG" || return 2
     rows="$(infra_rows "" infra_gh)" || { echo "not_measured: paiml/infra clean-room runs were not read" >&2; return 2; }  # MUTANT-ANCHOR: m26
-    # PMAT-6676: say what was read, so a pick of "0 commits" names which runs and why (run attempt status conclusion tested_sha)
-    printf 'measured-cpu: read %s infra run(s), %s tested a commit\n' "$(printf '%s\n' "$rows" | awk 'NF >= 5 { n++ } END { print n + 0 }')" \
+    # PMAT-6676 / #7374: say what was read, so a pick of "0 commits" names which runs and why (run attempt status conclusion tested_sha reason)
+    printf 'measured-cpu: read %s infra run(s), %s tested a commit\n' "$(awk 'NF >= 6 { n++ } END { print n + 0 }' "$INFRA_DIAG")" \
         "$(printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 && $5 ~ /^[0-9a-f]{40}$/ && !s[$5]++ { n++ } END { print n + 0 }')" >&2
-    printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 { printf "measured-cpu:   run %s attempt %s %s/%s tested %s\n", $1, $2, $3, $4, substr($5, 1, 12) }' >&2
+    awk -F '\t' 'NF >= 6 { printf "measured-cpu:   run %s attempt %s %s/%s tested %s (%s)\n", $1, $2, $3, $4, substr($5, 1, 12), $6 }' "$INFRA_DIAG" >&2  # MUTANT-ANCHOR: m56
     while read -r sha; do
         [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || continue
         v="$(printf '%s\n' "$rows" | judge_cpu "$sha")"
@@ -583,6 +606,55 @@ FAKE
     exact measured_cpu_no_runs_is_a_measured_none 0 "" -- cpu "$tmp/fc" "$tmp/ck"
     runs "$tmp/fc" 200 '{"message":"Not Found"}'
     exact measured_cpu_a_body_that_is_no_run_list_is_not_measured 2 "" -- cpu "$tmp/fc" "$tmp/cl"
+    # #7374: diagnostic why per-run tested ? happened: (a) missing job or non-passing assert, (b) log cap, (c) empty/no-sha log
+    mkdir -p "$tmp/fd" "$tmp/fe" "$tmp/ff"
+    # fixture d (a): run 51 has no clean-room (aprender) job; run 52 has assert=absent/-; run 53 has assert=completed/failure (no /logs read)
+    printf '5000 4000\n' > "$tmp/fd/rate"
+    runs "$tmp/fd" 200 '{"workflow_runs":[{"id":51,"run_attempt":1},{"id":52,"run_attempt":1},{"id":53,"run_attempt":1}]}'
+    fgh "$tmp/fd" "repos/$INFRA_REPO/actions/runs/51/jobs?per_page=100" 200 '{"jobs":[{"id":510,"name":"clean-room (trueno)","status":"completed","conclusion":"success","steps":[]}]}'
+    fgh "$tmp/fd" "repos/$INFRA_REPO/actions/runs/52/jobs?per_page=100" 200 "$(jq -cn --arg n "$INFRA_JOB" '{jobs:[{id:520,name:$n,status:"completed",conclusion:"success",steps:[]}]}')"
+    fgh "$tmp/fd" "repos/$INFRA_REPO/actions/runs/53/jobs?per_page=100" 200 "$(jq -cn --arg n "$INFRA_JOB" --arg a "$INFRA_ASSERT" '{jobs:[{id:530,name:$n,status:"completed",conclusion:"failure",steps:[{name:$a,status:"completed",conclusion:"failure"}]}]}')"
+    exact measured_cpu_diag_a_unproved_is_empty_stdout 0 "" -- cpu "$tmp/fd" "$tmp/co"
+    o="$(cpu "$tmp/fd" "$tmp/co" 2>&1 >/dev/null)"
+    case "$o" in
+        *"run 51 attempt 1 absent/- tested ? (no job 'clean-room (aprender)'"*) ok measured_cpu_diag_a_missing_job "run 51 absent/-" ;;
+        *) broke measured_cpu_diag_a_missing_job "stderr: ${o:0:200}" ;;
+    esac
+    case "$o" in
+        *"run 52 attempt 1 completed/success tested ? (assert=absent/- log=not_fetched)"*) ok measured_cpu_diag_a_missing_assert "run 52 assert=absent/-" ;;
+        *) broke measured_cpu_diag_a_missing_assert "stderr: ${o:0:200}" ;;
+    esac
+    case "$o" in
+        *"run 53 attempt 1 completed/failure tested ? (assert=completed/failure log=not_fetched)"*) ok measured_cpu_diag_a_failed_assert "run 53 assert=completed/failure" ;;
+        *) broke measured_cpu_diag_a_failed_assert "stderr: ${o:0:200}" ;;
+    esac
+    # fixture e (b): 4 runs all with passed assert; INFRA_MAX_LOGS=3 caps log reads at 3 so run 61 hits log cap
+    printf '5000 4000\n' > "$tmp/fe/rate"
+    runs "$tmp/fe" 200 '{"workflow_runs":[{"id":64,"run_attempt":1},{"id":63,"run_attempt":1},{"id":62,"run_attempt":1},{"id":61,"run_attempt":1}]}'
+    infra "$tmp/fe" 64 640 completed success; infra "$tmp/fe" 63 630 completed success; infra "$tmp/fe" 62 620 completed success; infra "$tmp/fe" 61 610 completed success
+    logs "$tmp/fe" 640 200 "$d"; logs "$tmp/fe" 630 200 "$e"; logs "$tmp/fe" 620 200 "$c"
+    exact measured_cpu_diag_b_capped_reads_first_three 0 "$(tsv "$d" green 64; tsv "$e" green 63; tsv "$c" green 62)" -- cpu "$tmp/fe" "$tmp/cp"
+    o="$(cpu "$tmp/fe" "$tmp/cp" 2>&1 >/dev/null)"
+    case "$o" in
+        *"run 61 attempt 1 completed/success tested ? (assert=completed/success log cap reached 3/3)"*) ok measured_cpu_diag_b_log_cap_reached "run 61 cap 3/3" ;;
+        *) broke measured_cpu_diag_b_log_cap_reached "stderr: ${o:0:200}" ;;
+    esac
+    # fixture f (c): log fetched, but empty (0B) or non-empty without a tested-sha line
+    printf '5000 4000\n' > "$tmp/ff/rate"
+    runs "$tmp/ff" 200 '{"workflow_runs":[{"id":71,"run_attempt":1},{"id":72,"run_attempt":1}]}'
+    infra "$tmp/ff" 71 710 completed success; infra "$tmp/ff" 72 720 completed success
+    logs "$tmp/ff" 710 200
+    fgh "$tmp/ff" "repos/$INFRA_REPO/actions/jobs/720/logs" 200 "<html><body>redirected body</body></html>"
+    exact measured_cpu_diag_c_empty_or_nosh_is_empty_stdout 0 "" -- cpu "$tmp/ff" "$tmp/cq"
+    o="$(cpu "$tmp/ff" "$tmp/cq" 2>&1 >/dev/null)"
+    case "$o" in
+        *"run 71 attempt 1 completed/success tested ? (assert=completed/success log=0B)"*) ok measured_cpu_diag_c_empty_log "run 71 log=0B" ;;
+        *) broke measured_cpu_diag_c_empty_log "stderr: ${o:0:200}" ;;
+    esac
+    case "$o" in
+        *"run 72 attempt 1 completed/success tested ? (assert=completed/success log=41B no tested-sha line)"*) ok measured_cpu_diag_c_no_tested_sha_line "run 72 log=41B no tested-sha line" ;;
+        *) broke measured_cpu_diag_c_no_tested_sha_line "stderr: ${o:0:200}" ;;
+    esac
     # assert-head, in a fixture repo (one empty commit, made without a hook) and in a repo with no commit
     fxgit init -q "$tmp/repo" && fxgit init -q "$tmp/empty"
     h="$(fxgit -C "$tmp/repo" mktree < /dev/null)" \
@@ -854,7 +926,8 @@ m51_wiring_ignores_needs_pick s# || bad="\$bad \$j(needs-pick)"# || true#
 m52_wiring_counts_the_pick_as_a_job s#^    rest="\$(awk .*#    rest="$(cat "$wf")"#
 m53_refused_read_names_nothing s#infra_gh: GET %s -> HTTP %s#infra_gh: x %s -> HTTP %s#
 m55_unreadable_gh_config_dir_kept s#GH_CONFIG_DIR="\$INFRA_CACHE/gh-config"#GH_CONFIG_DIR="$GH_CONFIG_DIR"#
-m54_rate_limit_refusal_thrown_away s#gh api -i rate_limit 2> "\$rl_err"#gh api -i rate_limit 2>/dev/null#'
+m54_rate_limit_refusal_thrown_away s#gh api -i rate_limit 2> "\$rl_err"#gh api -i rate_limit 2>/dev/null#
+m56_measured_cpu_drops_run_reason s# (%s)\\n", \$1, \$2, \$3, \$4, substr(\$5, 1, 12), \$6#\\n", $1, $2, $3, $4, substr($5, 1, 12)#'
 
 # Every mutant above is keyed to a stable marker, not to the text around it (N47: a text-matched mutant broke on the
 # commit that carried its fix). The marker is the comment `# MUTANT-ANCHOR: mNN` at the end of the source line the
