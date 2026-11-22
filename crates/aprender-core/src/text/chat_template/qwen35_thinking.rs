@@ -152,7 +152,11 @@ pub fn split_thinking(text: &str) -> (Option<String>, String) {
     match text.split_once("</think>") {
         Some((before, after)) => {
             let r = before.trim().trim_start_matches("<think>").trim();
-            let reasoning = if r.is_empty() { None } else { Some(r.to_string()) };
+            let reasoning = if r.is_empty() {
+                None
+            } else {
+                Some(r.to_string())
+            };
             (reasoning, after.trim().to_string())
         }
         None => (None, text.to_string()),

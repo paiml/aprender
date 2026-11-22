@@ -1,0 +1,2 @@
+# APR-GREEN-001 item 3: nightly preflight on PR. Wiring check of the workflow, then the case tables and planted-defect mutants of both scripts
+bash scripts/ci/nightly_preflight.sh --check-workflow .github/workflows/nightly-preflight.yml && bash scripts/ci/nightly_preflight.sh --self-test && bash scripts/ci/nightly_preflight.sh --mutants && bash scripts/ci/nightly_preflight_scope.sh --self-test && bash scripts/ci/nightly_preflight_scope.sh --mutants
