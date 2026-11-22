@@ -381,7 +381,7 @@ check_tp_state() {
   printf '\n=== crates.io Trusted Publisher state (attestation: %s) ===\n' "${attest:-none}"
   while IFS=$'\t' read -r _ crate; do
     [ -n "$crate" ] || continue
-    if printf '%s\n' "$have" | grep -qxF -- "$crate"; then
+    if grep -qxF -- "$crate" <<<"$have"; then
       printf 'ok    tp: %s\n' "$crate"
     else
       printf 'MISSING tp: %s\n' "$crate"
@@ -692,7 +692,7 @@ m8_token_auth_preserved_skipped s/\*"inputs\.token_auth"\*"secrets\.CARGO_REGIST
 m9_doc_sync_skipped s/if check_doc_sync "\$doc" "\$rows"; then/if true; then/
 m10_final_verdict_ignored s/return "\$rc"/return 0/
 m11_tp_missing_not_counted s/missing=\$((missing + 1))/missing=0/
-m12_tp_always_attested s/if printf .%s.n. "\$have" | grep -qxF -- "\$crate"; then/if true; then/
+m12_tp_always_attested s/if grep -qxF -- "\$crate" <<<"\$have"; then/if true; then/
 m13_tp_check_skipped s/^    check_tp_state "\$(extract_tiers_rows/    true "$(extract_tiers_rows/'
 
 mutants() {
