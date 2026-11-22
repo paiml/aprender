@@ -16,12 +16,24 @@ concurrency:
 
 jobs:
   train:
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    # Pin to the intel clean-room pool (#7375): kfocus-mq carries `clean-room,tier2,kfocus`
+    # with ~/.cargo/credentials.toml reachable under uid noah, failing no_token() exit 2.
+    runs-on: [self-hosted, Linux, X64, clean-room, intel]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: No registry token is reachable (no-token preflight)
+        run: |
+          set -uo pipefail
+          if ! out="$(bash scripts/release/nightly_train.sh --probe-no-token 2>&1)"; then
+            echo "::error::no-token preflight failed on runner ${RUNNER_NAME:-unknown} ($out)"
+            exit 2
+          fi
+          echo "$out (runner=${RUNNER_NAME:-unknown})"
       - name: The judge's case table and mutants (a red table prints no verdict)
         run: |
+          setsid --wait bash scripts/check_nightly_train_pool.sh --self-test
+          setsid --wait bash scripts/check_nightly_train_pool.sh
           bash scripts/release/nightly_train.sh --self-test
           bash scripts/release/nightly_train.sh --mutants
           # the gate/LAB test reads the workflows with yq; the clean-room image has none, so fetch the pinned one
@@ -63,7 +75,7 @@ jobs:
   andon:
     needs: train
     if: always()
-    runs-on: [self-hosted, Linux, X64, clean-room]   # check_runner_labels.sh: a bare X64 job is refused
+    runs-on: [self-hosted, Linux, X64, clean-room, intel]   # check_runner_labels.sh + #7375: intel clean-room pool only
     timeout-minutes: 10
     permissions:
       contents: read

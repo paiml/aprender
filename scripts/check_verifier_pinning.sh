@@ -47,14 +47,14 @@
 #                         after `cd "$REPO_DIR"`, so `bash scripts/dogfood.sh
 #                         ../other-crate` exited 2 before any gate ran.
 #
-# THE UNIVERSE, and why it is these three tokens
+# THE UNIVERSE, and why it is these four tokens
 # ----------------------------------------------
-# VERIFIERS = pv, pmat, apr — exactly the tools for which THIS REPO ships a pin
-# (scripts/pv_bin.sh, verifier_pin_pmat, scripts/apr_bin.sh). bashrs and
-# probador are verifiers too and are NOT listed: no pin exists for them, and the
-# rule's second clause is "where the repo does not pin, report" — which the
-# runner does. Adding them here would demand a pin that does not exist and make
-# the gate unfixable. The day one ships, add the token here.
+# VERIFIERS = pv, pmat, apr, bashrs — exactly the tools for which THIS REPO
+# ships a pin (scripts/pv_bin.sh, verifier_pin_pmat, scripts/apr_bin.sh,
+# scripts/bashrs_pin.sh). probador is a verifier too and is NOT listed: no pin
+# exists for it, and the rule's second clause is "where the repo does not pin,
+# report" — which the runner does. Adding it here would demand a pin that does
+# not exist and make the gate unfixable.
 #
 # THE SCANNED SURFACE, and why it is not two files
 # ------------------------------------------------
@@ -118,7 +118,7 @@ scan() {
     python3 - "$@" <<'PY'
 import re, sys
 
-VERIFIERS = {"pv", "pmat", "apr"}
+VERIFIERS = {"pv", "pmat", "apr", "bashrs"}
 
 # Control words and operators: after one of these, the next word is a command.
 SEPARATORS = {";", ";;", "&&", "||", "|", "|&", "(", ")", "{", "}", "&", "!",
@@ -484,6 +484,9 @@ gate pmat-verify /some/other/binary verify
 PV=""
 verifier_pin_pv
 run_to "$L" "$PV" lint contracts
+BASHRS=""
+bashrs_pin_resolve
+run_to "$L" "$BASHRS" lint foo.sh
 cat <<'DOC'
 the pinned binary is $PMAT_BIN
 DOC
@@ -546,10 +549,12 @@ _LEFT = r"(?:^|[;&|(){}]|\bthen\b|\belse\b|\bdo\b|\bif\b|\belif\b|\bwhile\b|\bun
 CALL = {
     "pmat": re.compile(_LEFT + r"verifier_pin_pmat\b"),
     "pv": re.compile(_LEFT + r"verifier_pin_pv\b"),
+    "bashrs": re.compile(_LEFT + r"bashrs_pin_resolve\b"),
 }
 USE = {
     "pmat": re.compile(r"\$\{?PMAT_BIN\b"),
     "pv": re.compile(r"\$\{?PV\}?(?![A-Za-z0-9_])"),
+    "bashrs": re.compile(r"\$\{?BASHRS\b"),
 }
 # An assignment to the pinned variable in the RUNNER is a bypass: it is exactly
 # the mutation `PMAT_BIN=pmat`, and a token scan cannot distinguish it from any
@@ -564,19 +569,19 @@ USE = {
 BYPASS = re.compile(
     _LEFT
     + r"""(?:export\s+|readonly\s+|declare\s+(?:-[A-Za-z]+\s+)*|local\s+)?"""
-    + r"""(PMAT_BIN|PV)=(?!(""|''|\s|$))"""
+    + r"""(PMAT_BIN|PV|BASHRS)=(?!(""|''|\s|$))"""
 )
 
 rc = 0
-for tool in ("pmat", "pv"):
+for tool in ("pmat", "pv", "bashrs"):
     calls = [n for n, l in code if CALL[tool].search(l)]
     uses = [n for n, l in code if USE[tool].search(l)]
     if not calls:
-        print("ROW FAIL %s: the runner never CALLS verifier_pin_%s. A pin that is"
-              " defined and not invoked leaves every gate on PATH." % (tool, tool))
+        print("ROW FAIL %s: the runner never CALLS %s. A pin that is"
+              " defined and not invoked leaves every gate on PATH." % (tool, CALL[tool].pattern))
         rc = 1
     elif not uses:
-        print("ROW FAIL %s: the runner calls verifier_pin_%s but never uses the"
+        print("ROW FAIL %s: the runner resolves the pin for %s but never uses the"
               " result — the gates are consuming something else." % (tool, tool))
         rc = 1
     elif min(calls) > min(uses):
@@ -597,10 +602,10 @@ if bypass:
     for n, l in bypass:
         print("ROW FAIL bypass at line %d: %s" % (n, l[:80]))
     print("ROW FAIL the runner assigns a pinned verifier variable directly. Only"
-          " scripts/verifier_pin.sh may decide what PMAT_BIN/PV hold.")
+          " scripts/verifier_pin.sh and scripts/bashrs_pin.sh may decide what PMAT_BIN/PV/BASHRS hold.")
     rc = 1
 else:
-    print("ROW ok no direct PMAT_BIN=/PV= assignment in the runner")
+    print("ROW ok no direct PMAT_BIN=/PV=/BASHRS= assignment in the runner")
 sys.exit(rc)
 PY
 }
@@ -663,7 +668,7 @@ self_test() {
     local td fails=0 got want
     td=$(mktemp -d) || return 2
 
-    local M=pmat P=pv A=apr
+    local M=pmat P=pv A=apr B=bashrs
     {
         printf 'gate %s-verify %s verify --format json\n' "$M" "$M"
         printf 'run_to "$WORKLOG/x.log" timeout 900 %s query "x" --limit 1\n' "$M"
@@ -690,9 +695,13 @@ self_test() {
         printf 'HAVE=$(command -v %s)\n' "$A"
         printf 'type -aP %s\n' "$P"
         # 17 — the name in a `for` word list, whose loop body probes "$t".
-        printf 'for t in bashrs %s probador; do command -v "$t"; done\n' "$M"
+        printf 'for t in probador %s; do command -v "$t"; done\n' "$M"
         # 18 — `command` as a transparent prefix, which the OPENERS set missed.
         printf 'command %s verify\n' "$M"
+        # 19/20/21 — bare bashrs invocation, PATH probe, and for-list probe.
+        printf '%s lint --no-ignore foo.sh\n' "$B"
+        printf 'command -v %s >/dev/null 2>&1\n' "$B"
+        printf 'for t in %s probador; do command -v "$t"; done\n' "$B"
     } > "$td/bad.sh"
 
     # MUST NOT FLAG
@@ -702,17 +711,19 @@ mark pv-contracts REPORT "pv is not pinned in this repo -- contracts NOT validat
 run_to "$WORKLOG/pv-pc.log" "$PV" validate "$WORKLOG/bogus-contract.yaml"
 gate pmat-verify "$PMAT_BIN" verify --format json
 run_to "$WORKLOG/pmat-index.log" timeout 900 "$PMAT_BIN" query "x" --limit 1
-for t in bashrs probador; do
+for t in probador; do
 echo "pmat"
 . scripts/apr_bin.sh || exit 1
 #   run_to "$LOG" pmat query "x"
 mark pmat-verify SKIP "package has no lib target"
 command -v "$PMAT_BIN" >/dev/null 2>&1
-command -v bashrs >/dev/null 2>&1
+command -v probador >/dev/null 2>&1
 VER="$("$PMAT_BIN" --version | head -1)"
 nice -n 5 "$PMAT_BIN" verify
 LIT='$(pmat --version)'
 mark pv-bindings FAIL "\`pv verify-bindings\` produced no verification line"
+"$BASHRS" lint --no-ignore foo.sh
+BVER="$("$BASHRS" --version | head -1)"
 EOF
 
     # A DATA heredoc holds no invocation; a SHELL heredoc does. Separate
@@ -730,9 +741,9 @@ EOF2
 EOF
 
     got=$(scan "$td/bad.sh" | awk -F: '{print $2}' | tr '\n' ' ')
-    want="1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 "
+    want="1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 "
     if [ "$got" = "$want" ]; then
-        printf 'ok    MUST-FLAG     all 18 bare/probe/for-list invocations reported\n'
+        printf 'ok    MUST-FLAG     all 21 bare/probe/for-list invocations reported\n'
     else
         printf 'FAIL  MUST-FLAG     got lines [%s], want [%s]\n' "$got" "$want"; fails=1
     fi
@@ -767,6 +778,9 @@ gate pmat-verify "$PMAT_BIN" verify
 PV=""
 verifier_pin_pv
 run_to "$L" "$PV" lint contracts
+BASHRS=""
+bashrs_pin_resolve
+run_to "$L" "$BASHRS" lint foo.sh
 EOF
     got=$(pin_audit "$td/bypass.sh" 2>&1)
     # HERE-STRING, never `printf ... | grep -q`. `grep -q` exits at the FIRST
@@ -792,6 +806,9 @@ verifier_pin_pmat "$CRATE" "$BINPATH"
 PV=""
 verifier_pin_pv
 run_to "$L" "$PV" lint contracts
+BASHRS=""
+bashrs_pin_resolve
+run_to "$L" "$BASHRS" lint foo.sh
 EOF
     got=$(pin_audit "$td/late.sh" 2>&1)
     # Here-string, not `printf | grep -q` — see the EPIPE note above. THIS is
@@ -811,6 +828,9 @@ gate pmat-verify "$PMAT_BIN" verify
 PV=""
 verifier_pin_pv
 run_to "$L" "$PV" lint contracts
+BASHRS=""
+bashrs_pin_resolve
+run_to "$L" "$BASHRS" lint foo.sh
 EOF
     got=$(pin_audit "$td/bypass-export.sh" 2>&1)
     if grep -q 'ROW FAIL bypass' <<< "$got"; then
@@ -826,12 +846,33 @@ gate pmat-verify "$PMAT_BIN" verify
 PV=""
 verifier_pin_pv
 run_to "$L" "$PV" lint contracts
+BASHRS=""
+bashrs_pin_resolve
+run_to "$L" "$BASHRS" lint foo.sh
 EOF
     got=$(pin_audit "$td/bypass-semi.sh" 2>&1)
     if grep -q 'ROW FAIL bypass' <<< "$got"; then
         printf 'ok    CALL-SITE     a post-semicolon PMAT_BIN= bypass is REJECTED\n'
     else
         printf 'FAIL  CALL-SITE     a post-semicolon bypass was accepted:\n%s\n' "$got"; fails=1
+    fi
+
+    cat > "$td/bypass-bashrs.sh" <<'EOF'
+verifier_pin_pmat "$CRATE" "$BINPATH"
+gate pmat-verify "$PMAT_BIN" verify
+PV=""
+verifier_pin_pv
+run_to "$L" "$PV" lint contracts
+BASHRS=""
+bashrs_pin_resolve
+BASHRS=/opt/stale/bashrs
+run_to "$L" "$BASHRS" lint foo.sh
+EOF
+    got=$(pin_audit "$td/bypass-bashrs.sh" 2>&1)
+    if grep -q 'ROW FAIL bypass' <<< "$got"; then
+        printf 'ok    CALL-SITE     `BASHRS=...` after bashrs_pin_resolve is REJECTED\n'
+    else
+        printf 'FAIL  CALL-SITE     a BASHRS= bypass was accepted:\n%s\n' "$got"; fails=1
     fi
 
     # VP-07: the FAIL-CLOSED call shape must count as a call. Rejecting the
@@ -846,6 +887,9 @@ gate pmat-verify "$PMAT_BIN" verify
 PV=""
 if ! verifier_pin_pv; then MISSING="$MISSING pv"; fi
 run_to "$L" "$PV" lint contracts
+BASHRS=""
+if ! bashrs_pin_resolve; then BASHRS_PIN_RC=4; fi
+run_to "$L" "$BASHRS" lint foo.sh
 EOF
     if pin_audit "$td/failclosed-calls.sh" >/dev/null 2>&1; then
         printf 'ok    CALL-SITE     `if ! verifier_pin_*` counts as calling the pin\n'
@@ -864,6 +908,10 @@ PV=""
 verifier_pin_pv
 readonly PV
 run_to "$L" "$PV" lint contracts
+BASHRS=""
+bashrs_pin_resolve
+readonly BASHRS BASHRS_PIN
+run_to "$L" "$BASHRS" lint foo.sh
 EOF
     if pin_audit "$td/readonly-ok.sh" >/dev/null 2>&1; then
         printf 'ok    CALL-SITE     `readonly PMAT_BIN` (no assignment) stays legal\n'
@@ -878,6 +926,9 @@ gate pmat-verify "$PMAT_BIN" verify
 PV=""
 verifier_pin_pv
 run_to "$L" "$PV" lint contracts
+BASHRS=""
+bashrs_pin_resolve
+run_to "$L" "$BASHRS" lint foo.sh
 EOF
     if pin_audit "$td/good-calls.sh" >/dev/null 2>&1; then
         printf 'ok    CALL-SITE     a runner that calls both pins before use is accepted\n'
@@ -1270,6 +1321,259 @@ behaviour_test() {
         fails=1
     fi
 
+    # Row 6 — bashrs. A wrong-version PATH bashrs must NEVER be used.
+    if [ ! -f "$REPO_ROOT/scripts/bashrs_pin.sh" ]; then
+        printf 'FAIL  bashrs-pin scripts/bashrs_pin.sh is missing\n'
+        fails=1
+    else
+        mkdir -p "$td/brwrong" "$td/brpin/bin" "$td/brstubs" "$td/brrepo/scripts" "$td/brwork"
+        local B=bashrs want_pin
+        # Wrong-version decoy on PATH: touches a marker file if ever invoked, and fails lint.
+        cat > "$td/brwrong/$B" <<EOF
+#!/bin/sh
+: > "$td/wrong-path-called"
+if [ "\${1:-}" = "--version" ]; then
+  printf '%s 9.9.9-wrong\\n' "$B"
+  exit 0
+fi
+printf '{"file":"x.sh","diagnostics":[{"code":"SEC010","severity":"error","span":{"start_line":1}}]}\\n'
+printf 'Linted 1 file(s)\\n' >&2
+exit 2
+EOF
+        chmod +x "$td/brwrong/$B"
+
+        want_pin="7.4.2"
+        printf '[bashrs]\nversion = "%s"\n' "$want_pin" > "$td/br-tools.toml"
+        cat > "$td/brpin/bin/$B" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = "--version" ]; then
+  printf 'bashrs 7.4.2\n'
+  exit 0
+fi
+has_dirty=0
+n=0
+for a in "$@"; do
+  case "$a" in
+    *.sh)
+      case "$a" in *dirty-sentinel.sh) has_dirty=1 ;; esac
+      n=$((n + 1)) ;;
+  esac
+done
+if [ "$has_dirty" -eq 1 ]; then
+  printf '{"file":"dirty-sentinel.sh","diagnostics":[{"code":"DET002","severity":"error","span":{"start_line":2}}]}\n'
+  printf 'Linted %s file(s)\n' "$n" >&2
+  exit 2
+fi
+printf '{"file":"scripts/ok.sh","diagnostics":[]}\n'
+printf 'Linted %s file(s)\n' "$n" >&2
+exit 0
+EOF
+        chmod +x "$td/brpin/bin/$B"
+
+        # Row 6a — bashrs_pin_resolve ignores the wrong-version PATH decoy and resolves the hermetic pin.
+        local br_out br_rc=0
+        rm -f "${td:?}/wrong-path-called"
+        br_out=$( cd "$REPO_ROOT" && PATH="$td/brwrong:$PATH" \
+            TOOL_PIN_TOML="$td/br-tools.toml" BASHRS_PIN_ROOT="$td/brpin" BASHRS_PIN_NO_INSTALL=1 \
+            bash -c '. "$1" || exit 9; bashrs_pin_resolve || exit $?; printf "%s|%s\n" "$BASHRS" "$("$BASHRS" --version | head -1)"' \
+            _ "$REPO_ROOT/scripts/bashrs_pin.sh" 2>&1 ) || br_rc=$?
+        if [ "$br_rc" -eq 0 ] && [ ! -e "$td/wrong-path-called" ] \
+           && [ "${br_out%%|*}" = "$td/brpin/bin/$B" ] \
+           && [ "${br_out#*|}" = "$B $want_pin" ]; then
+            printf 'ok    bashrs-pin resolved %s (%s), NOT the wrong-version PATH decoy\n' "${br_out%%|*}" "${br_out#*|}"
+        else
+            printf 'FAIL  bashrs-pin rc=%s out=[%s] wrong_called=%s (want %s %s)\n' \
+                "$br_rc" "$br_out" "$([ -e "$td/wrong-path-called" ] && echo yes || echo no)" "$B" "$want_pin"
+            fails=1
+        fi
+
+        # Row 6a (TOOL_PIN_BASE) — resolves $TOOL_PIN_BASE/bashrs-<pin>/bin/bashrs hermetically.
+        mkdir -p "$td/brbase/bashrs-$want_pin/bin"
+        cp "$td/brpin/bin/$B" "$td/brbase/bashrs-$want_pin/bin/$B"
+        chmod +x "$td/brbase/bashrs-$want_pin/bin/$B"
+        br_rc=0
+        rm -f "${td:?}/wrong-path-called"
+        br_out=$( cd "$REPO_ROOT" && env -u BASHRS_PIN_ROOT PATH="$td/brwrong:$PATH" \
+            TOOL_PIN_TOML="$td/br-tools.toml" TOOL_PIN_BASE="$td/brbase" RUNNER_TEMP="" BASHRS_PIN_NO_INSTALL=1 \
+            bash -c '. "$1" || exit 9; bashrs_pin_resolve || exit $?; printf "%s|%s\n" "$BASHRS" "$("$BASHRS" --version | head -1)"' \
+            _ "$REPO_ROOT/scripts/bashrs_pin.sh" 2>&1 ) || br_rc=$?
+        if [ "$br_rc" -eq 0 ] && [ ! -e "$td/wrong-path-called" ] \
+           && [ "${br_out%%|*}" = "$td/brbase/bashrs-$want_pin/bin/$B" ] \
+           && [ "${br_out#*|}" = "$B $want_pin" ]; then
+            printf 'ok    bashrs-pin TOOL_PIN_BASE resolved %s (%s)\n' "${br_out%%|*}" "${br_out#*|}"
+        else
+            printf 'FAIL  bashrs-pin TOOL_PIN_BASE rc=%s out=[%s] wrong_called=%s\n' \
+                "$br_rc" "$br_out" "$([ -e "$td/wrong-path-called" ] && echo yes || echo no)"
+            fails=1
+        fi
+
+        # Row 6a (NO_INSTALL) — fails closed (rc=4) without leaving an empty pin dir behind.
+        br_rc=0
+        br_out=$( cd "$REPO_ROOT" && env -u BASHRS_PIN_ROOT PATH="$td/brwrong:$PATH" \
+            TOOL_PIN_TOML="$td/br-tools.toml" TOOL_PIN_BASE="$td/br-noinstall-base" RUNNER_TEMP="" BASHRS_PIN_NO_INSTALL=1 \
+            bash -c 'BASHRS=""; . "$1" || exit 9; bashrs_pin_resolve; rc=$?; printf "rc=%s|bin=%s\n" "$rc" "$BASHRS"' \
+            _ "$REPO_ROOT/scripts/bashrs_pin.sh" 2>/dev/null ) || br_rc=$?
+        if [ "$br_out" = "rc=4|bin=" ] && [ ! -e "$td/br-noinstall-base" ]; then
+            printf 'ok    bashrs-pin NO_INSTALL=1 fails closed (rc=4) without leaving an empty pin dir\n'
+        else
+            printf 'FAIL  bashrs-pin NO_INSTALL=1 out=[%s] dir_exists=%s\n' \
+                "$br_out" "$([ -e "$td/br-noinstall-base" ] && echo yes || echo no)"
+            fails=1
+        fi
+
+        # Row 6a (mismatch) — a wrong-version binary inside BASHRS_PIN_ROOT fails closed (rc=4).
+        mkdir -p "$td/brmismatch/bin"
+        cp "$td/brwrong/$B" "$td/brmismatch/bin/$B"
+        chmod +x "$td/brmismatch/bin/$B"
+        br_rc=0
+        br_out=$( cd "$REPO_ROOT" && TOOL_PIN_TOML="$td/br-tools.toml" BASHRS_PIN_ROOT="$td/brmismatch" BASHRS_PIN_NO_INSTALL=1 \
+            bash -c 'BASHRS=""; . "$1" || exit 9; bashrs_pin_resolve; rc=$?; printf "rc=%s|bin=%s\n" "$rc" "$BASHRS"' \
+            _ "$REPO_ROOT/scripts/bashrs_pin.sh" 2>/dev/null ) || br_rc=$?
+        if [ "$br_out" = "rc=4|bin=" ]; then
+            printf 'ok    bashrs-pin mismatched version at pin root fails closed (rc=4, empty BASHRS)\n'
+        else
+            printf 'FAIL  bashrs-pin mismatched pin root should fail closed, got [%s] (rc=%s)\n' "$br_out" "$br_rc"
+            fails=1
+        fi
+
+        # Row 6a mutants — genuinely wrong resolution must fail Row 6a's assertions (discriminate).
+        # Mutant 1: delete version check (# --- BASHRS-PIN-CMP-BEGIN --- .. END) -> mismatched pin root passes.
+        sed '/# --- BASHRS-PIN-CMP-BEGIN ---/,/# --- BASHRS-PIN-CMP-END ---/d' \
+            "$REPO_ROOT/scripts/bashrs_pin.sh" > "$td/bashrs_pin_mut_cmp.sh"
+        if cmp -s "$REPO_ROOT/scripts/bashrs_pin.sh" "$td/bashrs_pin_mut_cmp.sh"; then
+            printf 'FAIL  bashrs-pin mutant (no cmp) not built: markers moved\n'
+            fails=1
+        else
+            br_out=$( cd "$REPO_ROOT" && TOOL_PIN_TOML="$td/br-tools.toml" BASHRS_PIN_ROOT="$td/brmismatch" BASHRS_PIN_NO_INSTALL=1 \
+                bash -c 'BASHRS=""; . "$1" || exit 9; bashrs_pin_resolve; rc=$?; printf "rc=%s|bin=%s\n" "$rc" "$BASHRS"' \
+                _ "$td/bashrs_pin_mut_cmp.sh" 2>/dev/null ) || true
+            if [ "$br_out" = "rc=0|bin=$td/brmismatch/bin/$B" ]; then
+                printf 'ok    bashrs-pin mutant without version check accepts mismatch (discriminates)\n'
+            else
+                printf 'FAIL  bashrs-pin mutant without version check still refused: [%s]\n' "$br_out"
+                fails=1
+            fi
+        fi
+
+        # Mutant 2: resolver replaced with bare PATH lookup -> Row 6a catches wrong-version PATH decoy.
+        cp "$REPO_ROOT/scripts/bashrs_pin.sh" "$td/bashrs_pin_mut_path.sh"
+        printf '\nbashrs_pin_resolve() { BASHRS=$(command -v %s 2>/dev/null); BASHRS_PIN=""; export BASHRS BASHRS_PIN; [ -n "$BASHRS" ]; }\n' "$B" \
+            >> "$td/bashrs_pin_mut_path.sh"
+        rm -f "${td:?}/wrong-path-called"
+        br_rc=0
+        br_out=$( cd "$REPO_ROOT" && PATH="$td/brwrong:$PATH" \
+            TOOL_PIN_TOML="$td/br-tools.toml" BASHRS_PIN_ROOT="$td/brpin" BASHRS_PIN_NO_INSTALL=1 \
+            bash -c '. "$1" || exit 9; bashrs_pin_resolve || exit $?; printf "%s|%s\n" "$BASHRS" "$("$BASHRS" --version | head -1)"' \
+            _ "$td/bashrs_pin_mut_path.sh" 2>&1 ) || br_rc=$?
+        if [ -e "$td/wrong-path-called" ] && [ "${br_out#*|}" != "$B $want_pin" ]; then
+            printf 'ok    bashrs-pin mutant resolving PATH invokes wrong-version decoy (discriminates)\n'
+        else
+            printf 'FAIL  bashrs-pin mutant resolving PATH did not trigger Row 6a failure: rc=%s out=[%s]\n' "$br_rc" "$br_out"
+            fails=1
+        fi
+
+        # Row 6b — fail closed when pinned root is absent (no PATH fallback even if PATH matches).
+        mkdir -p "$td/brmatch"
+        printf '#!/bin/sh\nprintf "%s %s\\n"\n' "$B" "$want_pin" > "$td/brmatch/$B"
+        chmod +x "$td/brmatch/$B"
+        br_rc=0
+        br_out=$( cd "$REPO_ROOT" && PATH="$td/brmatch:$PATH" \
+            TOOL_PIN_TOML="$td/br-tools.toml" BASHRS_PIN_ROOT="$td/br-absent" BASHRS_PIN_NO_INSTALL=1 \
+            bash -c 'BASHRS=""; . "$1" || exit 9; bashrs_pin_resolve; rc=$?; printf "rc=%s|bin=%s\n" "$rc" "$BASHRS"' \
+            _ "$REPO_ROOT/scripts/bashrs_pin.sh" 2>/dev/null ) || br_rc=$?
+        if [ "$br_out" = "rc=4|bin=" ]; then
+            printf 'ok    bashrs-pin absent pin fails closed (rc=4, empty BASHRS, no PATH fallback)\n'
+        else
+            printf 'FAIL  bashrs-pin absent pin should fail closed, got [%s] (rc=%s)\n' "$br_out" "$br_rc"
+            fails=1
+        fi
+
+        # Row 6c — lift dogfood.sh's own deterministic-tools + bashrs blocks and prove
+        # a wrong-version PATH bashrs is never invoked, the pinned version is printed,
+        # and mutating back to bare PATH bashrs invokes the decoy (discriminates).
+        for st in pv pmat probador; do
+            printf '#!/bin/sh\nprintf "%s 1.0.0\\n"\n' "$st" > "$td/brstubs/$st"
+            chmod +x "$td/brstubs/$st"
+        done
+        printf '#!/bin/sh\necho ok\n' > "$td/brrepo/scripts/ok.sh"
+        git -C "$td/brrepo" init -q 2>/dev/null || git init -q "$td/brrepo"
+        git -C "$td/brrepo" add -A
+        git -C "$td/brrepo" -c user.name=t -c user.email=t@t -c core.hooksPath=/dev/null commit -qm init
+
+        awk '/^MISSING_TOOLS=""$/{on=1} on{print} on && /^fi$/{exit}' \
+            "$REPO_ROOT/scripts/dogfood.sh" > "$td/df-det.sh"
+        awk '/^if \[ -n "\$\{BASHRS:-\}" \] && \[ -x "\$BASHRS" \]; then$/{on=1} on{print} on && /^fi$/{exit}' \
+            "$REPO_ROOT/scripts/dogfood.sh" > "$td/df-br.sh"
+        if [ ! -s "$td/df-det.sh" ] || [ ! -s "$td/df-br.sh" ]; then
+            printf 'FAIL  dogfood-bashrs could not lift deterministic-tools / bashrs blocks from dogfood.sh\n'
+            fails=1
+        else
+            cat > "$td/df-harness.sh" <<'HARNESS'
+set -uo pipefail
+SKILL_DIR=$1
+WORKLOG=$2
+DET_BLK=$3
+BR_BLK=$4
+. "$SKILL_DIR/bashrs_pin.sh" || exit 2
+mark() { printf 'ROW %s %s %s\n' "$1" "$2" "$3"; }
+RUN_RC=0
+run_split() { local o="$1" e="$2"; shift 2; "$@" > "$o" 2> "$e"; RUN_RC=$?; }
+VERIFIER_PIN_PV_RC=0
+BASHRS=""
+BASHRS_PIN=""
+bashrs_pin_resolve
+BASHRS_PIN_RC=$?
+. "$DET_BLK"
+. "$BR_BLK"
+HARNESS
+            rm -f "${td:?}/wrong-path-called"
+            br_out=$( cd "$td/brrepo" && PATH="$td/brwrong:$td/brstubs:$PATH" \
+                TOOL_PIN_TOML="$td/br-tools.toml" BASHRS_PIN_ROOT="$td/brpin" BASHRS_PIN_NO_INSTALL=1 \
+                PV="$td/brstubs/pv" PMAT_BIN="$td/brstubs/pmat" \
+                bash "$td/df-harness.sh" "$REPO_ROOT/scripts" "$td/brwork" "$td/df-det.sh" "$td/df-br.sh" 2>&1 )
+            if [ ! -e "$td/wrong-path-called" ] \
+               && grep -q '^ROW deterministic-tools PASS .*bashrs 7\.4\.2' <<< "$br_out" \
+               && grep -q '^ROW bashrs PASS .*bashrs 7\.4\.2' <<< "$br_out"; then
+                printf 'ok    dogfood-bashrs lifted dogfood.sh uses pinned bashrs 7.4.2, prints version, ignores wrong PATH\n'
+            else
+                printf 'FAIL  dogfood-bashrs wrong_called=%s out:\n%s\n' \
+                    "$([ -e "$td/wrong-path-called" ] && echo yes || echo no)" "$br_out"
+                fails=1
+            fi
+
+            # Fail closed when pinned bashrs is absent even with wrong-version bashrs on PATH.
+            rm -f "${td:?}/wrong-path-called"
+            br_out=$( cd "$td/brrepo" && PATH="$td/brwrong:$td/brstubs:$PATH" \
+                TOOL_PIN_TOML="$td/br-tools.toml" BASHRS_PIN_ROOT="$td/br-absent" BASHRS_PIN_NO_INSTALL=1 \
+                PV="$td/brstubs/pv" PMAT_BIN="$td/brstubs/pmat" \
+                bash "$td/df-harness.sh" "$REPO_ROOT/scripts" "$td/brwork" "$td/df-det.sh" "$td/df-br.sh" 2>&1 )
+            if [ ! -e "$td/wrong-path-called" ] \
+               && grep -q '^ROW deterministic-tools FAIL ' <<< "$br_out" \
+               && grep -q '^ROW bashrs FAIL ' <<< "$br_out"; then
+                printf 'ok    dogfood-bashrs absent pin fails both rows without calling PATH bashrs\n'
+            else
+                printf 'FAIL  dogfood-bashrs absent pin wrong_called=%s out:\n%s\n' \
+                    "$([ -e "$td/wrong-path-called" ] && echo yes || echo no)" "$br_out"
+                fails=1
+            fi
+
+            # Mutant: revert lifted bashrs block to bare PATH lookup -> decoy MUST fire.
+            sed -e "s/if \[ -n \"\${BASHRS:-}\" \] && \[ -x \"\$BASHRS\" \]; then/if command -v $B >\/dev\/null 2>\&1; then/" \
+                -e "s/\"\$BASHRS\"/$B/g" "$td/df-br.sh" > "$td/df-br-mut.sh"
+            rm -f "${td:?}/wrong-path-called"
+            ( cd "$td/brrepo" && PATH="$td/brwrong:$td/brstubs:$PATH" \
+                TOOL_PIN_TOML="$td/br-tools.toml" BASHRS_PIN_ROOT="$td/brpin" BASHRS_PIN_NO_INSTALL=1 \
+                PV="$td/brstubs/pv" PMAT_BIN="$td/brstubs/pmat" \
+                bash "$td/df-harness.sh" "$REPO_ROOT/scripts" "$td/brwork" "$td/df-det.sh" "$td/df-br-mut.sh" >/dev/null 2>&1 ) || true
+            if [ -e "$td/wrong-path-called" ]; then
+                printf 'ok    dogfood-bashrs mutant reverting to bare PATH invokes wrong-version decoy (discriminates)\n'
+            else
+                printf 'FAIL  dogfood-bashrs mutant did not invoke wrong-version PATH decoy\n'
+                fails=1
+            fi
+        fi
+    fi
+
     rm -rf "${td:?}"
     return "$fails"
 }
@@ -1313,11 +1617,20 @@ EOF
     # answer for a non-pmat crate); PV must EXIST in the environment — this
     # fixture ships no pin, so its VALUE is legitimately empty, but an absent
     # VARIABLE means the runner resolved pins it never delivered.
+    mkdir -p "$td/brpin/bin"
+    printf '[bashrs]\nversion = "7.4.2"\n' > "$td/br-tools.toml"
+    cat > "$td/brpin/bin/bashrs" <<'EOF'
+#!/bin/sh
+printf 'bashrs 7.4.2\n'
+EOF
+    chmod +x "$td/brpin/bin/bashrs"
     cat > "$td/fixture-crate/gate-pin-delivery.sh" <<'EOF'
 #!/usr/bin/env bash
 [ "${PMAT_BIN+set}" = set ] || { echo "PMAT_BIN not delivered to child env"; exit 1; }
 [ -n "$PMAT_BIN" ] || { echo "PMAT_BIN empty for a non-pmat crate"; exit 1; }
 [ "${PV+set}" = set ] || { echo "PV not delivered to child env"; exit 1; }
+[ "${BASHRS+set}" = set ] || { echo "BASHRS not delivered to child env"; exit 1; }
+[ -n "$BASHRS" ] || { echo "BASHRS empty in child env"; exit 1; }
 exit 0
 EOF
 
@@ -1325,6 +1638,7 @@ EOF
     # sits well past the pin-library source. It is the runner's own hook, not a
     # copy of it, and it can never print GO.
     out=$( cd "$REPO_ROOT" && DOGFOOD_GATES_ONLY=1 \
+        TOOL_PIN_TOML="$td/br-tools.toml" BASHRS_PIN_ROOT="$td/brpin" BASHRS_PIN_NO_INSTALL=1 \
         bash scripts/dogfood.sh "$td/fixture-crate" 2>&1 )
     rc=$?
     if [ "$rc" -eq 2 ]; then
@@ -1414,12 +1728,12 @@ else
         # rc==2-only branch printed "ok no bare pv/pmat/apr" over a scan that
         # scanned nothing (#2644 audit, F8 rider; v1.13 P1).
         if [ "$scan_rc" -eq 0 ] && [ -z "$hits" ]; then
-            printf 'ok    no bare pv/pmat/apr in command position, in:\n'
+            printf 'ok    no bare pv/pmat/apr/bashrs in command position, in:\n'
             printf '%s\n' "$SCOPE" | sed 's/^/        /'
         elif [ "$scan_rc" -eq 1 ] && [ -n "$hits" ]; then
             printf 'FAIL  bare verifier invocation(s) — these resolve through PATH:\n'
             printf '%s\n' "$hits" | sed 's/^/      /'
-            printf '      Use the pin: "$PV" / "$PMAT_BIN" / "$APR". See scripts/verifier_pin.sh.\n'
+            printf '      Use the pin: "$PV" / "$PMAT_BIN" / "$APR" / "$BASHRS". See scripts/verifier_pin.sh and scripts/bashrs_pin.sh.\n'
             rc=1
         else
             printf 'FAIL  the scanner did not produce a verdict (rc=%s, %s finding lines) — an\n' "$scan_rc" "$(grep -c . <<< "$hits")"

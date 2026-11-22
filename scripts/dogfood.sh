@@ -394,6 +394,14 @@ else
   echo "  PATH, which is the exact defect #2640 closed. Refusing to run." >&2
   exit 2
 fi
+if [ -f "$SKILL_DIR/bashrs_pin.sh" ]; then
+  . "$SKILL_DIR/bashrs_pin.sh"
+else
+  echo "dogfood: $SKILL_DIR/bashrs_pin.sh is missing." >&2
+  echo "  It resolves the pinned bashrs from tools.toml without falling back to" >&2
+  echo "  PATH. Refusing to run." >&2
+  exit 2
+fi
 
 # THE PINS RESOLVE BEFORE ANY GATE RUNS. The declared gates below execute as
 # CHILD processes and consume the pins from the environment (the lib exports
@@ -410,6 +418,10 @@ verifier_pin_pmat "$CRATE" ""
 PV=""
 verifier_pin_pv
 VERIFIER_PIN_PV_RC=$?
+BASHRS=""
+BASHRS_PIN=""
+bashrs_pin_resolve
+BASHRS_PIN_RC=$?
 
 # The banner names the phase that RAN (#3543): it read "pre-release" in the post-publish run too, so
 # a reader of that log believed they were looking at the pre-release gate set.
@@ -940,14 +952,18 @@ case "$VERIFIER_PIN_PV_RC" in
   *) : ;;                                              # this repo ships no pin
 esac
 readonly PV
-# bashrs and probador are unpinned in this repo, so PATH is the only answer
-# there and asking it is correct. pmat is NOT in that list: it is PINNED, and
-# `command -v pmat` would ask PATH about a tool whose answer the pin has already
-# decided — for the one crate where the pin matters (releasing pmat itself, with
-# the built artifact and possibly nothing on PATH) it reports the wrong thing.
-for t in bashrs probador; do
-  command -v "$t" >/dev/null 2>&1 || MISSING_TOOLS="$MISSING_TOOLS $t"
-done
+case "$BASHRS_PIN_RC" in
+  0) : ;;                                              # pinned, exported, behavior-verified
+  *) MISSING_TOOLS="$MISSING_TOOLS bashrs" ;;          # pin failed to resolve (never fall back to PATH)
+esac
+readonly BASHRS BASHRS_PIN
+# probador is unpinned in this repo, so PATH is the only answer there and
+# asking it is correct. pmat and bashrs are PINNED, and `command -v` on their
+# bare names would ask PATH about tools whose answers the pins have already
+# decided — for pmat (releasing pmat itself) and for bashrs (where PATH may
+# carry a newer release whose lint findings drift from tools.toml) it reports
+# the wrong binary.
+command -v probador >/dev/null 2>&1 || MISSING_TOOLS="$MISSING_TOOLS probador"
 command -v "$PMAT_BIN" >/dev/null 2>&1 || MISSING_TOOLS="$MISSING_TOOLS pmat"
 if [ -n "$MISSING_TOOLS" ]; then
   mark deterministic-tools FAIL "NOT INSTALLED:$MISSING_TOOLS — install them; a release cannot be verified by absent verifiers"
@@ -958,7 +974,7 @@ else
   # may be a different build at the same version string (verifier_pin.sh records
   # the 3.32.0-vs-3.32.0 case). It read as inert text to the guard, too: a
   # command substitution inside double quotes is still command position.
-  mark deterministic-tools PASS "pv $("${PV:-:}" --version 2>/dev/null | head -1 | awk '{print $2}'), bashrs $(bashrs --version 2>/dev/null | head -1 | awk '{print $2}'), pmat $("$PMAT_BIN" --version 2>/dev/null | head -1 | awk '{print $2}'), probador $(probador --version 2>/dev/null | head -1 | awk '{print $2}')"
+  mark deterministic-tools PASS "pv $("${PV:-:}" --version 2>/dev/null | head -1 | awk '{print $2}'), bashrs $("$BASHRS" --version 2>/dev/null | head -1 | awk '{print $2}'), pmat $("$PMAT_BIN" --version 2>/dev/null | head -1 | awk '{print $2}'), probador $(probador --version 2>/dev/null | head -1 | awk '{print $2}')"
 fi
 
 # pv — provable-contract validation (YAML contracts, verification ladder).
@@ -1073,7 +1089,7 @@ else
   fi
 fi
 
-# bashrs — shell purification (bashrs 6.66.2).
+# bashrs — shell purification (pinned via scripts/bashrs_pin.sh / tools.toml).
 #
 # Gated on the rules that are TRUSTWORTHY, reported on the rules that are not.
 # SC1020/SC1035/SC1140 fire inside string literals (paiml/bashrs#226, still OPEN
@@ -1111,7 +1127,8 @@ fi
 #   2 = error-tier findings       OR the path does not exist
 # Only the receipt disambiguates. `--level` (not `--fail-on`) is what drives the
 # exit code: verified, `--fail-on error` on a warning-only file still exits 1.
-if command -v bashrs >/dev/null 2>&1; then
+if [ -n "${BASHRS:-}" ] && [ -x "$BASHRS" ]; then
+  BR_VER=$("$BASHRS" --version 2>/dev/null | head -1 | awk '{print $2}')
   BR_DIR="$WORKLOG/bashrs"; mkdir -p "$BR_DIR"
   # bashrs >= 6.67.0's DET002 does sink analysis: it flags a timestamp that
   # reaches a REPRODUCIBLE sink (an artifact name, a hash, a build id, a
@@ -1125,13 +1142,13 @@ if command -v bashrs >/dev/null 2>&1; then
   printf '#!/bin/sh\necho ok\n'                              > "$BR_DIR/clean-sentinel.sh"
 
   run_split "$BR_DIR/pc.json" "$BR_DIR/pc.err" \
-    bashrs lint --no-ignore --level error --format json \
+    "$BASHRS" lint --no-ignore --level error --format json \
       "$BR_DIR/dirty-sentinel.sh" "$BR_DIR/clean-sentinel.sh"
   BR_PC_RC=$RUN_RC
   BR_PC_HIT=1; grep -q 'DET002' "$BR_DIR/pc.json" && BR_PC_HIT=0
 
   if [ "$BR_PC_RC" -ne 2 ] || [ "$BR_PC_HIT" -ne 0 ]; then
-    mark bashrs FAIL "POSITIVE CONTROL FAILED: a sentinel with a known DET002 did not fire (exit=$BR_PC_RC, DET002 found=$([ $BR_PC_HIT -eq 0 ] && echo yes || echo no)). bashrs is not enforcing anything here — do not read a clean result as clean."
+    mark bashrs FAIL "POSITIVE CONTROL FAILED: a sentinel with a known DET002 did not fire under bashrs ${BR_VER:-$BASHRS_PIN} (exit=$BR_PC_RC, DET002 found=$([ $BR_PC_HIT -eq 0 ] && echo yes || echo no)). bashrs is not enforcing anything here — do not read a clean result as clean."
   else
     # Enumerate the surface OURSELVES. bashrs cannot certify a non-empty scan.
     git ls-files -z '*.sh' '*.bash' 'Makefile' '*/Makefile' '**/*.sh' > "$BR_DIR/surface.z" 2>/dev/null
@@ -1146,12 +1163,12 @@ if command -v bashrs >/dev/null 2>&1; then
       if [ -n "$BR_HIDDEN" ]; then
         mark bashrs FAIL "shell scripts exist but are INVISIBLE to \`git ls-files\` (gitignored): $BR_HIDDEN— the gate's subject is being hidden from it"
       else
-        mark bashrs SKIP "0 files from: git ls-files '*.sh' '*.bash' Makefile — positive control fired, so the tool works; this tree has no shell surface"
+        mark bashrs SKIP "0 files from: git ls-files '*.sh' '*.bash' Makefile — positive control fired (bashrs ${BR_VER:-$BASHRS_PIN}); this tree has no shell surface"
       fi
     else
       BR_EXPECT=$((BR_N + 1))   # +1 for the clean sentinel that forces the receipt
       run_split "$BR_DIR/out.json" "$BR_DIR/out.err" \
-        bashrs lint --no-ignore --level error --format json \
+        "$BASHRS" lint --no-ignore --level error --format json \
           "${BR_ARGS[@]}" "$BR_DIR/clean-sentinel.sh"
       BR_RC=$RUN_RC
       grep -q "Linted $BR_EXPECT file(s)" "$BR_DIR/out.err"; BR_RECEIPT=$?
@@ -1183,16 +1200,18 @@ if command -v bashrs >/dev/null 2>&1; then
       BR_RULES=$(printf '%s'  "$BR_CLASS" | cut -d' ' -f4-)
 
       if [ "$BR_CLASS" = "PARSE_ERROR" ]; then
-        mark bashrs FAIL "could not parse bashrs --format json (exit=$BR_RC) — a gate that cannot read its own tool's output has not run"
+        mark bashrs FAIL "could not parse bashrs ${BR_VER:-$BASHRS_PIN} --format json (exit=$BR_RC) — a gate that cannot read its own tool's output has not run"
       elif [ "$BR_RECEIPT" -ne 0 ]; then
-        mark bashrs FAIL "NO SCAN RECEIPT: expected \`Linted $BR_EXPECT file(s)\` on stderr, got '$(head -c 60 "$BR_DIR/out.err" | tr -d '\n')' (exit=$BR_RC) — bashrs did not lint the $BR_N file(s) enumerated; check for a .bashrsignore"
+        mark bashrs FAIL "NO SCAN RECEIPT: expected \`Linted $BR_EXPECT file(s)\` on stderr, got '$(head -c 60 "$BR_DIR/out.err" | tr -d '\n')' (exit=$BR_RC) — bashrs ${BR_VER:-$BASHRS_PIN} did not lint the $BR_N file(s) enumerated; check for a .bashrsignore"
       elif [ "${BR_GATING:-1}" -eq 0 ]; then
-        mark bashrs PASS "$BR_N file(s) linted (receipt confirmed), 0 SEC/DET/IDEM errors (${BR_SOFT:-0} SC10xx suppressed — bashrs#226; ${BR_OTHER:-0} other)"
+        mark bashrs PASS "$BR_N file(s) linted with bashrs ${BR_VER:-$BASHRS_PIN} (receipt confirmed), 0 SEC/DET/IDEM errors (${BR_SOFT:-0} SC10xx suppressed — bashrs#226; ${BR_OTHER:-0} other)"
       else
-        mark bashrs FAIL "$BR_GATING SEC/DET/IDEM error(s) over $BR_N file(s): ${BR_RULES} — real findings, not #226 false positives"
+        mark bashrs FAIL "$BR_GATING SEC/DET/IDEM error(s) over $BR_N file(s) with bashrs ${BR_VER:-$BASHRS_PIN}: ${BR_RULES} — real findings, not #226 false positives"
       fi
     fi
   fi
+else
+  mark bashrs FAIL "pinned bashrs unavailable (${BASHRS_PIN_ERR:-check tools.toml / BASHRS_PIN_ROOT}) — refusing PATH fallback"
 fi
 
 # renacer — golden tracing. Mandatory for transpilers, multi-process workflows
