@@ -15,6 +15,10 @@ if [ "${1:-}" = --mutants ]; then
   mut success-check-dropped 's/^\[ "\$c" = success \] .*$/:/'
   mut dry-run-ignored 's/^if \[ "\$DRY" = 1 \]; then$/if false; then/'
   mut tag-before-verdict 's/^git push -q origin "\$BR".*$/git tag -a "$T" -m x "$SHA"/'
+  mut crux-check-dropped 's/^\$CRUX --version.*$/:/'
+  mut tag-before-crux 's/^\$CRUX --version.*$/git tag -a "$T" -m x "$SHA"/'
+  mut crux-dir-not-handed 's/^export MODEL_LADDER_CRUX_DIR="\$CRUX_DIR" /export /'
+  mut cert-not-handed 's/ CRUX_CERT="\$PWD\/evidence\/crux\/\$V\/prompt-certification\.json"$//'
   # T5: built from the handed nightly sha, never main HEAD; next-dev bump opened after the tag, and its failure is red
   mut base-ignored 's/^git checkout -q -b "\$BR" "\$BASE"/git checkout -q -b "$BR"/'
   mut base-shape-unchecked 's/^\[\[ \$BASE =~ .*$/:/'
@@ -37,11 +41,14 @@ row() { # name want_rc want_calls_regex forbid_calls_regex dry cr_conclusion cr_
   mkstub git 'case "$1" in rev-parse) echo '$SHA';; merge-base) [ -z "${NOTMAIN:-}" ] || exit 1;; esac; exit 0'
   mkstub nextdev '[ -z "${NEXTDEV_FAIL:-}" ] || exit 1; exit 0'
   mkstub bump 'exit 0'
-  mkstub publish 'exit 0'
+  mkstub crux '[ -z "${CRUX_FAIL:-}" ] || exit 1; exit 0'
+  mkstub publish 'echo "publish_env crux=${MODEL_LADDER_CRUX_DIR:-} cert=${CRUX_CERT:-}" >> "$CALLS"; exit 0'
   mkstub gh 'case "$*" in *"run list"*) echo 42;; *"--log"*) [ -z "${DECOY:-}" ] || echo "2026-11-05T00:00:00Z   claim step summary carries \"tested-sha: <40hex>\""; echo "2026-11-05T00:00:01Z     tested-sha: '"$crsha"'";; *"run view"*) echo "'"$concl"'";; esac; exit 0'
+  mkdir -p "$T/tmp"
   local a=(0.73.0 "$dry"); [ -n "${NOBASE:-}" ] || a+=("${BASEARG:-$BASE}")
-  PATH=$BIN:$PATH ONE_CMD_BUMP=bump ONE_CMD_PUBLISH=publish ONE_CMD_NEXTDEV=nextdev ONE_CMD_POLL=0 ONE_CMD_ARM=true bash "$SRC" "${a[@]}" > "$T/out" 2>&1
+  PATH=$BIN:$PATH ONE_CMD_BUMP=bump ONE_CMD_PUBLISH=publish ONE_CMD_NEXTDEV=nextdev ONE_CMD_CRUX=crux ONE_CMD_TMP="$T/tmp" ONE_CMD_POLL=0 ONE_CMD_ARM=true bash "$SRC" "${a[@]}" > "$T/out" 2>&1
   local rc=$?; [ -n "${DBG:-}" ] && cat "$T/out"
+  [ -z "$(ls -A "$T/tmp")" ] || { echo "FAIL $name: scratch dir left behind"; fails=$((fails+1)); return; }
   [ "$rc" = "$wrc" ] || { echo "FAIL $name: rc=$rc want $wrc"; fails=$((fails+1)); return; }
   [ -z "$want" ] || grep -Eq -- "$want" "$CALLS" || { echo "FAIL $name: no call /$want/"; fails=$((fails+1)); return; }
   [ -z "$forbid" ] || ! grep -Eq -- "$forbid" "$CALLS" || { echo "FAIL $name: forbidden call /$forbid/"; fails=$((fails+1)); return; }
@@ -64,5 +71,10 @@ NEXTDEV_FAIL=1 row next-dev-red-still-publishes 1 '^publish' 'ZZZ'              
 DECOY=1 row decoy-line-first-still-tags 0 '^git tag .*v0\.73\.0 '$SHA 'ZZZ' 0 success $SHA
 row wrong-sha-no-tag           1 ''                           '^(git tag|publish)' 0 success deadbeef
 row absent-verdict-no-tag      1 ''                           '^(git tag|publish)' 0 "" ""
+CRUX_FAIL=1 row red-crux-no-tag 1 '^crux --version 0\.73\.0 --sha '$SHA' ' '^(git tag|publish|nextdev)' 0 success $SHA
+row crux-env-handed-to-publish 0 '^publish_env crux=.*/models-crux/'$SHA' cert=.*/evidence/crux/0\.73\.0/prompt-certification\.json$' 'ZZZ' 0 success $SHA
+crux_at=$(grep -nE '^crux ' "$CALLS" | cut -d: -f1); tag_at2=$(grep -nE '^git tag ' "$CALLS" | cut -d: -f1)
+if [ -n "$crux_at" ] && [ -n "$tag_at2" ] && [ "$crux_at" -lt "$tag_at2" ]; then echo "ok   crux-before-tag"
+else echo "FAIL crux-before-tag: crux line ${crux_at:-none}, tag line ${tag_at2:-none}"; fails=$((fails+1)); fi
 [ "$fails" = 0 ] && { echo "all rows held"; exit 0; }
 echo "$fails row(s) failed"; exit 1
