@@ -71,7 +71,8 @@ INFRA_WORKFLOW=clean-room.yml
 INFRA_JOB='clean-room (aprender)'
 INFRA_ASSERT='Assert the commit under test'   # the step whose success makes the log's tested-sha count
 INFRA_RUNS=6            # newest infra runs searched for the one that tested C
-INFRA_MAX_LOGS=3        # job logs read at most (each is a whole clean-room log)
+INFRA_SCHED_RUNS=10     # newest scheduled infra runs also searched (immune to workflow_dispatch bursts)
+INFRA_MAX_LOGS=16       # job logs read at most (INFRA_RUNS + INFRA_SCHED_RUNS; dispatches never starve schedule)  # MUTANT-ANCHOR: m58
 RATE_FLOOR=1000         # measured-cpu reads nothing below min(this, a fifth of the limit), as nightly_train.sh
 INDEX_URL="${RELEASE_LANES_INDEX_URL:-https://index.crates.io/ap/re/aprender}"
 # the lanes release-lanes-nightly.yml wires (the self-test checks each one's two jobs)
@@ -263,25 +264,49 @@ infra_gh() {
 }
 
 # infra_rows C [GET] -> the TSV judge_cpu reads, newest run first; stops at the first run that tested C (an empty C
-# reads them all). GET PATH prints an API path's body (infra_curl by default). Any read that fails, a job log's
-# included, fails the whole read: a log that could not be fetched is never a run that tested nothing.
+# reads them all). GET PATH prints an API path's body (infra_curl by default). When INFRA_DIAG is set, appends one
+# diagnostic TSV row per inspected run (id attempt jst jcon sha why), including runs with no matching job. Any read
+# that fails, a job log's included, fails the whole read: a log that could not be fetched is never a run that tested nothing.
 infra_rows() {
-    local get=${2:-infra_curl} runs ids id att jobs jid jst jcon jassert sha log logs=0
+    local get=${2:-infra_curl} diag=${INFRA_DIAG:-} runs sruns ids id att jobs jid jst jcon jassert sha log bytes why logs=0
     runs="$("$get" "repos/$INFRA_REPO/actions/workflows/$INFRA_WORKFLOW/runs?per_page=$INFRA_RUNS")" || return 1
-    ids="$(printf '%s\n' "$runs" | jq -r '.workflow_runs[] | "\(.id) \(.run_attempt)"')" || return 1
+    sruns="$("$get" "repos/$INFRA_REPO/actions/workflows/$INFRA_WORKFLOW/runs?event=schedule&per_page=$INFRA_SCHED_RUNS")" || return 1  # MUTANT-ANCHOR: m57
+    ids="$( { printf '%s\n' "$runs" | jq -r '.workflow_runs[] | "\(.id) \(.run_attempt)"' || exit 1
+              printf '%s\n' "$sruns" | jq -r '.workflow_runs[] | "\(.id) \(.run_attempt)"' || exit 1; } \
+            | awk '!seen[$1]++' | sort -rn -k1,1)" || return 1
     while read -r id att; do
         [ -n "$id" ] || continue
         jobs="$("$get" "repos/$INFRA_REPO/actions/runs/$id/jobs?per_page=100")" || return 1
         jid=""; jst=""; jcon=""; jassert=""
         read -r jid jst jcon jassert < <(printf '%s\n' "$jobs" | infra_job)
-        [ -n "$jid" ] || continue
+        if [ -z "$jid" ]; then
+            [ -z "$diag" ] || printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$att" "absent" "-" "?" "no job '$INFRA_JOB', assert=absent/- log=not_fetched" >> "$diag"
+            continue
+        fi
         sha="?"
-        if log_proves "$jst" "$jassert" && [ "$logs" -lt "$INFRA_MAX_LOGS" ]; then
+        if ! log_proves "$jst" "$jassert"; then
+            why="assert=$jassert log=not_fetched"
+        elif [ "$logs" -ge "$INFRA_MAX_LOGS" ]; then
+            why="assert=$jassert log cap reached $logs/$INFRA_MAX_LOGS"
+        else
             logs=$((logs + 1))
             log="$("$get" "repos/$INFRA_REPO/actions/jobs/$jid/logs")" || return 1  # MUTANT-ANCHOR: m27
+            bytes="$(printf '%s' "$log" | wc -c)"
             sha="$(printf '%s\n' "$log" | tested_sha)"
-            [ -n "$sha" ] || sha="?"
+            if [ -n "$sha" ]; then
+                why="assert=$jassert log=${bytes}B"
+            else
+                sha="?"
+                if [ "$bytes" -eq 0 ]; then
+                    why="assert=$jassert log=0B"
+                elif [[ $log == *'tested-sha: '* ]]; then
+                    why="assert=$jassert log=${bytes}B invalid tested-sha"
+                else
+                    why="assert=$jassert log=${bytes}B no tested-sha line"
+                fi
+            fi
         fi
+        [ -z "$diag" ] || printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$att" "$jst" "$jcon" "$sha" "$why" >> "$diag"
         tsv "$id" "$att" "$jst" "$jcon" "$sha"
         [ "$sha" != "$1" ] || return 0
     done <<< "$ids"
@@ -315,11 +340,13 @@ measured_cpu() {
     # MUTANT-ANCHOR: m31
     fl=$((lim / 5)); [ "$fl" -le "$RATE_FLOOR" ] || fl=$RATE_FLOOR  # MUTANT-ANCHOR: m30
     [ "$rem" -ge "$fl" ] || { echo "not_measured: core remaining $rem under $fl" >&2; return 2; }  # MUTANT-ANCHOR: m29
+    local INFRA_DIAG="$INFRA_CACHE/diag.tsv"
+    : > "$INFRA_DIAG" || return 2
     rows="$(infra_rows "" infra_gh)" || { echo "not_measured: paiml/infra clean-room runs were not read" >&2; return 2; }  # MUTANT-ANCHOR: m26
-    # PMAT-6676: say what was read, so a pick of "0 commits" names which runs and why (run attempt status conclusion tested_sha)
-    printf 'measured-cpu: read %s infra run(s), %s tested a commit\n' "$(printf '%s\n' "$rows" | awk 'NF >= 5 { n++ } END { print n + 0 }')" \
+    # PMAT-6676 / #7374: say what was read, so a pick of "0 commits" names which runs and why (run attempt status conclusion tested_sha reason)
+    printf 'measured-cpu: read %s infra run(s), %s tested a commit\n' "$(awk 'NF >= 6 { n++ } END { print n + 0 }' "$INFRA_DIAG")" \
         "$(printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 && $5 ~ /^[0-9a-f]{40}$/ && !s[$5]++ { n++ } END { print n + 0 }')" >&2
-    printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 { printf "measured-cpu:   run %s attempt %s %s/%s tested %s\n", $1, $2, $3, $4, substr($5, 1, 12) }' >&2
+    awk -F '\t' 'NF >= 6 { printf "measured-cpu:   run %s attempt %s %s/%s tested %s (%s)\n", $1, $2, $3, $4, substr($5, 1, 12), $6 }' "$INFRA_DIAG" >&2  # MUTANT-ANCHOR: m56
     while read -r sha; do
         [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || continue
         v="$(printf '%s\n' "$rows" | judge_cpu "$sha")"
@@ -453,7 +480,11 @@ rl_rows_b1() {
             --arg n "$INFRA_JOB" --arg a "$INFRA_ASSERT" '{jobs: [{id: $id, name: $n, status: $s, conclusion: (if $c == "-" then null else $c end),
              steps: [{name: $a, status: "completed", conclusion: "success"}]}]}')"
     }
-    runs() { fgh "$1" "repos/$INFRA_REPO/actions/workflows/$INFRA_WORKFLOW/runs?per_page=$INFRA_RUNS" "$2" "${3:-}"; }
+    runs() {
+        local sched=${4:-'{"workflow_runs":[]}'}
+        fgh "$1" "repos/$INFRA_REPO/actions/workflows/$INFRA_WORKFLOW/runs?per_page=$INFRA_RUNS" "$2" "${3:-}"
+        fgh "$1" "repos/$INFRA_REPO/actions/workflows/$INFRA_WORKFLOW/runs?event=schedule&per_page=$INFRA_SCHED_RUNS" "$2" "$sched"
+    }
     logs() { fgh "$1" "repos/$INFRA_REPO/actions/jobs/$2/logs" "$3" "${4:+2026-10-08T02:28:41Z     tested-sha: $4}"; }
     cpu() {     # cpu FIXTURE CACHE : measured-cpu against the fixture gh
         env -u GITHUB_OUTPUT -u GH_TOKEN PATH="$tmp/ghbin:$PATH" FGH="$1" INFRA_TOKEN=fixture-infra-token bash "$SCRIPT_PATH" measured-cpu --cache "$2"
@@ -583,6 +614,73 @@ FAKE
     exact measured_cpu_no_runs_is_a_measured_none 0 "" -- cpu "$tmp/fc" "$tmp/ck"
     runs "$tmp/fc" 200 '{"message":"Not Found"}'
     exact measured_cpu_a_body_that_is_no_run_list_is_not_measured 2 "" -- cpu "$tmp/fc" "$tmp/cl"
+    # #7374: diagnostic why per-run tested ? happened: (a) missing job or non-passing assert, (b) log cap, (c) empty/no-sha log
+    mkdir -p "$tmp/fd" "$tmp/fe" "$tmp/ff"
+    # fixture d (a): run 51 has no clean-room (aprender) job; run 52 has assert=absent/-; run 53 has assert=completed/failure (no /logs read)
+    printf '5000 4000\n' > "$tmp/fd/rate"
+    runs "$tmp/fd" 200 '{"workflow_runs":[{"id":51,"run_attempt":1},{"id":52,"run_attempt":1},{"id":53,"run_attempt":1}]}'
+    fgh "$tmp/fd" "repos/$INFRA_REPO/actions/runs/51/jobs?per_page=100" 200 '{"jobs":[{"id":510,"name":"clean-room (trueno)","status":"completed","conclusion":"success","steps":[]}]}'
+    fgh "$tmp/fd" "repos/$INFRA_REPO/actions/runs/52/jobs?per_page=100" 200 "$(jq -cn --arg n "$INFRA_JOB" '{jobs:[{id:520,name:$n,status:"completed",conclusion:"success",steps:[]}]}')"
+    fgh "$tmp/fd" "repos/$INFRA_REPO/actions/runs/53/jobs?per_page=100" 200 "$(jq -cn --arg n "$INFRA_JOB" --arg a "$INFRA_ASSERT" '{jobs:[{id:530,name:$n,status:"completed",conclusion:"failure",steps:[{name:$a,status:"completed",conclusion:"failure"}]}]}')"
+    exact measured_cpu_diag_a_unproved_is_empty_stdout 0 "" -- cpu "$tmp/fd" "$tmp/co"
+    o="$(cpu "$tmp/fd" "$tmp/co" 2>&1 >/dev/null)"
+    case "$o" in
+        *"run 51 attempt 1 absent/- tested ? (no job 'clean-room (aprender)'"*) ok measured_cpu_diag_a_missing_job "run 51 absent/-" ;;
+        *) broke measured_cpu_diag_a_missing_job "stderr: ${o:0:200}" ;;
+    esac
+    case "$o" in
+        *"run 52 attempt 1 completed/success tested ? (assert=absent/- log=not_fetched)"*) ok measured_cpu_diag_a_missing_assert "run 52 assert=absent/-" ;;
+        *) broke measured_cpu_diag_a_missing_assert "stderr: ${o:0:200}" ;;
+    esac
+    case "$o" in
+        *"run 53 attempt 1 completed/failure tested ? (assert=completed/failure log=not_fetched)"*) ok measured_cpu_diag_a_failed_assert "run 53 assert=completed/failure" ;;
+        *) broke measured_cpu_diag_a_failed_assert "stderr: ${o:0:200}" ;;
+    esac
+    # fixture e (b): INFRA_MAX_LOGS + 1 runs all with passed assert; INFRA_MAX_LOGS caps log reads so the oldest hits log cap
+    printf '5000 4000\n' > "$tmp/fe/rate"
+    local ej="" ei oldest=601
+    for ei in $(seq $((600 + INFRA_MAX_LOGS + 1)) -1 "$oldest"); do
+        ej="$ej${ej:+,}{\"id\":$ei,\"run_attempt\":1}"
+        infra "$tmp/fe" "$ei" "$((ei * 10))" completed success
+        [ "$ei" -eq "$oldest" ] || logs "$tmp/fe" "$((ei * 10))" 200 "$d"
+    done
+    runs "$tmp/fe" 200 "{\"workflow_runs\":[$ej]}"
+    exact measured_cpu_diag_b_capped_reads_max_logs 0 "$(tsv "$d" green $((600 + INFRA_MAX_LOGS + 1)))" -- cpu "$tmp/fe" "$tmp/cp"
+    o="$(cpu "$tmp/fe" "$tmp/cp" 2>&1 >/dev/null)"
+    case "$o" in
+        *"run 601 attempt 1 completed/success tested ? (assert=completed/success log cap reached $INFRA_MAX_LOGS/$INFRA_MAX_LOGS)"*) ok measured_cpu_diag_b_log_cap_reached "run 601 cap $INFRA_MAX_LOGS/$INFRA_MAX_LOGS" ;;
+        *) broke measured_cpu_diag_b_log_cap_reached "stderr: ${o:0:200}" ;;
+    esac
+    # fixture f (c): log fetched, but empty (0B) or non-empty without a tested-sha line
+    printf '5000 4000\n' > "$tmp/ff/rate"
+    runs "$tmp/ff" 200 '{"workflow_runs":[{"id":71,"run_attempt":1},{"id":72,"run_attempt":1}]}'
+    infra "$tmp/ff" 71 710 completed success; infra "$tmp/ff" 72 720 completed success
+    logs "$tmp/ff" 710 200
+    fgh "$tmp/ff" "repos/$INFRA_REPO/actions/jobs/720/logs" 200 "<html><body>redirected body</body></html>"
+    exact measured_cpu_diag_c_empty_or_nosh_is_empty_stdout 0 "" -- cpu "$tmp/ff" "$tmp/cq"
+    o="$(cpu "$tmp/ff" "$tmp/cq" 2>&1 >/dev/null)"
+    case "$o" in
+        *"run 71 attempt 1 completed/success tested ? (assert=completed/success log=0B)"*) ok measured_cpu_diag_c_empty_log "run 71 log=0B" ;;
+        *) broke measured_cpu_diag_c_empty_log "stderr: ${o:0:200}" ;;
+    esac
+    case "$o" in
+        *"run 72 attempt 1 completed/success tested ? (assert=completed/success log=41B no tested-sha line)"*) ok measured_cpu_diag_c_no_tested_sha_line "run 72 log=41B no tested-sha line" ;;
+        *) broke measured_cpu_diag_c_no_tested_sha_line "stderr: ${o:0:200}" ;;
+    esac
+    # fixture g (#7374): workflow_dispatch burst (>3 logs, >6 runs) must not hide run #5/#6 or older schedule runs
+    mkdir -p "$tmp/fg"
+    printf '5000 4000\n' > "$tmp/fg/rate"
+    runs "$tmp/fg" 200 '{"workflow_runs":[{"id":806,"run_attempt":1},{"id":805,"run_attempt":1},{"id":804,"run_attempt":1},{"id":803,"run_attempt":1},{"id":802,"run_attempt":1},{"id":801,"run_attempt":1}]}' '{"workflow_runs":[{"id":806,"run_attempt":1},{"id":750,"run_attempt":1}]}'
+    infra "$tmp/fg" 806 8060 completed success; infra "$tmp/fg" 805 8050 completed success; infra "$tmp/fg" 804 8040 completed success
+    infra "$tmp/fg" 803 8030 completed success; infra "$tmp/fg" 802 8020 completed success; infra "$tmp/fg" 801 8010 completed success
+    infra "$tmp/fg" 750 7500 completed success
+    logs "$tmp/fg" 8060 200 "$e"; logs "$tmp/fg" 8050 200 "$e"; logs "$tmp/fg" 8040 200 "$e"
+    logs "$tmp/fg" 8030 200 "$e"; logs "$tmp/fg" 8020 200 "$d"; logs "$tmp/fg" 8010 200 "$e"
+    logs "$tmp/fg" 7500 200 "$c"
+    exact measured_cpu_reads_past_dispatches_and_finds_schedule_run 0 "$(tsv "$e" green 806; tsv "$d" green 802; tsv "$c" green 750)" -- cpu "$tmp/fg" "$tmp/cr"
+    o="$(cpu "$tmp/fg" "$tmp/cr" 2>&1 >/dev/null)"
+    case "$o" in *"log cap reached"*) broke measured_cpu_no_log_cap_in_normal_window "stderr: ${o:0:200}" ;;
+        *) ok measured_cpu_no_log_cap_in_normal_window "7 runs, 0 capped" ;; esac
     # assert-head, in a fixture repo (one empty commit, made without a hook) and in a repo with no commit
     fxgit init -q "$tmp/repo" && fxgit init -q "$tmp/empty"
     h="$(fxgit -C "$tmp/repo" mktree < /dev/null)" \
@@ -854,7 +952,10 @@ m51_wiring_ignores_needs_pick s# || bad="\$bad \$j(needs-pick)"# || true#
 m52_wiring_counts_the_pick_as_a_job s#^    rest="\$(awk .*#    rest="$(cat "$wf")"#
 m53_refused_read_names_nothing s#infra_gh: GET %s -> HTTP %s#infra_gh: x %s -> HTTP %s#
 m55_unreadable_gh_config_dir_kept s#GH_CONFIG_DIR="\$INFRA_CACHE/gh-config"#GH_CONFIG_DIR="$GH_CONFIG_DIR"#
-m54_rate_limit_refusal_thrown_away s#gh api -i rate_limit 2> "\$rl_err"#gh api -i rate_limit 2>/dev/null#'
+m54_rate_limit_refusal_thrown_away s#gh api -i rate_limit 2> "\$rl_err"#gh api -i rate_limit 2>/dev/null#
+m56_measured_cpu_drops_run_reason s# (%s)\\n", \$1, \$2, \$3, \$4, substr(\$5, 1, 12), \$6#\\n", $1, $2, $3, $4, substr($5, 1, 12)#
+m57_schedule_runs_dropped s#^    sruns=.*#    sruns='{"workflow_runs":[]}'#
+m58_log_cap_too_small s#^INFRA_MAX_LOGS=16 #INFRA_MAX_LOGS=3 #'
 
 # Every mutant above is keyed to a stable marker, not to the text around it (N47: a text-matched mutant broke on the
 # commit that carried its fix). The marker is the comment `# MUTANT-ANCHOR: mNN` at the end of the source line the

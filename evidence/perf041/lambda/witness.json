@@ -3,8 +3,8 @@
     {
       "c": 1,
       "declared_min": 64,
-      "divergence_at": 127,
-      "intra_agree_to": 127,
+      "divergence_at": 128,
+      "intra_agree_to": 128,
       "m_formed": 1,
       "max_constant_run": 1,
       "max_constant_run_declared": 16,
@@ -12,12 +12,12 @@
       "result": "PASS",
       "slots": [
         {
-          "agree_to": 127,
+          "agree_to": 128,
           "completion_tokens": 128,
           "constant_run": 1,
           "finish_reason": "length",
           "i": 0,
-          "intra_agree_to": 127,
+          "intra_agree_to": 128,
           "refused": null,
           "token_count_source": "usage"
         }
@@ -27,7 +27,7 @@
       "c": 4,
       "declared_min": 64,
       "divergence_at": 3,
-      "intra_agree_to": 128,
+      "intra_agree_to": 127,
       "m_formed": 4,
       "max_constant_run": 1,
       "max_constant_run_declared": 16,
@@ -40,7 +40,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 0,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -50,7 +50,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 1,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -60,7 +60,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 2,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -70,7 +70,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 3,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         }
@@ -80,7 +80,7 @@
       "c": 8,
       "declared_min": 64,
       "divergence_at": 3,
-      "intra_agree_to": 128,
+      "intra_agree_to": 127,
       "m_formed": 8,
       "max_constant_run": 1,
       "max_constant_run_declared": 16,
@@ -93,7 +93,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 0,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -103,7 +103,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 1,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -113,7 +113,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 2,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -123,7 +123,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 3,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -133,7 +133,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 4,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -143,7 +143,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 5,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -153,7 +153,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 6,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -163,7 +163,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 7,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         }
@@ -173,7 +173,7 @@
       "c": 16,
       "declared_min": 64,
       "divergence_at": 3,
-      "intra_agree_to": 128,
+      "intra_agree_to": 127,
       "m_formed": 16,
       "max_constant_run": 1,
       "max_constant_run_declared": 16,
@@ -186,7 +186,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 0,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -196,7 +196,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 1,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -206,7 +206,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 2,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -216,7 +216,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 3,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -226,7 +226,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 4,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -236,7 +236,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 5,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -246,7 +246,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 6,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -256,7 +256,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 7,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -266,7 +266,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 8,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -276,7 +276,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 9,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -286,7 +286,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 10,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -296,7 +296,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 11,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -306,7 +306,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 12,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -316,7 +316,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 13,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -326,7 +326,7 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 14,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         },
@@ -336,21 +336,21 @@
           "constant_run": 1,
           "finish_reason": "length",
           "i": 15,
-          "intra_agree_to": 128,
+          "intra_agree_to": 127,
           "refused": null,
           "token_count_source": "usage"
         }
       ]
     }
   ],
-  "binary_sha256": "7cae6df18b109ef52dd33ad7cf086b134f5aacf6e95c3f307d57b60111f315e9",
-  "commit": "046ad6a84d6a3d5cc6c5c3e6e122dcc7459e8edc",
+  "binary_sha256": "774e56082f7054887d0636ae8d613dfaeff9288f8e076b0377dcc2afff2985a0",
+  "commit": "c9b43b1557d1e0049a44c9a8340a3528b2949a0f",
   "declared_min": 64,
   "env": {
     "APR_DECODE_GEMM": null,
     "BATCHED_PREFILL": null,
     "CUBLAS_GEMM_THRESHOLD": null,
-    "CUDA_BATCH_WINDOW_MS": "800",
+    "CUDA_BATCH_WINDOW_MS": "200",
     "FP8_DECODE": null,
     "FP8_PREFILL": null,
     "FUSED_GATE_UP": null,
@@ -368,7 +368,7 @@
   "probe": "perf041",
   "prompt_sha256": "3e31578371f85f23c8fa13b7b287e65bad7e0c09584bc79d3064feab3d1ab7e5",
   "reference": {
-    "self_divergence_at": 127,
+    "self_divergence_at": 128,
     "stable": true,
     "token_count_source": "usage",
     "tokens": 128
