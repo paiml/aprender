@@ -638,11 +638,11 @@ FAKE
     esac
     # fixture e (b): INFRA_MAX_LOGS + 1 runs all with passed assert; INFRA_MAX_LOGS caps log reads so the oldest hits log cap
     printf '5000 4000\n' > "$tmp/fe/rate"
-    local ej="" ei
-    for ei in $(seq $((600 + INFRA_MAX_LOGS + 1)) -1 601); do
+    local ej="" ei oldest=601
+    for ei in $(seq $((600 + INFRA_MAX_LOGS + 1)) -1 "$oldest"); do
         ej="$ej${ej:+,}{\"id\":$ei,\"run_attempt\":1}"
         infra "$tmp/fe" "$ei" "$((ei * 10))" completed success
-        [ "$ei" -eq 601 ] || logs "$tmp/fe" "$((ei * 10))" 200 "$d"
+        [ "$ei" -eq "$oldest" ] || logs "$tmp/fe" "$((ei * 10))" 200 "$d"
     done
     runs "$tmp/fe" 200 "{\"workflow_runs\":[$ej]}"
     exact measured_cpu_diag_b_capped_reads_max_logs 0 "$(tsv "$d" green $((600 + INFRA_MAX_LOGS + 1)))" -- cpu "$tmp/fe" "$tmp/cp"
