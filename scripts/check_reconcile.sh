@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# check_reconcile.sh <tag> [--prev-tag T] [--rev SHA] [--json OUT] [--self-test]
+# check_reconcile.sh <tag> [--prev-tag T] [--rev SHA] [--json OUT] [--archive-dir DIR] [--self-test]
 #
 # APR-RELEASE-001 section 6, T-5 reconcile. Computes the five predicates and
-# fails (exit 1) unless R1..R4 are ALL zero. The autopilot writes DONE only
-# after this reads every predicate 0; it must never silently pass.
+# fails (exit 1) unless R1, R2, and R4 are ALL zero. R3 (dead branches) is
+# non-blocking: dead branches are archived (git bundle + tips.txt + README.md),
+# verified readable, and reported on stdout (exit 0 for R3 alone); branches are
+# never deleted by this script.
 #
 #   R1 fixed-but-open   open issues cited with a closing keyword by a commit
 #                       in prev..tag on the current checkout.
@@ -12,6 +14,9 @@
 #   R3 dead branches    remote branches with no open PR, tip older than 14d.
 #                       release/** and single-level nightly/<name> heads (the paths the repository
 #                       rulesets lock against deletion) are exempt.
+#                       Non-blocking: archived to --archive-dir / R3_ARCHIVE_DIR
+#                       (default ${RUNNER_TEMP:-${TMPDIR:-/tmp}}/r3-branch-archive-<tag>)
+#                       and reported on stdout. Never deleted here.
 #   R4 dirty stale PRs  open PRs mergeStateStatus=DIRTY, created before
 #                       --prev-tag's date.
 #   R5 ratio            issues opened vs closed in the window (recorded, not
@@ -19,11 +24,14 @@
 #
 # --rev SHA: judge the window prev..SHA when <tag> does not exist yet (release.yml bump path,
 #            before the tag is made). If <tag> exists it must point at SHA, else exit 2.
+# --archive-dir DIR (or env R3_ARCHIVE_DIR): directory to write R3 git bundle,
+#            tips.txt, and README.md when R3 > 0. Fails closed (exit 2) if the
+#            archive cannot be written or read back.
 #
-# Exit 0  = R1..R4 all zero.
-# Exit 1  = at least one of R1..R4 is nonzero (receipt still written/printed).
-# Exit 2  = environment failure: gh/git missing or unauthenticated, tag or
-#           prev-tag not resolvable. Never a silent pass.
+# Exit 0  = R1, R2, R4 all zero (R3 archived + verified if nonzero).
+# Exit 1  = at least one of R1, R2, R4 is nonzero (receipt still written/printed).
+# Exit 2  = environment/archive failure: gh/git missing or unauthenticated, tag or
+#           prev-tag not resolvable, or R3 archive write/read-back failed. Never a silent pass.
 #
 # The predicate logic is factored into functions that read from FILES, so
 # --self-test never touches the network: it builds a fixture input directory
@@ -41,7 +49,7 @@ SCRIPT_DIR="$(dirname "$SELF_PATH")"
 CLOSE_SCRIPT="${SCRIPT_DIR}/check_pr_closes_issue.sh"
 
 usage() {
-    printf 'usage: %s <tag> [--prev-tag TAG] [--rev SHA] [--json FILE] | --self-test\n' "$(basename "$0")" >&2
+    printf 'usage: %s <tag> [--prev-tag TAG] [--rev SHA] [--json FILE] [--archive-dir DIR] | --self-test\n' "$(basename "$0")" >&2
     exit 2
 }
 
@@ -226,12 +234,207 @@ count_lines() {
     printf '%s\n' "$text" | grep -vE '^[[:space:]]*$' | wc -l | tr -d ' '
 }
 
-# build_json SHA PREV TAG R1_LIST R1C R2_LIST R2C R3_LIST R3C R4_LIST R4C ARRIVAL CLOSURE RATIO
+# r3_verify_archive BUNDLE_FILE TIPS_FILE README_FILE EXPECTED_TIPS_FILE
+# Verifies that the bundle, tips.txt, and README.md exist, are readable, pass
+# `git bundle verify` inside a clean bare repo, and match all expected tips.
+r3_verify_archive() {
+    local bundle_file="$1" tips_file="$2" readme_file="$3" expected_tips_file="$4"
+    local abs_bundle verify_repo heads_out
+
+    [ -f "$bundle_file" ] && [ -r "$bundle_file" ] && [ -s "$bundle_file" ] || {
+        printf 'ENV: r3 archive bundle missing or unreadable: %s\n' "$bundle_file" >&2
+        return 2
+    }
+    [ -f "$tips_file" ] && [ -r "$tips_file" ] && [ -s "$tips_file" ] || {
+        printf 'ENV: r3 archive tips.txt missing or unreadable: %s\n' "$tips_file" >&2
+        return 2
+    }
+    [ -f "$readme_file" ] && [ -r "$readme_file" ] && [ -s "$readme_file" ] || {
+        printf 'ENV: r3 archive README.md missing or unreadable: %s\n' "$readme_file" >&2
+        return 2
+    }
+
+    abs_bundle="$(cd "$(dirname "$bundle_file")" && pwd)/$(basename "$bundle_file")" || return 2
+    verify_repo="$(mktemp -d -p "${RUNNER_TEMP:-${TMPDIR:-/tmp}}")" || return 2
+    if ! git init -q --bare --template= "$verify_repo" >/dev/null 2>&1; then
+        rm -rf "${verify_repo:?}"
+        return 2
+    fi
+    if ! git -C "$verify_repo" bundle verify "$abs_bundle" >/dev/null 2>&1; then
+        rm -rf "${verify_repo:?}"
+        printf 'ENV: r3 archive bundle failed git bundle verify: %s\n' "$bundle_file" >&2
+        return 2
+    fi
+    heads_out="$(git -C "$verify_repo" bundle list-heads "$abs_bundle" 2>/dev/null)" || {
+        rm -rf "${verify_repo:?}"
+        printf 'ENV: r3 archive bundle list-heads failed: %s\n' "$bundle_file" >&2
+        return 2
+    }
+    rm -rf "${verify_repo:?}"
+
+    R3_HEADS="$heads_out" R3_BUNDLE_NAME="$(basename "$bundle_file")" \
+    python3 - "$expected_tips_file" "$tips_file" "$readme_file" <<'PY_VERIFY' || return 2
+import os, sys
+
+expected_path, tips_path, readme_path = sys.argv[1:4]
+expected = []
+with open(expected_path, "r", encoding="utf-8") as fh:
+    for line in fh:
+        line = line.strip()
+        if line:
+            parts = line.split()
+            if len(parts) != 2:
+                sys.stderr.write(f"ENV: malformed expected tip: {line}\n")
+                sys.exit(2)
+            expected.append((parts[0], parts[1]))
+
+if not expected:
+    sys.stderr.write("ENV: expected tips list is empty\n")
+    sys.exit(2)
+
+with open(tips_path, "r", encoding="utf-8") as fh:
+    tips_lines = [l.strip() for l in fh if l.strip()]
+
+tips_map = {}
+for line in tips_lines:
+    parts = line.split()
+    if len(parts) != 2:
+        sys.stderr.write(f"ENV: malformed tips.txt line: {line}\n")
+        sys.exit(2)
+    tips_map[parts[0]] = parts[1]
+
+bundle_heads = {}
+for line in os.environ.get("R3_HEADS", "").splitlines():
+    parts = line.strip().split()
+    if len(parts) == 2:
+        bundle_heads[parts[1]] = parts[0]
+
+readme_text = open(readme_path, "r", encoding="utf-8").read()
+bundle_name = os.environ["R3_BUNDLE_NAME"]
+if bundle_name not in readme_text or "git fetch" not in readme_text or "git push origin" not in readme_text:
+    sys.stderr.write("ENV: README.md missing restore instructions\n")
+    sys.exit(2)
+
+for branch, sha in expected:
+    if tips_map.get(branch) != sha:
+        sys.stderr.write(f"ENV: tips.txt mismatch for {branch}: got {tips_map.get(branch)} want {sha}\n")
+        sys.exit(2)
+    ref = f"refs/remotes/origin/{branch}"
+    if bundle_heads.get(ref) != sha:
+        sys.stderr.write(f"ENV: bundle head mismatch for {ref}: got {bundle_heads.get(ref)} want {sha}\n")
+        sys.exit(2)
+    if branch not in readme_text or sha not in readme_text:
+        sys.stderr.write(f"ENV: README.md missing branch/sha for {branch}\n")
+        sys.exit(2)
+PY_VERIFY
+    return 0
+}
+
+# r3_archive_dead_branches R3_LIST ARCHIVE_DIR REPO_DIR TAG
+# Archives every dead branch in R3_LIST as a git bundle in ARCHIVE_DIR with
+# tips.txt and README.md, verifies read-back, and prints the bundle path.
+# Never deletes any branch. Fails closed (returns 2) on any write/verify error.
+r3_archive_dead_branches() {
+    local r3_list="$1" archive_dir="$2" repo_dir="$3" tag="$4"
+    local safe_tag bundle_name bundle_file tips_file readme_file expected_tips_file
+    local branch sha ref count=0 now_utc
+    local -a refs=()
+
+    [ -n "$archive_dir" ] || { printf 'ENV: R3 archive directory is empty.\n' >&2; return 2; }
+    git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1 || {
+        printf 'ENV: not a git repository for R3 archiving: %s\n' "$repo_dir" >&2
+        return 2
+    }
+    mkdir -p "$archive_dir" 2>/dev/null || {
+        printf 'ENV: cannot create R3 archive directory: %s\n' "$archive_dir" >&2
+        return 2
+    }
+
+    expected_tips_file="$(mktemp -p "${RUNNER_TEMP:-${TMPDIR:-/tmp}}")" || return 2
+    while IFS= read -r branch; do
+        [ -z "$branch" ] && continue
+        ref="refs/remotes/origin/${branch}"
+        if ! git -C "$repo_dir" show-ref --verify --quiet "$ref"; then
+            rm -f "${expected_tips_file:?}"
+            printf 'ENV: dead branch ref not found in git repo: %s\n' "$ref" >&2
+            return 2
+        fi
+        sha="$(git -C "$repo_dir" rev-parse --verify "${ref}^{commit}" 2>/dev/null || true)"
+        if [ -z "$sha" ]; then
+            rm -f "${expected_tips_file:?}"
+            printf 'ENV: cannot resolve dead branch commit: %s\n' "$ref" >&2
+            return 2
+        fi
+        refs+=("$ref")
+        printf '%s %s\n' "$branch" "$sha" >> "$expected_tips_file" || {
+            rm -f "${expected_tips_file:?}"
+            return 2
+        }
+        count=$((count + 1))
+    done <<EOF_R3_LIST
+$r3_list
+EOF_R3_LIST
+
+    if [ "$count" -eq 0 ]; then
+        rm -f "${expected_tips_file:?}"
+        return 0
+    fi
+
+    safe_tag="$(printf '%s' "${tag:-unknown}" | tr '/[:space:]' '__')"
+    bundle_name="r3-${safe_tag}-branches.bundle"
+    bundle_file="${archive_dir}/${bundle_name}"
+    tips_file="${archive_dir}/tips.txt"
+    readme_file="${archive_dir}/README.md"
+
+    rm -f "$bundle_file" 2>/dev/null || true
+    if ! git -C "$repo_dir" bundle create "$bundle_file" "${refs[@]}" >/dev/null 2>&1; then
+        rm -f "${expected_tips_file:?}" "$bundle_file" 2>/dev/null || true
+        printf 'ENV: git bundle create failed at %s\n' "$bundle_file" >&2
+        return 2
+    fi
+
+    if ! cp "$expected_tips_file" "$tips_file" 2>/dev/null; then
+        rm -f "${expected_tips_file:?}"
+        printf 'ENV: failed to write %s\n' "$tips_file" >&2
+        return 2
+    fi
+
+    now_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"  # bashrs disable-line=DET002
+    if ! {
+        printf '# R3 dead-branch archive for %s (%s)\n\n' "$tag" "$now_utc"
+        printf 'Bundle: `%s` (%s head(s)). Tips recorded in `tips.txt`.\n' "$bundle_name" "$count"
+        printf 'Policy: stale remote branches (no open PR, tip older than 14 days) are archived and reported; branches are never deleted by check_reconcile.sh.\n\n'
+        printf '## Restore\n\n'
+        printf 'General: `git fetch <bundle> <ref>; git push origin <sha>:refs/heads/<name>`\n\n'
+        printf '```sh\n'
+        while IFS=' ' read -r branch sha; do
+            [ -z "$branch" ] && continue
+            printf 'git fetch %s refs/remotes/origin/%s && git push origin %s:refs/heads/%s\n' \
+                "$bundle_name" "$branch" "$sha" "$branch"
+        done < "$expected_tips_file"
+        printf '```\n'
+    } > "$readme_file" 2>/dev/null; then
+        rm -f "${expected_tips_file:?}"
+        printf 'ENV: failed to write %s\n' "$readme_file" >&2
+        return 2
+    fi
+
+    if ! r3_verify_archive "$bundle_file" "$tips_file" "$readme_file" "$expected_tips_file"; then
+        rm -f "${expected_tips_file:?}"
+        return 2
+    fi
+    rm -f "${expected_tips_file:?}"
+    printf '%s\n' "$bundle_file"
+    return 0
+}
+
+# build_json SHA PREV TAG R1_LIST R1C R2_LIST R2C R3_LIST R3C R4_LIST R4C ARRIVAL CLOSURE RATIO [R3_ARCHIVED] [R3_ARCHIVE_DIR] [R3_BUNDLE]
 build_json() {
     R1_LIST="$4" R2_LIST="$6" R3_LIST="$8" R4_LIST="${10}" \
     RJ_SHA="$1" RJ_PREV="$2" RJ_TAG="$3" \
     RJ_R1C="$5" RJ_R2C="$7" RJ_R3C="$9" RJ_R4C="${11}" \
     RJ_ARRIVAL="${12}" RJ_CLOSURE="${13}" RJ_RATIO="${14}" \
+    RJ_R3_ARCHIVED="${15:-0}" RJ_R3_ARCHIVE_DIR="${16:-}" RJ_R3_BUNDLE="${17:-}" \
     python3 -c '
 import json
 import os
@@ -242,12 +445,18 @@ def lst(name):
     return [x for x in raw.splitlines() if x.strip()]
 
 
+r3_obj = {"count": int(os.environ["RJ_R3C"]), "list": lst("R3_LIST")}
+if os.environ.get("RJ_R3_ARCHIVED") == "1":
+    r3_obj["archived"] = True
+    r3_obj["archive_dir"] = os.environ.get("RJ_R3_ARCHIVE_DIR", "")
+    r3_obj["bundle"] = os.environ.get("RJ_R3_BUNDLE", "")
+
 receipt = {
     "sha": os.environ["RJ_SHA"],
     "window": [os.environ["RJ_PREV"], os.environ["RJ_TAG"]],
     "R1": {"count": int(os.environ["RJ_R1C"]), "list": lst("R1_LIST")},
     "R2": {"count": int(os.environ["RJ_R2C"]), "list": lst("R2_LIST")},
-    "R3": {"count": int(os.environ["RJ_R3C"]), "list": lst("R3_LIST")},
+    "R3": r3_obj,
     "R4": {"count": int(os.environ["RJ_R4C"]), "list": lst("R4_LIST")},
     "R5": {
         "arrival": int(os.environ["RJ_ARRIVAL"]),
@@ -259,10 +468,12 @@ print(json.dumps(receipt))
 '
 }   # callers add || return 2
 
-# reconcile_from_dir DIR SHA TAG PREV_TAG PREV_EPOCH JSON_OUT
-# Runs all five predicates against the files in DIR, writes/prints the
-# receipt, and returns 0 iff R1..R4 are all zero, 1 if any is nonzero, 2 if a
-# predicate or the receipt could not be computed (a crash is never a zero).
+# reconcile_from_dir DIR SHA TAG PREV_TAG PREV_EPOCH JSON_OUT [ARCHIVE_DIR] [REPO_DIR]
+# Runs all five predicates against the files in DIR, archives any R3 dead
+# branches into ARCHIVE_DIR and verifies read-back, writes/prints the receipt
+# plus stdout REPORT lines for R3, and returns 0 iff R1, R2, and R4 are all
+# zero, 1 if any of R1, R2, R4 is nonzero, 2 if a predicate, R3 archive
+# write/read-back, or receipt could not be computed (a crash is never a zero).
 reconcile_from_dir() {
     dir="$1"
     sha="$2"
@@ -270,6 +481,21 @@ reconcile_from_dir() {
     prev_tag="$4"
     prev_epoch="$5"
     json_out="$6"
+    archive_dir="${7:-}"
+    repo_dir="${8:-.}"
+
+    if [ -z "$archive_dir" ]; then
+        if [ -n "${R3_ARCHIVE_DIR+x}" ]; then
+            if [ -z "$R3_ARCHIVE_DIR" ]; then
+                printf 'ENV: R3_ARCHIVE_DIR is set but empty.\n' >&2
+                return 2
+            fi
+            archive_dir="$R3_ARCHIVE_DIR"
+        else
+            safe_tag="$(printf '%s' "${tag:-unknown}" | tr '/[:space:]' '__')"
+            archive_dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/r3-branch-archive-${safe_tag}"
+        fi
+    fi
 
     cutoff_epoch="$(date -u -d '-14 days' +%s)"  # bashrs disable-line=DET002
 
@@ -291,17 +517,33 @@ reconcile_from_dir() {
     r3_count="$(count_lines "$r3_list")"
     r4_count="$(count_lines "$r4_list")"
 
-    receipt="$(build_json "$sha" "$prev_tag" "$tag" "$r1_list" "$r1_count" "$r2_list" "$r2_count" "$r3_list" "$r3_count" "$r4_list" "$r4_count" "$arrival" "$closure" "$ratio")" || return 2
+    r3_archived="0"
+    r3_bundle=""
+    if [ "$r3_count" -gt 0 ]; then
+        r3_bundle="$(r3_archive_dead_branches "$r3_list" "$archive_dir" "$repo_dir" "$tag")" || return 2
+        r3_archived="1"
+    fi
+
+    receipt="$(build_json "$sha" "$prev_tag" "$tag" "$r1_list" "$r1_count" "$r2_list" "$r2_count" "$r3_list" "$r3_count" "$r4_list" "$r4_count" "$arrival" "$closure" "$ratio" "$r3_archived" "$archive_dir" "$r3_bundle")" || return 2
 
     if [ -n "$json_out" ]; then
         printf '%s\n' "$receipt" > "$json_out"
     fi
     printf '%s\n' "$receipt"
 
+    if [ "$r3_count" -gt 0 ]; then
+        printf 'REPORT R3(dead-branches)=%s non-blocking archived=%s bundle=%s\n' \
+            "$r3_count" "$archive_dir" "$r3_bundle"
+        while IFS= read -r _r3_tip_line; do
+            [ -z "$_r3_tip_line" ] && continue
+            printf 'REPORT R3 dead-branch: %s\n' "$_r3_tip_line"
+        done < "${archive_dir}/tips.txt"
+    fi
+
     printf 'R1(fixed-but-open)=%s R2(missing-closing-ref)=%s R3(dead-branches)=%s R4(dirty-stale-prs)=%s R5(ratio)=%s\n' \
         "$r1_count" "$r2_count" "$r3_count" "$r4_count" "$ratio" >&2
 
-    if [ "$r1_count" -eq 0 ] && [ "$r2_count" -eq 0 ] && [ "$r3_count" -eq 0 ] && [ "$r4_count" -eq 0 ]; then
+    if [ "$r1_count" -eq 0 ] && [ "$r2_count" -eq 0 ] && [ "$r4_count" -eq 0 ]; then
         return 0
     fi
     return 1
@@ -605,6 +847,10 @@ EOF_GH
         || { printf 'FAIL prev-tag-emptyvalue: expected usage + exit 2\n' >&2; fails=$((fails + 1)); }
     usage_rc v0.3.0 --rev HEAD --prev-tag v0.1.0 --json "" \
         || { printf 'FAIL json-emptyvalue: expected usage + exit 2\n' >&2; fails=$((fails + 1)); }
+    usage_rc v0.3.0 --rev HEAD --prev-tag v0.1.0 --archive-dir "" \
+        || { printf 'FAIL r3-usage-archive-emptyvalue: expected usage + exit 2\n' >&2; fails=$((fails + 1)); }
+    rc=0; rev_rc v0.3.0 --prev-tag v0.1.0 --rev HEAD --archive-dir || rc=$?
+    if [ "$rc" -ne 2 ]; then printf 'FAIL r3-usage-archive-novalue: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
     rc=0; rev_rc v0.3.0 --rev HEAD --prev-tag v0.2.0 || rc=$?
     if [ "$rc" -ne 2 ]; then printf 'FAIL rev-empty-window: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
     rc=0; rev_rc v0.3.0 --rev v0.1.0 --prev-tag v0.2.0 || rc=$?
@@ -625,11 +871,328 @@ EOF_GH
     if [ "$rc" -ne 1 ]; then printf 'FAIL rev-seeded: expected exit 1, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
     rm -rf "${revdir:?}"
 
+    # #7373 R3 non-blocking contract: archive (bundle + tips.txt + README.md),
+    # verify read-back, report to stdout, never delete branches, exit 0 for R3 alone,
+    # keep R1/R2/R4 blocking, and fail closed on write/read-back errors.
+    cases=35
+    r3dir="$(mktemp -d -p "${RUNNER_TEMP:-${TMPDIR:-/tmp}}")" || return 2
+    mkdir -p "${r3dir}/bin" "${r3dir}/repo"
+    cat > "${r3dir}/bin/gh" <<'EOF_GH_R3'
+#!/bin/sh
+case "$*" in
+    "auth status") exit 0 ;;
+    "issue list --state open"*) printf '[{"number":5}]\n' ;;
+    *) printf '[]\n' ;;
+esac
+EOF_GH_R3
+    chmod +x "${r3dir}/bin/gh"
+    old_git_date="$(date -u -d '-20 days' +%Y-%m-%dT%H:%M:%SZ)"  # bashrs disable-line=DET002
+    (
+        cd "${r3dir}/repo" || exit 9
+        git init -q --template= -b main .
+        git config core.hooksPath /dev/null
+        git config user.email t@example.invalid
+        git config user.name t
+        git remote add origin "${r3dir}/repo"
+        GIT_AUTHOR_DATE="$old_git_date" GIT_COMMITTER_DATE="$old_git_date" \
+            git commit -q --allow-empty -m "base" && git tag v0.1.0
+        git checkout -q -b feat/stale-work
+        GIT_AUTHOR_DATE="$old_git_date" GIT_COMMITTER_DATE="$old_git_date" \
+            git commit -q --allow-empty -m "stale feature work"
+        git checkout -q -b stale-plain main
+        GIT_AUTHOR_DATE="$old_git_date" GIT_COMMITTER_DATE="$old_git_date" \
+            git commit -q --allow-empty -m "stale plain work"
+        git checkout -q main
+        git commit -q --allow-empty -m "chore: recent main commit"
+    )
+    sha_feat="$(git -C "${r3dir}/repo" rev-parse refs/heads/feat/stale-work)"
+    sha_plain="$(git -C "${r3dir}/repo" rev-parse refs/heads/stale-plain)"
+
+    # Row: empty R3_ARCHIVE_DIR env var fails closed (exit 2).
+    rc=0
+    ( cd "${r3dir}/repo" && R3_ARCHIVE_DIR="" PATH="${r3dir}/bin:${PATH}" bash "$SELF_PATH" v0.2.0 --rev HEAD --prev-tag v0.1.0 >/dev/null 2>&1 ) || rc=$?
+    if [ "$rc" -ne 2 ]; then printf 'FAIL r3-env-archive-emptyvalue: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
+    cases=$((cases + 1))
+
+    # Row (PROVES R3 FORMERLY BLOCKED): R3=2 alone with --archive-dir exits 0, archives + verifies + reports, never deletes.
+    arch1="${r3dir}/archive-flag"
+    json1="${r3dir}/receipt1.json"
+    out1=""
+    rc=0
+    out1="$( cd "${r3dir}/repo" && PATH="${r3dir}/bin:${PATH}" bash "$SELF_PATH" v0.2.0 --rev HEAD --prev-tag v0.1.0 --json "$json1" --archive-dir "$arch1" 2>/dev/null )" || rc=$?
+    if [ "$rc" -ne 0 ] \
+        || ! grep -qF 'REPORT R3(dead-branches)=2' <<< "$out1" \
+        || ! grep -qF "feat/stale-work ${sha_feat}" <<< "$out1" \
+        || ! grep -qF "stale-plain ${sha_plain}" <<< "$out1" \
+        || [ ! -s "${arch1}/tips.txt" ] \
+        || [ ! -s "${arch1}/README.md" ] \
+        || [ ! -s "${arch1}/r3-v0.2.0-branches.bundle" ]; then
+        printf 'FAIL r3-nonblocking-archive-flag: rc=%s out=%s\n' "$rc" "$out1" >&2
+        fails=$((fails + 1))
+    else
+        r3_check_ok=1
+        python3 - "$json1" "$arch1" "$sha_feat" "$sha_plain" <<'PY_R3_CHECK' || r3_check_ok=0
+import json, os, sys
+jpath, adir, sf, sp = sys.argv[1:5]
+d = json.load(open(jpath))
+assert d["R3"]["count"] == 2, d["R3"]
+assert d["R3"]["archived"] is True, d["R3"]
+assert d["R3"]["archive_dir"] == adir, d["R3"]
+tips = dict(l.split() for l in open(os.path.join(adir, "tips.txt")) if l.strip())
+assert tips == {"feat/stale-work": sf, "stale-plain": sp}, tips
+readme = open(os.path.join(adir, "README.md")).read()
+assert "git fetch" in readme and "git push origin" in readme and sf in readme and sp in readme
+PY_R3_CHECK
+        bare_check="${r3dir}/bare-check"
+        git init -q --bare --template= "$bare_check"
+        git -C "$bare_check" bundle verify "${arch1}/r3-v0.2.0-branches.bundle" >/dev/null 2>&1 || r3_check_ok=0
+        git -C "${r3dir}/repo" show-ref --verify --quiet refs/remotes/origin/feat/stale-work || r3_check_ok=0
+        git -C "${r3dir}/repo" show-ref --verify --quiet refs/remotes/origin/stale-plain || r3_check_ok=0
+        git -C "${r3dir}/repo" show-ref --verify --quiet refs/heads/feat/stale-work || r3_check_ok=0
+        rm -rf "${bare_check:?}"
+        if [ "$r3_check_ok" -ne 1 ]; then
+            printf 'FAIL r3-nonblocking-archive-flag: archive verification or branch-preservation failed\n' >&2
+            fails=$((fails + 1))
+        fi
+    fi
+    cases=$((cases + 1))
+
+    # Row: direct reconcile_from_dir with R3=1, R1=R2=R4=0 exits 0 (formerly exited 1).
+    r3_fx="${r3dir}/fx"
+    mkdir -p "$r3_fx"
+    : > "${r3_fx}/issues-open.tsv"
+    printf 'deadbeef\nchore: ok\n\x00' > "${r3_fx}/log.bin"
+    printf '[]' > "${r3_fx}/merged-prs.json"
+    printf '[]' > "${r3_fx}/open-prs.json"
+    printf 'stale-plain\t%s\n' "$old_git_date" > "${r3_fx}/branches.txt"
+    rc=0
+    reconcile_from_dir "$r3_fx" "abc123" "v0.2.0" "v0.1.0" "$(date -u -d '-14 days' +%s)" "" "${r3dir}/arch-fx" "${r3dir}/repo" >/dev/null 2>&1 || rc=$?  # bashrs disable-line=DET002
+    if [ "$rc" -ne 0 ]; then
+        printf 'FAIL r3-reconcile-from-dir-formerly-blocked: expected exit 0, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    cases=$((cases + 1))
+
+    # Row: R3_ARCHIVE_DIR env var without --archive-dir works and archives.
+    arch2="${r3dir}/archive-env"
+    rc=0
+    ( cd "${r3dir}/repo" && R3_ARCHIVE_DIR="$arch2" PATH="${r3dir}/bin:${PATH}" bash "$SELF_PATH" v0.2.0 --rev HEAD --prev-tag v0.1.0 >/dev/null 2>&1 ) || rc=$?
+    if [ "$rc" -ne 0 ] || [ ! -s "${arch2}/r3-v0.2.0-branches.bundle" ] || [ ! -s "${arch2}/tips.txt" ] || [ ! -s "${arch2}/README.md" ]; then
+        printf 'FAIL r3-archive-env-var: rc=%s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    cases=$((cases + 1))
+
+    # Row: R3 + R1 still blocks (exit 1) while archiving R3.
+    printf '5\tOpen bug\n' > "${r3_fx}/issues-open.tsv"
+    printf 'deadbeef\nfix: bug\nFixes #5\n\x00' > "${r3_fx}/log.bin"
+    rc=0
+    reconcile_from_dir "$r3_fx" "abc123" "v0.2.0" "v0.1.0" "$(date -u -d '-14 days' +%s)" "" "${r3dir}/arch-r1" "${r3dir}/repo" >/dev/null 2>&1 || rc=$?  # bashrs disable-line=DET002
+    if [ "$rc" -ne 1 ] || [ ! -s "${r3dir}/arch-r1/r3-v0.2.0-branches.bundle" ]; then
+        printf 'FAIL r3-plus-r1-still-blocks: expected exit 1, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    cases=$((cases + 1))
+
+    # Row: R3 + R2 still blocks (exit 1).
+    r3_fx_r2="${r3dir}/fx-r2"
+    mkdir -p "$r3_fx_r2"
+    : > "${r3_fx_r2}/issues-open.tsv"
+    printf 'deadbeef\nchore: ok\n\x00' > "${r3_fx_r2}/log.bin"
+    printf '[{"number":10,"body":"Refs #5"}]' > "${r3_fx_r2}/merged-prs.json"
+    printf '[]' > "${r3_fx_r2}/open-prs.json"
+    printf 'stale-plain\t%s\n' "$old_git_date" > "${r3_fx_r2}/branches.txt"
+    rc=0
+    reconcile_from_dir "$r3_fx_r2" "abc123" "v0.2.0" "v0.1.0" "$(date -u -d '-14 days' +%s)" "" "${r3dir}/arch-r2" "${r3dir}/repo" >/dev/null 2>&1 || rc=$?  # bashrs disable-line=DET002
+    if [ "$rc" -ne 1 ]; then
+        printf 'FAIL r3-plus-r2-still-blocks: expected exit 1, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    cases=$((cases + 1))
+
+    # Row: R3 + R4 still blocks (exit 1).
+    r3_fx_r4="${r3dir}/fx-r4"
+    mkdir -p "$r3_fx_r4"
+    : > "${r3_fx_r4}/issues-open.tsv"
+    printf 'deadbeef\nchore: ok\n\x00' > "${r3_fx_r4}/log.bin"
+    printf '[]' > "${r3_fx_r4}/merged-prs.json"
+    printf '[{"number":7,"mergeStateStatus":"DIRTY","createdAt":"%s"}]' "$old_git_date" > "${r3_fx_r4}/open-prs.json"
+    printf 'stale-plain\t%s\n' "$old_git_date" > "${r3_fx_r4}/branches.txt"
+    rc=0
+    reconcile_from_dir "$r3_fx_r4" "abc123" "v0.2.0" "v0.1.0" "$(date -u -d '-14 days' +%s)" "" "${r3dir}/arch-r4" "${r3dir}/repo" >/dev/null 2>&1 || rc=$?  # bashrs disable-line=DET002
+    if [ "$rc" -ne 1 ]; then
+        printf 'FAIL r3-plus-r4-still-blocks: expected exit 1, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    cases=$((cases + 1))
+
+    # Row: unwritable archive path fails closed (exit 2).
+    printf 'not a directory\n' > "${r3dir}/regular-file"
+    rc=0
+    ( cd "${r3dir}/repo" && PATH="${r3dir}/bin:${PATH}" bash "$SELF_PATH" v0.2.0 --rev HEAD --prev-tag v0.1.0 --archive-dir "${r3dir}/regular-file/sub" >/dev/null 2>&1 ) || rc=$?
+    if [ "$rc" -ne 2 ]; then
+        printf 'FAIL r3-fail-closed-unwritable-archive: expected exit 2, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    cases=$((cases + 1))
+
+    # Row: dead branch missing ref in git repo fails closed (exit 2).
+    r3_fx_missing="${r3dir}/fx-missing"
+    mkdir -p "$r3_fx_missing"
+    : > "${r3_fx_missing}/issues-open.tsv"
+    printf 'deadbeef\nchore: ok\n\x00' > "${r3_fx_missing}/log.bin"
+    printf '[]' > "${r3_fx_missing}/merged-prs.json"
+    printf '[]' > "${r3_fx_missing}/open-prs.json"
+    printf 'ghost-branch\t%s\n' "$old_git_date" > "${r3_fx_missing}/branches.txt"
+    rc=0
+    reconcile_from_dir "$r3_fx_missing" "abc123" "v0.2.0" "v0.1.0" "$(date -u -d '-14 days' +%s)" "" "${r3dir}/arch-missing" "${r3dir}/repo" >/dev/null 2>&1 || rc=$?  # bashrs disable-line=DET002
+    if [ "$rc" -ne 2 ]; then
+        printf 'FAIL r3-fail-closed-missing-ref: expected exit 2, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    cases=$((cases + 1))
+
+    # Read-back fail-closed rows: corrupt bundle, mismatched tips.txt, missing README.md.
+    arch_bad="${r3dir}/arch-bad"
+    cp -r "$arch1" "$arch_bad"
+    printf 'stale-plain %s\n' "$sha_plain" > "${r3dir}/expected-plain.txt"
+    printf 'feat/stale-work %s\nstale-plain %s\n' "$sha_feat" "$sha_plain" > "${r3dir}/expected-both.txt"
+    printf 'corrupt' > "${arch_bad}/r3-v0.2.0-branches.bundle"
+    rc=0
+    r3_verify_archive "${arch_bad}/r3-v0.2.0-branches.bundle" "${arch_bad}/tips.txt" "${arch_bad}/README.md" "${r3dir}/expected-both.txt" >/dev/null 2>&1 || rc=$?
+    if [ "$rc" -ne 2 ]; then
+        printf 'FAIL r3-fail-closed-corrupt-bundle-readback: expected exit 2, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    cases=$((cases + 1))
+
+    cp "${arch1}/r3-v0.2.0-branches.bundle" "${arch_bad}/r3-v0.2.0-branches.bundle"
+    printf 'feat/stale-work 0000000000000000000000000000000000000000\n' > "${arch_bad}/tips.txt"
+    rc=0
+    r3_verify_archive "${arch_bad}/r3-v0.2.0-branches.bundle" "${arch_bad}/tips.txt" "${arch_bad}/README.md" "${r3dir}/expected-both.txt" >/dev/null 2>&1 || rc=$?
+    if [ "$rc" -ne 2 ]; then
+        printf 'FAIL r3-fail-closed-tips-mismatch-readback: expected exit 2, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    cases=$((cases + 1))
+
+    cp "${arch1}/tips.txt" "${arch_bad}/tips.txt"
+    : > "${arch_bad}/README.md"
+    rc=0
+    r3_verify_archive "${arch_bad}/r3-v0.2.0-branches.bundle" "${arch_bad}/tips.txt" "${arch_bad}/README.md" "${r3dir}/expected-both.txt" >/dev/null 2>&1 || rc=$?
+    if [ "$rc" -ne 2 ]; then
+        printf 'FAIL r3-fail-closed-missing-readme-readback: expected exit 2, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    cases=$((cases + 1))
+
+    # Mutants for #7373: every mutant must apply cleanly (count == 1) and be killed.
+    r3_fx_clean="${r3dir}/fx-clean"
+    mkdir -p "$r3_fx_clean"
+    : > "${r3_fx_clean}/issues-open.tsv"
+    printf 'deadbeef\nchore: ok\n\x00' > "${r3_fx_clean}/log.bin"
+    printf '[]' > "${r3_fx_clean}/merged-prs.json"
+    printf '[]' > "${r3_fx_clean}/open-prs.json"
+    printf 'stale-plain\t%s\n' "$old_git_date" > "${r3_fx_clean}/branches.txt"
+
+    make_r3_mutant() {
+        local mname="$1" old="$2" new="$3"
+        local dst="${r3dir}/mut-${mname}.sh"
+        python3 - "$SELF_PATH" "$dst" "$old" "$new" <<'PY_MUT' || return 1
+import sys
+src, dst, old, new = sys.argv[1:5]
+s = open(src, "r", encoding="utf-8").read()
+if s.count(old) != 1:
+    sys.stderr.write(f"mutant anchor count={s.count(old)} for {old!r}\n")
+    sys.exit(1)
+open(dst, "w", encoding="utf-8").write(s.replace(old, new, 1))
+PY_MUT
+    }
+
+    run_r3_mutant() {
+        local mname="$1" old="$2" new="$3" want_fail_rc="$4" mode="$5"
+        local mfile="${r3dir}/mut-${mname}.sh" mrc=0 mout=""
+        if ! make_r3_mutant "$mname" "$old" "$new"; then
+            printf 'FAIL mutant-%s: anchor missing or non-unique\n' "$mname" >&2
+            fails=$((fails + 1))
+            cases=$((cases + 1))
+            return
+        fi
+        case "$mode" in
+            r3-only)
+                ( CHECK_RECONCILE_SOURCE_ONLY=1; . "$mfile"; reconcile_from_dir "$r3_fx_clean" "abc123" "v0.2.0" "v0.1.0" "$(date -u -d '-14 days' +%s)" "" "${r3dir}/mut-arch-${mname}" "${r3dir}/repo" >/dev/null 2>&1 ) || mrc=$?  # bashrs disable-line=DET002
+                [ "$mrc" -ne "$want_fail_rc" ] || { printf 'FAIL mutant-%s SURVIVED (rc=%s)\n' "$mname" "$mrc" >&2; fails=$((fails + 1)); }
+                ;;
+            unwritable)
+                ( CHECK_RECONCILE_SOURCE_ONLY=1; . "$mfile"; reconcile_from_dir "$r3_fx_clean" "abc123" "v0.2.0" "v0.1.0" "$(date -u -d '-14 days' +%s)" "" "${r3dir}/regular-file/sub" "${r3dir}/repo" >/dev/null 2>&1 ) || mrc=$?  # bashrs disable-line=DET002
+                [ "$mrc" -ne "$want_fail_rc" ] || { printf 'FAIL mutant-%s SURVIVED (rc=%s)\n' "$mname" "$mrc" >&2; fails=$((fails + 1)); }
+                ;;
+            corrupt-bundle)
+                git -C "${r3dir}/repo" bundle create "${arch_bad}/r3-v0.2.0-branches.bundle" "^main" refs/remotes/origin/feat/stale-work refs/remotes/origin/stale-plain >/dev/null 2>&1
+                cp "${arch1}/tips.txt" "${arch_bad}/tips.txt"
+                cp "${arch1}/README.md" "${arch_bad}/README.md"
+                ( CHECK_RECONCILE_SOURCE_ONLY=1; . "$mfile"; r3_verify_archive "${arch_bad}/r3-v0.2.0-branches.bundle" "${arch_bad}/tips.txt" "${arch_bad}/README.md" "${r3dir}/expected-both.txt" >/dev/null 2>&1 ) || mrc=$?
+                [ "$mrc" -ne "$want_fail_rc" ] || { printf 'FAIL mutant-%s SURVIVED (rc=%s)\n' "$mname" "$mrc" >&2; fails=$((fails + 1)); }
+                ;;
+            report-stdout)
+                mout="$( CHECK_RECONCILE_SOURCE_ONLY=1; . "$mfile"; reconcile_from_dir "$r3_fx_clean" "abc123" "v0.2.0" "v0.1.0" "$(date -u -d '-14 days' +%s)" "" "${r3dir}/mut-arch-${mname}" "${r3dir}/repo" 2>/dev/null )" || mrc=$?  # bashrs disable-line=DET002
+                if [ "$mrc" -eq 0 ] && grep -qF 'REPORT R3(dead-branches)=' <<< "$mout"; then
+                    printf 'FAIL mutant-%s SURVIVED\n' "$mname" >&2
+                    fails=$((fails + 1))
+                fi
+                ;;
+            r1)
+                ( CHECK_RECONCILE_SOURCE_ONLY=1; . "$mfile"; reconcile_from_dir "$r3_fx" "abc123" "v0.2.0" "v0.1.0" "$(date -u -d '-14 days' +%s)" "" "${r3dir}/mut-arch-${mname}" "${r3dir}/repo" >/dev/null 2>&1 ) || mrc=$?  # bashrs disable-line=DET002
+                [ "$mrc" -ne "$want_fail_rc" ] || { printf 'FAIL mutant-%s SURVIVED (rc=%s)\n' "$mname" "$mrc" >&2; fails=$((fails + 1)); }
+                ;;
+            r2)
+                ( CHECK_RECONCILE_SOURCE_ONLY=1; . "$mfile"; reconcile_from_dir "$r3_fx_r2" "abc123" "v0.2.0" "v0.1.0" "$(date -u -d '-14 days' +%s)" "" "${r3dir}/mut-arch-${mname}" "${r3dir}/repo" >/dev/null 2>&1 ) || mrc=$?  # bashrs disable-line=DET002
+                [ "$mrc" -ne "$want_fail_rc" ] || { printf 'FAIL mutant-%s SURVIVED (rc=%s)\n' "$mname" "$mrc" >&2; fails=$((fails + 1)); }
+                ;;
+            r4)
+                ( CHECK_RECONCILE_SOURCE_ONLY=1; . "$mfile"; reconcile_from_dir "$r3_fx_r4" "abc123" "v0.2.0" "v0.1.0" "$(date -u -d '-14 days' +%s)" "" "${r3dir}/mut-arch-${mname}" "${r3dir}/repo" >/dev/null 2>&1 ) || mrc=$?  # bashrs disable-line=DET002
+                [ "$mrc" -ne "$want_fail_rc" ] || { printf 'FAIL mutant-%s SURVIVED (rc=%s)\n' "$mname" "$mrc" >&2; fails=$((fails + 1)); }
+                ;;
+        esac
+        cases=$((cases + 1))
+    }
+
+    run_r3_mutant "r3-formerly-blocked" \
+        'if [ "$r1_count" -eq 0 ] && ''[ "$r2_count" -eq 0 ] && [ "$r4_count" -eq 0 ]; then' \
+        'if [ "$r1_count" -eq 0 ] && [ "$r2_count" -eq 0 ] && [ "$r3_count" -eq 0 ] && [ "$r4_count" -eq 0 ]; then' \
+        0 "r3-only"
+    run_r3_mutant "r3-skip-archive" \
+        'r3_bundle="$(r3_archive_dead_branches ''"$r3_list" "$archive_dir" "$repo_dir" "$tag")" || return 2' \
+        'r3_bundle="skipped"' \
+        2 "unwritable"
+    run_r3_mutant "r3-skip-bundle-verify" \
+        'if ! git -C "$verify_repo" ''bundle verify "$abs_bundle" >/dev/null 2>&1; then' \
+        'if false; then' \
+        2 "corrupt-bundle"
+    run_r3_mutant "r3-drop-report" \
+        "REPORT ""R3(dead-branches)=%s non-blocking archived=%s bundle=%s" \
+        "MUTATED-REPORT R3" \
+        0 "report-stdout"
+    run_r3_mutant "r1-waived" \
+        'if [ "$r1_count" -eq 0 ] && ''[ "$r2_count" -eq 0 ] && [ "$r4_count" -eq 0 ]; then' \
+        'if [ "$r2_count" -eq 0 ] && [ "$r4_count" -eq 0 ]; then' \
+        1 "r1"
+    run_r3_mutant "r2-waived" \
+        'if [ "$r1_count" -eq 0 ] && ''[ "$r2_count" -eq 0 ] && [ "$r4_count" -eq 0 ]; then' \
+        'if [ "$r1_count" -eq 0 ] && [ "$r4_count" -eq 0 ]; then' \
+        1 "r2"
+    run_r3_mutant "r4-waived" \
+        'if [ "$r1_count" -eq 0 ] && ''[ "$r2_count" -eq 0 ] && [ "$r4_count" -eq 0 ]; then' \
+        'if [ "$r1_count" -eq 0 ] && [ "$r2_count" -eq 0 ]; then' \
+        1 "r4"
+
+    rm -rf "${r3dir:?}"
+
     if [ "$fails" -ne 0 ]; then
         printf 'self-test FAILED: %s case(s).\n' "$fails" >&2
         return 1
     fi
-    printf 'self-test OK: 33 case(s).\n'
+    printf 'self-test OK: %s case(s).\n' "$cases"
     return 0
 }
 
@@ -653,6 +1216,7 @@ main() {
     prev_tag=""
     json_out=""
     rev=""
+    archive_dir=""
     while [ $# -gt 0 ]; do
         case "$1" in
             --prev-tag)
@@ -670,11 +1234,29 @@ main() {
                 rev="${2:-}"
                 shift 2
                 ;;
+            --archive-dir)
+                { [ $# -ge 2 ] && [ -n "${2:-}" ]; } || usage
+                archive_dir="${2:-}"
+                shift 2
+                ;;
             *)
                 usage
                 ;;
         esac
     done
+
+    if [ -z "$archive_dir" ]; then
+        if [ -n "${R3_ARCHIVE_DIR+x}" ]; then
+            if [ -z "$R3_ARCHIVE_DIR" ]; then
+                printf 'ENV: R3_ARCHIVE_DIR is set but empty.\n' >&2
+                exit 2
+            fi
+            archive_dir="$R3_ARCHIVE_DIR"
+        else
+            safe_tag="$(printf '%s' "$tag" | tr '/[:space:]' '__')"
+            archive_dir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/r3-branch-archive-${safe_tag}"
+        fi
+    fi
 
     if ! command -v gh >/dev/null 2>&1; then
         printf 'ENV: gh is not on PATH.\n' >&2
@@ -745,8 +1327,10 @@ main() {
     prev_epoch="$(git log -1 --format=%at "$prev_tag")"
 
     rc=0
-    reconcile_from_dir "$input_dir" "$sha" "$tag" "$prev_tag" "$prev_epoch" "$json_out" || rc=$?
+    reconcile_from_dir "$input_dir" "$sha" "$tag" "$prev_tag" "$prev_epoch" "$json_out" "$archive_dir" "." || rc=$?
     exit "$rc"
 }
 
-main "$@"
+if [ "${CHECK_RECONCILE_SOURCE_ONLY:-0}" != "1" ]; then
+    main "$@"
+fi
