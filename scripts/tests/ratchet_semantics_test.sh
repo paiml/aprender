@@ -910,5 +910,36 @@ else
   bad "row 8  mutation NOT demonstrated on row 3: the mutant still exits $mrc3"$'\n'"$(printf '%s' "$m3" | sed 's/^/        /')"
 fi
 
+# ---------------------------------------------------------------------------
+# Row 9 — readme_sync.sh --check rejects drift when a contract is added and
+# passes after --write; a mutant that forces --check to exit 0 is killed.
+F9="$WORK/f9"
+fixture "$F9" 2 "$(readme_with_block 2)" || die "row 9 fixture could not be built"
+printf 'id: c3\n' > "$F9/contracts/c3.yaml" || die "row 9: cannot add contract"
+out9="$(cd "$F9" && bash "$F9/scripts/readme_sync.sh" --check 2>&1)"; rc=$?
+if [ "$rc" -eq 1 ]; then
+  ok "row 9  readme_sync.sh --check goes RED when a contract file is added without updating README"
+else
+  bad "row 9  readme_sync.sh --check on drifted README: rc=$rc, wanted 1"$'\n'"$(printf '%s' "$out9" | sed 's/^/        /')"
+fi
+SYNC_MUTANT="readme_sync_mutant.sh"
+sed 's/if cmp -s "\$README" "\$tmp"; then/if true; then/' "$F9/scripts/readme_sync.sh" > "$F9/scripts/$SYNC_MUTANT" || die "row 9: cannot derive mutant"
+if ! cmp -s "$F9/scripts/readme_sync.sh" "$F9/scripts/$SYNC_MUTANT"; then
+  ( cd "$F9" && bash "$F9/scripts/$SYNC_MUTANT" --check ) >/dev/null 2>&1; mrc9=$?
+  if [ "$mrc9" -eq 0 ]; then
+    ok "row 9  mutation caught: bypassing cmp -s in readme_sync.sh turns --check GREEN on drifted README"
+  else
+    bad "row 9  mutation NOT demonstrated: readme_sync mutant exited $mrc9 on drifted README"
+  fi
+else
+  bad "row 9  the readme_sync.sh mutation changed nothing"
+fi
+( cd "$F9" && bash "$F9/scripts/readme_sync.sh" --write >/dev/null 2>&1 && bash "$F9/scripts/readme_sync.sh" --check ) >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ]; then
+  ok "row 9  readme_sync.sh --check passes once --write updates README"
+else
+  bad "row 9  readme_sync.sh --check after --write: rc=$rc, wanted 0"
+fi
+
 printf '\n%s checks, %s failed\n' "$CHECKS" "$FAILED"
 [ "$FAILED" -eq 0 ]

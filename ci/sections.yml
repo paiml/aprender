@@ -1782,8 +1782,8 @@ jobs:
       # Enforce FALSIFY-README-002 and readme_sync on every PR run here (both are cargo-free).
       - name: "README CONTRACT_COUNT matches measured contracts (FALSIFY-README-002, #7343)"
         run: |
-          setsid --wait bash scripts/readme_sync.sh --check
-          setsid --wait bash scripts/check_readme_claims.sh --claim contract_count
+          set -euo pipefail
+          setsid --wait bash scripts/readme_sync.sh --check && setsid --wait bash scripts/check_readme_claims.sh --claim contract_count
       - name: "Guard jobs run all: no fail-fast step over baseline, every guard script reachable (#4415)"
         run: |
           setsid --wait bash scripts/check_guard_steps_run_all.sh --self-test
