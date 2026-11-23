@@ -48,6 +48,13 @@ slow-timeout = { period = "60s", terminate-after = 20 }
 # that precedes it.
 status-level = "slow"
 
+# The DEFAULT profile (what a bare local `cargo nextest run` uses) had NO per-test timeout. On
+# 2026-11-23 a worker ran the aprender_contracts_cli tests for 21h44m at 839% CPU and took the
+# shared host to load 408 (fleet-sup ANDON 21:08Z). Same bound as profile.ci: a genuine hang
+# dies at 20 minutes WITH A NAME. No status-level change here: the ci profile owns that.
+[profile.default]
+slow-timeout = { period = "60s", terminate-after = 20 }
+
 [profile.ci.junit]
 # Relative to the store dir (target/nextest/<profile>/), NOT to the workspace
 # root -- the old value produced target/nextest/ci/target/nextest/ci/junit.xml.
