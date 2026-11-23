@@ -109,11 +109,13 @@ check_file() { # FILE REQUIRE(1|0) -> FAIL lines; rc 1 when any
     return "$bad"
 }
 
-pr_path() { # FILE -> 0 when the workflow can run on the PR / merge-queue path
+pr_path() { # FILE -> 0 when the workflow can run on the PR / merge-queue / push path. DEFAULT DENY: only a trigger block that is positively LAB-only (workflow_dispatch and/or schedule, no alias, anchor, merge key or other trigger) is skipped
     local on
-    on="$(awk '/^("on"|on|true):/{p=1;print;next} p&&/^[^[:space:]#]/{p=0} p' "$1" | grep -v '^[[:space:]]*#' || true)"
+    on="$(awk '/^("on"|on|true):/{p=1;print;next} p&&/^[^-[:space:]#]/{p=0} p' "$1" | grep -v '^[[:space:]]*#' || true)"
     [ -z "$on" ] && return 0
-    printf '%s\n' "$on" | grep -qE 'pull_request|push|merge_group|workflow_call|workflow_run'
+    printf '%s\n' "$on" | grep -v 'cron:' | grep -qE '[*&<]|pull_request|push|merge_group|workflow_call|workflow_run' && return 0
+    printf '%s\n' "$on" | grep -qE 'workflow_dispatch|schedule' || return 0
+    return 1
 }
 
 check() { # FILE-or-DIR-anchor -> ci.yml (required) plus PR-path siblings
@@ -212,6 +214,10 @@ self_test() {
     elif printf '%s\n' "$got" | grep -q '(new.yml).*\[R5-'; then echo "ok    red   MUTANT [R5]: new push workflow names the shadow"; else echo "FAIL  wrong reason for new.yml: $got"; fails=1; fi
     pw workflow_dispatch "python3 scripts/ci/fat_driver.py run --sections 'pr-review-shadow'"
     if got="$(check "$td/w/ci.yml")"; then echo "ok    green control: a workflow_dispatch-only LAB workflow may carry the shadow"; else echo "FAIL  LAB workflow flagged: $got"; fails=1; fi
+    printf 'name: x\non:\n- pull_request\njobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n' > "$td/w/new.yml"
+    if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: an on: sequence at column 0 skipped the workflow"; fails=1; else echo "ok    red   MUTANT: on: block as a column-0 sequence is still scanned"; fi
+    printf 'x: &t [pull_request]\nname: x\non: *t\njobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n' > "$td/w/new.yml"
+    if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: an aliased on: skipped the workflow"; fails=1; else echo "ok    red   MUTANT: aliased on: (*t) is still scanned"; fi
     return "$fails"
 }
 
