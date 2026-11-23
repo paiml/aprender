@@ -1,0 +1,26 @@
+# ONE-GATE allow-list (APR-GREEN-001). Format: required <wf> <job> | allow <kind> <wf> <job> <detail> -- <reason>
+required ci.yml gate
+required ci.yml ci-gate
+required ci.yml workspace-test
+allow push-only advisory-andon.yml andon - -- scheduled advisory alarm (cron + push refresh); C324 non-blocking
+allow push-only book.yml deploy - -- GitHub Pages deploy after merge; PR runs book build on same runner labels
+allow push-only ci.yml mg-reuse - -- reads merge_group run on sha to decide push reuse (T43/#4748); no PR equivalent
+allow not-required book.yml build - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml chapter-examples-compile - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml chapter-examples-run - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml book-integration-tests - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml contract-enforcement - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml namespace-discipline - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required book-contracts.yml summary-integrity - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required install-script.yml test - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
+allow not-required ci.yml runner-smells - -- runs on PR and push identically; joins gate needs after 3 green nights (C324 rule 7)
+allow attr ci.yml workspace-test-shard matrix.shard -- push 4-way vs merge_group 3-way shard partition
+allow attr ci.yml workspace-test-shard matrix.shards -- push 4-way vs merge_group 3-way shard partition
+allow attr ci.yml workspace-test-shard env.FAT_TIMEOUT_SCALE -- merge_group uses unscaled section timeouts, push uses x2 default
+allow attr ci.yml workspace-test-shard env.FAT_IDLE_LIMIT_S -- merge_group arms idle_watchdog hang detector, push does not
+allow attr ci.yml x86-main env.FAT_TIMEOUT_SCALE -- merge_group uses unscaled section timeouts, push uses x2 default
+allow step ci.yml x86-main codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 -- coverage upload, continue-on-error, post-merge only
+allow step ci.yml x86-main Generate_SLSA_provenance -- SLSA provenance attestation, continue-on-error, post-merge only
+allow step ci.yml workspace-test actions/checkout@v7 -- PR reads pr-light verdict; shard artifacts exist only on push/merge_group
+allow step ci.yml workspace-test actions/download-artifact@v4 -- PR reads pr-light verdict; shard artifacts exist only on push/merge_group
+allow step ci.yml workspace-test Σ-executed:_the_union_of_the_shards_is_exactly_the_owed_set_(#4433) -- runs on push/merge_group shards, not PR

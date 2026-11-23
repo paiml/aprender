@@ -1,0 +1,19 @@
+- id: PMAT-7390
+  github_issue: 7390
+  item_type: task
+  title: 'APR-GREEN-001: ONE-GATE parity falsifier (#7390)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-22T21:13:39Z
+  updated: 2026-11-22T21:13:39Z
+  spec: null
+  acceptance_criteria:
+  - scripts/check_one_gate_parity.sh + allow-list; wired into ci.yml
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
