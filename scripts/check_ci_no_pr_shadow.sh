@@ -17,7 +17,7 @@ set -euo pipefail
 # ${{ ... }} expressions become @EXPR@; only the workspace-test shard names may carry one (it is a matrix index), any other part with one is refused.
 values() {
     grep -v '^[[:space:]]*#' "$1" | tr '\n' ' ' | sed -e 's/\\ / /g' -e 's/\${{[^}]*}}/@EXPR@/g' \
-        | grep -oE -- "--sec[a-z]*(=|[[:space:]]+)('[^']*'|\"[^\"]*\"|[^[:space:]]+)" | sed -E "s/^--sec[a-z]*(=|[[:space:]]+)//; s/^['\"]//; s/['\"]\$//"
+        | grep -oE -- "--(s|se|sec[a-z]*)(=|[[:space:]]+)(('[^']*'|\"[^\"]*\")[^[:space:]]*|[^[:space:]]+)" | sed -E "s/^--(s|se|sec[a-z]*)(=|[[:space:]]+)//; s/^['\"]//; s/['\"]\$//"
 }
 
 check() { # FILE -> one FAIL line per --sections list that resolves to the section (globs included); rc 1 when any
@@ -61,6 +61,8 @@ self_test() {
     mutant "whole-value expression" "s/--sections 'guard-tree,pr-review-sign/--sections '\${{ vars.PR_SECS }}' --x 'guard-tree,pr-review-sign/"
     mutant "partial expression" "s/--sections 'guard-tree,pr-review-sign/--sections 'guard-tree,pr-review-\${{ env.S }},pr-review-sign/"
     mutant "adjacent quoting" "s/--sections 'guard-tree,pr-review-sign/--sections 'guard-tree,pr-review-''shadow,pr-review-sign/"
+    mutant "quote splicing after a space" "s/--sections 'guard-tree,pr-review-sign/--sections 'guard-tree, ''pr-review-shadow'\\'',pr-review-sign/"
+    mutant "abbreviated option --se" "s/--sections 'guard-tree,pr-review-sign/--se 'guard-tree,pr-review-shadow,pr-review-sign/"
     # a comment ending in a backslash must not hide the code on the next line
     printf '  - run: |\n      # merge queue: sign only \\\n      python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n' > "$td/c.yml"
     if check "$td/c.yml" > /dev/null; then echo "FAIL  mutant: comment ending in a backslash hid the next line"; fails=1; else echo "ok    red   MUTANT: comment ending in a backslash does not swallow the next line"; fi
