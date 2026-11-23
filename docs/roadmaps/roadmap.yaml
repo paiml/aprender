@@ -27931,3 +27931,59 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 7010
+- id: PMAT-7326
+  github_issue: 7326
+  item_type: task
+  title: README crate/CLI/chapter counts refreshed (#7326)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-22T21:12:16Z
+  updated: 2026-11-22T21:12:16Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: 3863
+- id: PMAT-7343
+  github_issue: 7343
+  item_type: task
+  title: README contract count enforced on PR light path (#7343)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-22T21:12:27Z
+  updated: 2026-11-22T21:12:27Z
+  spec: null
+  acceptance_criteria:
+  - a PR that adds or removes a contract file either regenerates the README block itself or goes red on its own PR run (not only on main afterwards).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6532
+- id: PMAT-7390
+  github_issue: 7390
+  item_type: task
+  title: 'APR-GREEN-001: ONE-GATE parity falsifier (#7390)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-22T21:13:39Z
+  updated: 2026-11-22T21:13:39Z
+  spec: null
+  acceptance_criteria:
+  - scripts/check_one_gate_parity.sh + allow-list; wired into ci.yml
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
