@@ -1,0 +1,18 @@
+- id: PMAT-7326
+  github_issue: 7326
+  item_type: task
+  title: README crate/CLI/chapter counts refreshed (#7326)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-22T21:12:16Z
+  updated: 2026-11-22T21:12:16Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: 3863

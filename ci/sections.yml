@@ -1776,6 +1776,14 @@ jobs:
       # HARNESS-BROKEN rather than as a dead mutant. Text-only, no build.
       - name: "Receipt-wiring guard: every rule it states, mutated (15/15 kill)"
         run: bash scripts/mutate_pr_review_wiring_guard.sh
+      # #7343: check_readme_claims.sh is classified --cargo-only by guard_tree.sh
+      # (crate_count runs cargo metadata), and contracts_gate.sh lives in
+      # guard-cargo, so neither runs on pull_request (pr-light -> guard-tree).
+      # Enforce FALSIFY-README-002 and readme_sync on every PR run here (both are cargo-free).
+      - name: "README CONTRACT_COUNT matches measured contracts (FALSIFY-README-002, #7343)"
+        run: |
+          setsid --wait bash scripts/readme_sync.sh --check
+          setsid --wait bash scripts/check_readme_claims.sh --claim contract_count
       - name: "Guard jobs run all: no fail-fast step over baseline, every guard script reachable (#4415)"
         run: |
           setsid --wait bash scripts/check_guard_steps_run_all.sh --self-test
