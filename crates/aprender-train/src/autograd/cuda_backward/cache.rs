@@ -4,8 +4,6 @@
 #![allow(clippy::ref_as_ptr)]
 
 #[cfg(feature = "cuda")]
-use std::collections::HashMap;
-#[cfg(feature = "cuda")]
 use std::sync::{Arc, Mutex, OnceLock};
 
 #[cfg(feature = "cuda")]
@@ -15,6 +13,7 @@ use trueno_gpu::driver::{CublasHandle, CudaContext, CudaModule, CudaStream};
 // Add [patch.crates-io] trueno-gpu = { path = "../trueno/trueno-gpu" } to Cargo.toml.
 
 use super::super::cuda_tensor::{CudaTensorError, Result};
+use super::super::kernel_module_cache::{check_ptx_target, LazyModuleCache};
 
 /// Cached compiled CUDA modules for backward kernels
 #[cfg(feature = "cuda")]
@@ -28,13 +27,12 @@ pub(super) static KERNEL_CACHE: OnceLock<Mutex<KernelCache>> = OnceLock::new();
 #[cfg(feature = "cuda")]
 pub(super) struct KernelCache {
     ctx: Arc<CudaContext>,
-    modules: HashMap<String, CudaModule>,
+    lazy: LazyModuleCache<CudaModule>,
     /// JIT compiles since the last reset (PMAT-272, R-3). The cascade's
     /// defects #1810 and #1813 were BACKWARD kernels — pre_warm_lora_backward
     /// short-circuiting at lora_rank==0, and rms_norm_gamma_reduce stage 2
     /// missing from the backward pre-warm — so a forward-only counter would
     /// have missed two of the seven.
-    jit_compiles: usize,
     sm_target: String,
     /// cuBLAS handle for backward GEMMs (ALB-075). Uses CUBLAS_DEFAULT_MATH
     /// (SIMD, no tensor cores) per ALB-076/trueno#170 to avoid NaN in transposed GEMMs.
@@ -46,7 +44,7 @@ impl KernelCache {
     pub(super) fn new(ctx: Arc<CudaContext>) -> Self {
         let sm_target = ctx.sm_target().unwrap_or_else(|_| "sm_70".to_string());
         let cublas = CublasHandle::new(&ctx).ok();
-        Self { ctx, modules: HashMap::new(), sm_target, cublas, jit_compiles: 0 }
+        Self { ctx, lazy: LazyModuleCache::new(), sm_target, cublas }
     }
 
     /// Get a reference to the cuBLAS handle, if available.
@@ -78,50 +76,31 @@ impl KernelCache {
 
     /// Look up a previously compiled module by key (KAIZEN-058).
     pub(super) fn get_cached(&mut self, name: &str) -> Option<&mut CudaModule> {
-        self.modules.get_mut(name)
+        self.lazy.get_cached(name)
     }
 
     pub(super) fn get_or_compile(&mut self, name: &str, ptx: &str) -> Result<&mut CudaModule> {
-        use std::collections::hash_map::Entry;
-
-        // F-PTX-001: Validate PTX target matches device
-        if let Some(target_line) = ptx.lines().find(|l| l.starts_with(".target ")) {
-            let ptx_target = target_line.trim().trim_start_matches(".target ");
-            if ptx_target != self.sm_target {
-                return Err(CudaTensorError::KernelError(format!(
-                    "F-PTX-001 violated: PTX target '{ptx_target}' != device target '{}'",
-                    self.sm_target
-                )));
+        check_ptx_target(ptx, &self.sm_target).map_err(CudaTensorError::KernelError)?;
+        let ctx = &self.ctx;
+        self.lazy.get_or_compile_with(name, || {
+            eprintln!("[BWD-CACHE] Compiling '{name}' (ptx_len={})", ptx.len());
+            // trueno#200: On Blackwell, CudaModule::from_ptx uses cuModuleLoadDataEx
+            // which poisons the CUDA context; use the direct cuModuleLoadData path.
+            let (major, _minor) = ctx
+                .compute_capability()
+                .map_err(|e| CudaTensorError::KernelError(format!("compute_capability: {e:?}")))?;
+            let module = if major >= 12 {
+                CudaModule::from_ptx_direct(ctx, ptx)
+            } else {
+                CudaModule::from_ptx(ctx, ptx)
             }
-        }
-
-        match self.modules.entry(name.to_string()) {
-            Entry::Occupied(e) => Ok(e.into_mut()),
-            Entry::Vacant(e) => {
-                eprintln!("[BWD-CACHE] Compiling '{name}' (ptx_len={})", ptx.len());
-                self.jit_compiles += 1;
-
-                // trueno#200: On Blackwell, CudaModule::from_ptx uses cuModuleLoadDataEx
-                // which poisons the CUDA context. Bypass it entirely with direct
-                // cuModuleLoadData via the raw driver API.
-                let (major, _minor) = self.ctx.compute_capability().map_err(|e| {
-                    CudaTensorError::KernelError(format!("compute_capability: {e:?}"))
-                })?;
-
-                // trueno#200: Use from_ptx_direct on Blackwell to avoid context poisoning
-                let module = if major >= 12 {
-                    CudaModule::from_ptx_direct(&self.ctx, ptx)
-                } else {
-                    CudaModule::from_ptx(&self.ctx, ptx)
-                }
-                .map_err(|err| {
-                    eprintln!("[BWD-CACHE] FAILED '{name}': {err:?}");
-                    CudaTensorError::KernelError(format!("Failed to compile {name}: {err:?}"))
-                })?;
-                eprintln!("[BWD-CACHE] OK '{name}'");
-                Ok(e.insert(module))
-            }
-        }
+            .map_err(|err| {
+                eprintln!("[BWD-CACHE] FAILED '{name}': {err:?}");
+                CudaTensorError::KernelError(format!("Failed to compile {name}: {err:?}"))
+            })?;
+            eprintln!("[BWD-CACHE] OK '{name}'");
+            Ok(module)
+        })
     }
 }
 

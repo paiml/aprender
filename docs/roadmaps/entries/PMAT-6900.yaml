@@ -1,0 +1,18 @@
+- id: PMAT-6900
+  github_issue: 6900
+  item_type: task
+  title: 'main red at 6f0791988: regenerate roadmap.yaml as fold(base, entries/) after #6899'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-11T21:10:23Z
+  updated: 2026-11-11T21:10:23Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6728

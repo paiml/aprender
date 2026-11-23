@@ -345,6 +345,7 @@
 - [apr otlp-lint](./cli/otlp-lint.md)
 - [apr parity](./cli/parity.md)
 - [apr pipeline](./cli/pipeline.md)
+- [apr plot](./cli/plot.md)
 - [apr ppl](./cli/ppl.md)
 - [apr pretrain](./cli/pretrain.md)
 - [apr test](./cli/test.md)

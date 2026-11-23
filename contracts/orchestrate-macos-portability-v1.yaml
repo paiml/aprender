@@ -33,3 +33,10 @@ falsification:
     description: "The PR_SET_PDEATHSIG path is Linux-gated (shape gate; behavioral proof is the macOS cross-build). Discharges C-ORCHPORT-001."
     test: "! grep -B2 'libc::prctl(libc::PR_SET_PDEATHSIG' crates/aprender-orchestrate/src/agent/driver/apr_serve.rs | grep -q 'cfg(unix)'  — the prctl fn must NOT be under cfg(unix); it is under cfg(target_os = \"linux\")."
     evidence: "grep -B2 'fn configure_parent_death_signal' apr_serve.rs shows #[cfg(target_os = \"linux\")] and #[cfg(not(target_os = \"linux\"))]; Linux falsify_1712 tests still pass."
+
+falsification_tests:
+  - id: FALSIFY-ORCH-MACOS-001
+    description: "The parent-death-signal pre_exec hook installs and is set in the child (Linux CI; the macOS cfg-gate is only a shape gate and NOT CI evidence)"
+    test: "cargo test -p aprender-orchestrate --lib falsify_1712_pdeathsig_actually_set_in_child"
+    prediction: "Child reports PR_GET_PDEATHSIG == SIGTERM"
+    if_fails: "Orphaned child processes survive parent death"

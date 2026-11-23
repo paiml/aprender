@@ -19,9 +19,18 @@ M="$(pins_m workspace-test-shard)"
 MG="$(pins_m workspace-test-shard-merge_group)"
 
 fragments() { # $1 = fragment dir  $2 = shard count M  $3 = event label
-  local d="$1" M="$2" ev="$3" full un i
-  full="$(bash "$RUN" --list "$d" | sort)"
-  un="$(for i in $(seq 1 "$M"); do EXPLICIT_LIST_SHARD=1 bash "$RUN" --run "$d" --shard "$i/$M" | grep -v '^shard '; done | sort)"
+  local d="$1" M="$2" ev="$3" full un i sh_out
+  # The runner's exit code is a verdict: it exits 2 on an empty dir ("zero commands is broken wiring"). A
+  # pipeline in $( ) hides it, so capture the raw output first and fail closed (FLAKE-001 C3, paiml/infra#3479).
+  full="$(bash "$RUN" --list "$d")" || { echo "FAIL fragments: runner --list failed on $d (UNMEASURED)"; return 1; }
+  [ -n "$full" ] || { echo "FAIL fragments: runner --list printed no commands for $d (UNMEASURED)"; return 1; }
+  full="$(printf '%s\n' "$full" | sort)"
+  un=""
+  for i in $(seq 1 "$M"); do
+    sh_out="$(EXPLICIT_LIST_SHARD=1 bash "$RUN" --run "$d" --shard "$i/$M")" || { echo "FAIL fragments: runner --run shard $i/$M failed (UNMEASURED)"; return 1; }
+    un+="$(printf '%s\n' "$sh_out" | grep -v '^shard ' || true)"$'\n'
+  done
+  un="$(printf '%s' "$un" | sed '/^$/d' | sort)"
   [ "$(printf '%s\n' "$full" | wc -l)" = "$(printf '%s\n' "$un" | wc -l)" ] || { echo "FAIL fragments: count pre-split=$(printf '%s\n' "$full" | wc -l) union=$(printf '%s\n' "$un" | wc -l)"; return 1; }
   [ "$full" = "$un" ] || { echo "FAIL fragments: union != pre-split list"; diff <(printf '%s\n' "$full") <(printf '%s\n' "$un") | head -5; return 1; }
   echo "ok    fragments ($ev): union of $M shards == pre-split list ($(printf '%s\n' "$full" | wc -l) commands)"
@@ -44,8 +53,26 @@ case "${1:-}" in
     rc=0; out="$(SHARD_UNION_RUNNER="$t/mut.sh" bash "$0" --fragments 2>&1)" || rc=$?
     [ "$rc" = 1 ] || { echo "self-test: dropped command must exit 1, got $rc"; exit 1; }
     case "$out" in *"FAIL fragments: count pre-split="*) ;; *) echo "self-test: dropped command must print the count-mismatch FAIL line, got: $out" | head -c 400; echo; exit 1 ;; esac
+    # mutant 2: a runner that fails (crash, missing tool, full disk) lists nothing; empty == empty
+    # must not read as "union holds" (#3863: the yoga-build self-test went vacuous this way)
+    printf 'exit 3\n' > "$t/dead.sh"
+    rc=0; out="$(SHARD_UNION_RUNNER="$t/dead.sh" bash "$0" --fragments 2>&1)" || rc=$?
+    [ "$rc" = 1 ] || { echo "self-test: failing runner must exit 1, got $rc: $out" | head -c 400; echo; exit 1; }
     fragments_all ci/explicit-test-commands.d >/dev/null || { echo "self-test: clean must pass"; exit 1; }
     [ "$MG" -ge 1 ] && { out="$(fragments_all ci/explicit-test-commands.d)"; case "$out" in *"(merge_group)"*) ;; *) echo "self-test: merge_group pins exist but its union was not checked"; exit 1 ;; esac; }
-    echo "PASS  check_shard_union self-test: clean ok, dropped-command mutant RED" ;;
+    # known-bad (FLAKE-001 C3): an EMPTY fragment dir must be RED. The runner exits 2 ("zero commands is
+    # broken wiring"), and a guard that swallows that exit code reports `ok ... (1 commands)` -- a vacuous pass.
+    mkdir "$t/empty"; rc=0; out="$(fragments "$t/empty" "$M" pull_request 2>&1)" || rc=$?
+    [ "$rc" = 1 ] || { echo "self-test: empty fragment dir must exit 1, got $rc: $out" | head -c 400; echo; exit 1; }
+    case "$out" in *"FAIL fragments: runner"*) ;; *) echo "self-test: empty dir must print the runner FAIL line, got: $out" | head -c 400; echo; exit 1 ;; esac
+    # each fail-closed branch ALONE (lane f20-a6): a stub runner fails exactly one call, so neither branch can mask the other
+    printf '#!/usr/bin/env bash\ncase "$1" in --list) exit 2 ;; *) exit 0 ;; esac\n' > "$t/stub-list.sh"
+    printf '#!/usr/bin/env bash\ncase "$1" in --list) echo cmd1 ;; *) exit 2 ;; esac\n' > "$t/stub-run.sh"
+    for pair in "stub-list.sh:runner --list failed" "stub-run.sh:runner --run shard"; do
+      rc=0; out="$( RUN="$t/${pair%%:*}"; fragments "$t/empty" 2 pull_request 2>&1 )" || rc=$?
+      [ "$rc" = 1 ] || { echo "self-test: ${pair%%:*} must exit 1, got $rc: $out" | head -c 400; echo; exit 1; }
+      case "$out" in *"FAIL fragments: ${pair#*:}"*) ;; *) echo "self-test: ${pair%%:*} must print '${pair#*:}', got: $out" | head -c 400; echo; exit 1 ;; esac
+    done
+    echo "PASS  check_shard_union self-test: clean ok, dropped-command mutant RED, empty dir RED, each fail-closed branch RED alone" ;;
   *) echo "usage: $0 [--fragments|--self-test]" >&2; exit 2 ;;
 esac

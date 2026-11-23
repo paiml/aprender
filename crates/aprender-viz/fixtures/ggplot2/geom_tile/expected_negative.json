@@ -1,0 +1,60 @@
+{
+  "row": "geom_tile",
+  "case": "negative",
+  "spec": "ggplot(dn, aes(x, y)) + geom_tile()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "warnings": [],
+  "layers": [
+    {
+      "geom": "GeomTile",
+      "x": [-3, -1, 1, -1],
+      "y": [-2.5, -1.5, -0.5, -0.5],
+      "xmin": [-4, -2, 0, -2],
+      "xmax": [-2, 0, 2, 0],
+      "ymin": [-3, -2, -1, -1],
+      "ymax": [-2, -1, 0, 0],
+      "linewidth": [0.20000000000000001, 0.20000000000000001, 0.20000000000000001, 0.20000000000000001],
+      "linetype": [1, 1, 1, 1],
+      "alpha": [null, null, null, null],
+      "width": [1, 1, 1, 1],
+      "height": [1, 1, 1, 1],
+      "panel": [1, 1, 1, 1],
+      "group": [-1, -1, -1, -1],
+      "fill_rgba": [
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255]
+      ],
+      "colour_rgba": [
+        null,
+        null,
+        null,
+        null
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [-4, 2],
+      "continuous_range": [-4.2999999999999998, 2.2999999999999998],
+      "breaks": [-4, -2, 0, 2],
+      "labels": ["-4", "-2", "0", "2"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [-3, 0],
+      "continuous_range": [-3.1499999999999999, 0.15000000000000002],
+      "breaks": [-3, -2, -1, 0],
+      "labels": ["-3", "-2", "-1", "0"],
+      "n_breaks_censored": 0
+    }
+  }
+}

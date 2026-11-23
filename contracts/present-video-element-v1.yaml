@@ -1,0 +1,117 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-13"
+  updated: "2026-11-13"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#6890 — Video widget realised as a real <video> element in the browser"
+    - "crates/aprender-present-lib/src/browser/video_ops.rs — the reconcile decision this pins"
+    - "crates/aprender-present-lib/src/browser/video_dom.rs — the wasm32 applier that only executes the ops"
+    - "contracts/present-video-widget-v1.yaml — the widget whose state this realises"
+  description: >
+    A Video widget paints a placeholder on the canvas; the picture and sound
+    come from a real <video> element laid over it. An element left behind
+    after its widget is gone, a second element for the same widget, or a Play
+    sent every frame misleads the user and leaks DOM nodes. reconcile decides
+    which elements to create, move, retarget, play, pause and remove.
+
+name: present-video-element
+version: "1.0.0"
+scope: >
+  `reconcile` and `VideoNode::from_video` in `browser::video_ops`, observed
+  natively against a model DOM. Out of scope: `browser::video_dom`, the
+  wasm32 applier (type-checked by the wasm32 guard; owes a browser run, see
+  open_obligations), and collecting nodes from a mounted widget tree (Widget
+  has no downcast, so the caller passes the nodes).
+status: active
+
+contract: |
+  (1) NOTHING CHANGED, NO OP. Equal previous and current sets yield an empty
+      list, so a steady frame touches no element.
+  (2) A REMOVED WIDGET YIELDS EXACTLY ONE REMOVE for its key, and a new widget
+      exactly one Create (plus one Play if it is playing).
+  (3) ELEMENT COUNT EQUALS WIDGET COUNT AFTER APPLY. Applying reconcile(prev,
+      cur) to a DOM that matches prev gives a DOM that matches cur, whatever
+      the transition; a repeated key counts as one widget.
+  (4) PLAY AND PAUSE ARE IDEMPOTENT. Play is sent only on a not-playing to
+      playing change and Pause only on the reverse; a steady state sends none.
+  (5) A NON-FINITE RECTANGLE NEVER CAUSES A MOVE EVERY FRAME, and never reaches
+      a style string: from_video maps it to 0 and style_for maps any
+      non-finite value (a hand-built VideoNode included) to 0.
+  (6) A SRC CHANGE ON A PLAYING NODE IS FOLLOWED BY PLAY. Setting src runs
+      the browser's media load algorithm, which leaves the element paused;
+      reconcile therefore emits Play after SetSrc when the node is playing
+      (order: Move, SetSrc, SetMuted, then Play/Pause), and the test model
+      DOM pauses on SetSrc so the tests catch a missing Play.
+  (7) A PARTIAL FAILURE LEAVES NO ORPHAN. sync_with advances the recorded
+      previous state op by op, so after a failed apply the next sync runs only
+      the remainder: no element is created twice, none is unreachable. The
+      applier records an element only once attached, and Drop removes all.
+equations:
+  reconcile:
+    description: "Operations between two frames"
+    formula: "ops(prev, cur) = Remove(prev \\ cur) ++ for k in cur: Create(k) if k not in prev else diff(prev[k], cur[k])"
+    domain: "lists of VideoNode"
+    codomain: "list of VideoOp"
+    invariants:
+      - "ops(s, s) = []"
+      - "|apply(dom(prev), ops(prev, cur))| = |unique keys of cur|"
+falsification:
+  - id: FALSIFY-PRESENT-VIDEO-ELEMENT-V1-001
+    description: "reconcile obeys the contract for every transition"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops"
+    evidence: "see the PR that added this contract"
+open_obligations:
+  - |
+    browser::video_dom has no browser run: a probar run in real Chrome that
+    plays and pauses a Video and reads paused() and current_time() back is
+    owed (#6890 stays open until it exists). Coverage of video_ops.rs is
+    measured in the PR that added it.
+falsification_tests:
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-001
+    description: "an unchanged set yields no op"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::nothing_changed_yields_no_op"
+    prediction: "empty list for equal sets and for two empty sets"
+    if_fails: "a steady frame touches the DOM"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-002
+    description: "a new widget is one Create, a removed widget is one Remove"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::removed_widget_is_exactly_one_remove && cargo test -p aprender-present-lib --lib browser::video_ops::tests::appearing_widget_is_one_create_and_playing_adds_play"
+    prediction: "[Remove b] when b disappears"
+    if_fails: "an element is left behind or removed twice"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-003
+    description: "element count equals widget count after apply"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::element_count_equals_widget_count_after_any_transition"
+    prediction: "model DOM after apply equals the DOM built from scratch for the new set"
+    if_fails: "elements leak or double"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-004
+    description: "play and pause are idempotent"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::play_pause_are_idempotent"
+    prediction: "no op while the state is steady; re-applying leaves the DOM unchanged"
+    if_fails: "Play is re-sent every frame and restarts the video"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-005
+    description: "each change maps to its own op"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::each_change_maps_to_its_op"
+    prediction: "Move, SetSrc, SetMuted, Play, Pause one each"
+    if_fails: "a change is dropped or sent as the wrong op"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-006
+    description: "a NaN rectangle is stable and duplicate keys are one element"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::nan_rect_is_stable_not_a_move_every_frame && cargo test -p aprender-present-lib --lib browser::video_ops::tests::duplicate_keys_are_one_element"
+    prediction: "no op for an unchanged NaN rect; one Create for a repeated key"
+    if_fails: "a bad rectangle moves the element every frame or a key makes two elements"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-007
+    description: "a src change on a playing video is followed by Play"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::src_change_on_playing_video_is_followed_by_play && cargo test -p aprender-present-lib --lib browser::video_ops::tests::src_change_with_play_toggle_sends_one_play_and_paused_sends_none && cargo test -p aprender-present-lib --lib browser::video_ops::tests::failure_after_src_change_retries_play"
+    prediction: "[SetSrc, Play] for a playing node whose src changed; model DOM (paused on SetSrc) equals the from-scratch DOM; one Play at most; none for a paused node"
+    if_fails: "the element stays paused while VideoState says Playing"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-008
+    description: "a failure partway through sync leaves state consistent"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::partial_failure_keeps_previous_consistent_with_the_dom && cargo test -p aprender-present-lib --lib browser::video_ops::tests::partial_failure_property_any_failure_point_converges"
+    prediction: "previous records exactly the applied ops; a retry runs only the remainder; failing at any op index then retrying converges to the from-scratch DOM"
+    if_fails: "elements are created twice and the first ones are orphaned in the DOM"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-009
+    description: "the style string never carries a non-finite value"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::style_is_sanitised_and_offset"
+    prediction: "NaN/inf/negative size become 0px; no NaN or inf in the string"
+    if_fails: "NaNpx reaches the style attribute"

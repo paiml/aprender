@@ -166,7 +166,10 @@ fi
 # expansion -- bashrs's rm-rf-guard detector does not credit `${VAR:-}` as a
 # validated non-empty check, and `${VAR:-}` masking an actually-unset VAR
 # here would be exactly the silent-empty-string footgun SEC011 warns about.
-if [[ -n "$TMP_EXPORT" && -d "$TMP_EXPORT" && "$TMP_EXPORT" == /tmp/* ]]; then rm -rf "$TMP_EXPORT"; fi
+# #6723: mktemp -d honours TMPDIR, so the scratch dir may sit under "${TMPDIR:-/tmp}" (children only).
+case "$TMP_EXPORT" in
+    /tmp/?*|"${TMPDIR:-/tmp}"/?*) if [[ -n "$TMP_EXPORT" && -d "$TMP_EXPORT" ]]; then rm -rf "${TMP_EXPORT:?}"; fi ;;
+esac
 
 # Verdict
 echo

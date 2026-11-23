@@ -1,0 +1,54 @@
+{
+  "row": "geom_raster",
+  "case": "uneven_y",
+  "spec": "ggplot(duy, aes(x, y)) + geom_raster()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "warnings": ["Raster pixels are placed at uneven horizontal intervals and will be shifted"],
+  "layers": [
+    {
+      "geom": "GeomRaster",
+      "x": [1, 2, 1, 2, 1, 2, 1, 2],
+      "y": [1, 1, 2, 2, 4, 4, 8, 8],
+      "xmin": [0.5, 1.5, 0.5, 1.5, 0.5, 1.5, 0.5, 1.5],
+      "xmax": [1.5, 2.5, 1.5, 2.5, 1.5, 2.5, 1.5, 2.5],
+      "ymin": [0.5, 0.5, 1.5, 1.5, 3.5, 3.5, 7.5, 7.5],
+      "ymax": [1.5, 1.5, 2.5, 2.5, 4.5, 4.5, 8.5, 8.5],
+      "alpha": [null, null, null, null, null, null, null, null],
+      "panel": [1, 1, 1, 1, 1, 1, 1, 1],
+      "group": [-1, -1, -1, -1, -1, -1, -1, -1],
+      "fill_rgba": [
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0.5, 2.5],
+      "continuous_range": [0.40000000000000002, 2.6000000000000001],
+      "breaks": [0.5, 1, 1.5, 2, 2.5],
+      "labels": ["0.5", "1.0", "1.5", "2.0", "2.5"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0.5, 8.5],
+      "continuous_range": [0.099999999999999978, 8.9000000000000004],
+      "breaks": [2, 4, 6, 8],
+      "labels": ["2", "4", "6", "8"],
+      "n_breaks_censored": 1
+    }
+  }
+}

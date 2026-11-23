@@ -64,12 +64,21 @@ jobs:
           REF: ${{ inputs.ref || github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
 
+      - name: Host-cause falsifier (deep TMPDIR, conleche elan run, ladder decline; #6810)
+        run: bash scripts/release/falsify_red_nightlies.sh && bash scripts/release/falsify_red_nightlies.sh --mutants
+
+      - name: TMPDIR on the checkout disk, not the host /tmp (framework16 /tmp is 28 GiB; falsify_red_nightlies.sh)
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+      - name: "Disk floor (label infra: disk, not a code failure; #6126)"
+        run: bash scripts/release/deep_disk_guard.sh
+
       - name: cargo test --doc --workspace (rc must be 0)
         run: |
           set -uo pipefail
           mkdir -p deep
-          cargo test --doc --workspace --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute \
-            > deep/deep-doctests.log 2>&1; rc=$?
+          rc=0; cargo test --doc --workspace --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute \
+            > deep/deep-doctests.log 2>&1 || rc=$?
           echo "DEEP doctests rc=$rc: $(grep -E '^test result' deep/deep-doctests.log | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')"
           tail -n 40 deep/deep-doctests.log
           exit "$rc"
@@ -95,6 +104,12 @@ jobs:
         env:
           REF: ${{ inputs.ref || github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
+
+      - name: TMPDIR on the checkout disk, not the host /tmp (framework16 /tmp is 28 GiB; falsify_red_nightlies.sh)
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+      - name: "Disk floor (label infra: disk, not a code failure; #6126)"
+        run: bash scripts/release/deep_disk_guard.sh
 
       - name: deep_nodefault_verdict.sh case table and mutants (#4871)
         run: |
@@ -133,6 +148,12 @@ jobs:
           REF: ${{ inputs.ref || github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
 
+      - name: TMPDIR on the checkout disk, not the host /tmp (framework16 /tmp is 28 GiB; falsify_red_nightlies.sh)
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+      - name: "Disk floor (label infra: disk, not a code failure; #6126)"
+        run: bash scripts/release/deep_disk_guard.sh
+
       - name: deep_bins_smoke.sh case table (hermetic)
         run: bash scripts/release/deep_bins_smoke.sh --self-test
 
@@ -167,3 +188,8 @@ jobs:
           name: deep-bins-smoke
           path: deep/
           if-no-files-found: error
+
+      # LAB (#7294): this job is lane kind `lab` in nightly_train.sh, never a verdict lane.
+      # No `if: always()`: it would build after a failed assert-head or disk-floor guard, or a cancelled run.
+      - name: apr-cli builds with --no-default-features (#7294; nightly LAB, never a PR job)
+        run: setsid --wait bash scripts/check_apr_cli_no_default_features.sh

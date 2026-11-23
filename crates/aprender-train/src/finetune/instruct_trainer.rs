@@ -152,6 +152,41 @@ impl InstructTrainer {
         Ok(Self { pipeline, config, train_data, val_data, rng_seed, data_hash })
     }
 
+    /// Create a trainer that trains on all of `corpus` and validates on `heldout`
+    /// (a recipe's `eval.heldout`), instead of splitting the corpus.
+    ///
+    /// `config.val_split` is not used. The data hash covers the training corpus only.
+    ///
+    /// # Errors
+    /// Returns error if either set is empty or epochs is 0.
+    pub fn with_heldout(
+        pipeline: InstructPipeline,
+        corpus: Vec<InstructSample>,
+        heldout: Vec<InstructSample>,
+        config: InstructTrainingConfig,
+    ) -> crate::Result<Self> {
+        if corpus.is_empty() {
+            return Err(crate::Error::ConfigError("GH-371: corpus must not be empty".to_string()));
+        }
+        if heldout.is_empty() {
+            return Err(crate::Error::ConfigError("heldout set must not be empty".to_string()));
+        }
+        if config.epochs == 0 {
+            return Err(crate::Error::ConfigError("GH-371: epochs must be > 0".to_string()));
+        }
+        let rng_seed = config.seed;
+        let data_hash = Self::compute_data_hash(&corpus);
+        Ok(Self { pipeline, config, train_data: corpus, val_data: heldout, rng_seed, data_hash })
+    }
+
+    /// Write the per-epoch checkpoint when `epoch` falls on the `save_every` cadence.
+    fn save_periodic_checkpoint(&mut self, epoch: usize, metrics: &InstructEpochMetrics) {
+        if periodic_save_due(self.config.epochs, self.config.save_every, epoch) {
+            let epoch_path = self.config.checkpoint_dir.join(format!("epoch-{epoch}"));
+            let _ = self.save_checkpoint(&epoch_path, epoch, metrics);
+        }
+    }
+
     /// Run the full training loop.
     pub fn train(&mut self) -> InstructTrainResult {
         use crate::optim::{LRScheduler, WarmupCosineDecayLR};
@@ -243,11 +278,7 @@ impl InstructTrainer {
             let val_result = self.pipeline.evaluate(&val_prompts, &val_responses);
 
             let epoch_time_ms = epoch_start.elapsed().as_millis() as u64;
-            let samples_per_sec = if epoch_time_ms > 0 {
-                train_prepared.len() as f32 / (epoch_time_ms as f32 / 1000.0)
-            } else {
-                0.0
-            };
+            let samples_per_sec = samples_per_second(train_prepared.len(), epoch_time_ms);
 
             let metrics = InstructEpochMetrics {
                 epoch,
@@ -274,15 +305,7 @@ impl InstructTrainer {
             }
 
             // Periodic checkpoint
-            let effective_save_every = if self.config.epochs <= self.config.save_every {
-                1
-            } else {
-                self.config.save_every
-            };
-            if effective_save_every > 0 && (epoch + 1) % effective_save_every == 0 {
-                let epoch_path = self.config.checkpoint_dir.join(format!("epoch-{epoch}"));
-                let _ = self.save_checkpoint(&epoch_path, epoch, &metrics);
-            }
+            self.save_periodic_checkpoint(epoch, &metrics);
 
             epoch_metrics.push(metrics);
 
@@ -293,18 +316,13 @@ impl InstructTrainer {
             }
         }
 
-        // PMAT-512: Print final training summary to stderr for canary parser.
-        if let Some(last) = epoch_metrics.last() {
-            eprintln!(
-                "[training] Training complete: final_loss={:.4} best_val_loss={:.4} best_epoch={} epochs={} time={}s{}",
-                last.train_loss,
-                best_val_loss,
-                best_epoch + 1,
-                epoch_metrics.len(),
-                total_start.elapsed().as_secs(),
-                if stopped_early { " (early stopped)" } else { "" },
-            );
-        }
+        print_training_summary(
+            &epoch_metrics,
+            best_val_loss,
+            best_epoch,
+            stopped_early,
+            total_start.elapsed().as_secs(),
+        );
 
         // PMAT-483: Print profiler report at end of training (text + JSON)
         if self.pipeline.profiler.is_enabled() {
@@ -488,13 +506,11 @@ impl InstructTrainer {
             })
             .collect();
 
-        let mut st_metadata = std::collections::HashMap::new();
+        let mut st_metadata = std::collections::BTreeMap::new();
         st_metadata.insert("epoch".to_string(), epoch.to_string());
         st_metadata.insert("val_loss".to_string(), format!("{:.6}", metrics.val_loss));
 
-        let safetensor_bytes = safetensors::serialize(views, Some(st_metadata)).map_err(|e| {
-            crate::Error::Serialization(format!("SafeTensors serialization failed: {e}"))
-        })?;
+        let safetensor_bytes = serialize_with_ordered_metadata(views, &st_metadata)?;
         std::fs::write(path.join("model.safetensors"), safetensor_bytes)?;
 
         contract_post_save_checkpoint!(());
@@ -502,11 +518,65 @@ impl InstructTrainer {
     }
 }
 
+/// Samples per second, 0 when no time elapsed.
+fn samples_per_second(samples: usize, elapsed_ms: u64) -> f32 {
+    if elapsed_ms > 0 {
+        samples as f32 / (elapsed_ms as f32 / 1000.0)
+    } else {
+        0.0
+    }
+}
+
+/// Whether the periodic checkpoint is due after `epoch` (0-based).
+/// A run no longer than `save_every` still saves every epoch.
+fn periodic_save_due(epochs: usize, save_every: usize, epoch: usize) -> bool {
+    let every = if epochs <= save_every { 1 } else { save_every };
+    every > 0 && (epoch + 1) % every == 0
+}
+
+/// PMAT-512: final training summary on stderr for the canary parser.
+fn print_training_summary(
+    epoch_metrics: &[InstructEpochMetrics],
+    best_val_loss: f32,
+    best_epoch: usize,
+    stopped_early: bool,
+    elapsed_secs: u64,
+) {
+    if let Some(last) = epoch_metrics.last() {
+        eprintln!(
+            "[training] Training complete: final_loss={:.4} best_val_loss={:.4} best_epoch={} epochs={} time={}s{}",
+            last.train_loss,
+            best_val_loss,
+            best_epoch + 1,
+            epoch_metrics.len(),
+            elapsed_secs,
+            if stopped_early { " (early stopped)" } else { "" },
+        );
+    }
+}
+
+pub(crate) use crate::io::serialize_with_ordered_metadata;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::finetune::instruct_pipeline::InstructConfig;
     use crate::transformer::TransformerConfig;
+
+    #[test]
+    fn samples_per_second_guards_zero_time() {
+        assert_eq!(samples_per_second(10, 0), 0.0);
+        assert_eq!(samples_per_second(10, 2000), 5.0);
+    }
+
+    #[test]
+    fn periodic_save_due_matches_old_rule() {
+        assert!(periodic_save_due(2, 5, 0));
+        assert!(periodic_save_due(5, 5, 1));
+        assert!(!periodic_save_due(10, 5, 0));
+        assert!(periodic_save_due(10, 5, 4));
+        assert!(!periodic_save_due(10, 0, 4));
+    }
 
     fn make_corpus(n: usize) -> Vec<InstructSample> {
         (0..n)
@@ -517,6 +587,26 @@ mod tests {
                 metadata: None,
             })
             .collect()
+    }
+
+    #[test]
+    fn test_with_heldout_validates_on_the_heldout_set_not_a_split() {
+        let model_config = TransformerConfig::tiny();
+        let mk = || {
+            InstructPipeline::new(
+                &model_config,
+                InstructConfig { lora_rank: 4, max_seq_len: 32, ..InstructConfig::default() },
+            )
+        };
+        let config = InstructTrainingConfig { epochs: 1, ..Default::default() };
+        let t = InstructTrainer::with_heldout(mk(), make_corpus(6), make_corpus(3), config.clone())
+            .expect("trainer");
+        assert_eq!(t.train_size(), 6, "all of the corpus trains");
+        assert_eq!(t.val_size(), 3, "validation is the heldout set");
+        assert!(
+            InstructTrainer::with_heldout(mk(), make_corpus(6), vec![], config.clone()).is_err()
+        );
+        assert!(InstructTrainer::with_heldout(mk(), vec![], make_corpus(3), config).is_err());
     }
 
     #[test]
@@ -563,6 +653,65 @@ mod tests {
         assert!(result.best_val_loss >= 0.0);
         // #3703: `total_time_ms` is a truncated wall-clock `as_millis()`, 0 on a host that trains
         // this tiny config in under a millisecond, so it is not asserted. The epoch count is.
+    }
+
+    fn write_checkpoint(dir: &std::path::Path) -> Vec<u8> {
+        let model_config = TransformerConfig::tiny();
+        let instruct_config =
+            InstructConfig { lora_rank: 4, max_seq_len: 32, ..InstructConfig::default() };
+        let pipeline = InstructPipeline::new(&model_config, instruct_config);
+        let config = InstructTrainingConfig { epochs: 1, seed: 7, ..Default::default() };
+        let mut trainer = InstructTrainer::new(pipeline, make_corpus(10), config).unwrap();
+        let metrics = InstructEpochMetrics {
+            epoch: 0,
+            train_loss: 1.0,
+            train_perplexity: 2.0,
+            val_loss: 6.743455,
+            val_perplexity: 3.0,
+            learning_rate: 1e-4,
+            epoch_time_ms: 0,
+            samples_per_sec: 0.0,
+        };
+        trainer.save_checkpoint(dir, 0, &metrics).unwrap();
+        std::fs::read(dir.join("model.safetensors")).unwrap()
+    }
+
+    /// #7255, #7293: 16 same-seed runs write a checkpoint with an identical sha256. A HashMap
+    /// metadata order would pass two runs about half the time; 16 passes about 1 in 32768.
+    #[test]
+    fn same_seed_checkpoints_have_identical_sha256() {
+        let tmp = tempfile::tempdir().unwrap();
+        let digests: Vec<String> = (0..16)
+            .map(|i| {
+                format!("{:x}", Sha256::digest(write_checkpoint(&tmp.path().join(format!("c{i}")))))
+            })
+            .collect();
+        for (i, d) in digests.iter().enumerate() {
+            assert_eq!(d, &digests[0], "checkpoint {i} differs from checkpoint 0");
+        }
+    }
+
+    /// #7293: through the real `save_checkpoint` call site, the `__metadata__` keys in the
+    /// written file bytes are sorted, for each of 16 checkpoints. A call site reverting to
+    /// `serialize(views, Some(HashMap))` writes a random order per call (two keys, so each
+    /// call is sorted by chance half the time); 16 calls pass by chance 1 in 65536.
+    #[test]
+    fn save_checkpoint_metadata_keys_sorted_in_file_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..16 {
+            let bytes = write_checkpoint(&tmp.path().join(format!("c{i}")));
+            let n = u64::from_le_bytes(bytes[..8].try_into().unwrap()) as usize;
+            let hdr = std::str::from_utf8(&bytes[8..8 + n]).unwrap();
+            let key = "\"__metadata__\":{";
+            let start = hdr.find(key).expect("header has __metadata__") + key.len();
+            let obj = &hdr[start..start + hdr[start..].find('}').expect("metadata object closes")];
+            // Quoted tokens alternate key, value (values are strings without escapes).
+            let keys: Vec<&str> = obj.split('"').skip(1).step_by(2).step_by(2).collect();
+            assert!(keys.len() >= 2, "need 2+ metadata keys to prove an order: {obj}");
+            let mut sorted = keys.clone();
+            sorted.sort_unstable();
+            assert_eq!(keys, sorted, "checkpoint {i}: metadata keys not sorted: {obj}");
+        }
     }
 
     #[test]

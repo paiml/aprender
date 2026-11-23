@@ -173,3 +173,45 @@ fn extract_linear_missing_tensor_is_an_error_not_a_default() {
     let err = extract(&src).expect_err("missing A_log must fail");
     assert!(err.to_string().contains("A_log"), "{err}");
 }
+
+// =========================================================================
+// #7333 / PR #7356 lane-1 finding 1: the MTP refusal on the real convert path
+// =========================================================================
+
+#[test]
+fn qwen4_exp_mtp_safetensors_convert_refuses_mtp_tensors_by_name() {
+    let config = SafetensorsConfig {
+        model_type: Some("qwen4_exp".to_string()),
+        ..Default::default()
+    };
+    let src = |names: &[&str]| {
+        MapSource(
+            names
+                .iter()
+                .map(|n| ((*n).to_string(), vec![0.0]))
+                .collect(),
+        )
+    };
+    let with_mtp = src(&[
+        "model.embed_tokens.weight",
+        "mtp.fc.weight",
+        "mtp.norm.weight",
+    ]);
+    let msg = SafetensorsToAprConverter::convert_from_source(&with_mtp, &config)
+        .err()
+        .expect("must refuse")
+        .to_string();
+    assert!(msg.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{msg}");
+    assert!(
+        msg.contains("mtp.fc.weight") && msg.contains("mtp.norm.weight"),
+        "{msg}"
+    );
+    // Without mtp.* the forward refusal still fires, without the MTP id.
+    let trunk = src(&["model.embed_tokens.weight"]);
+    let msg = SafetensorsToAprConverter::convert_from_source(&trunk, &config)
+        .err()
+        .expect("must refuse")
+        .to_string();
+    assert!(!msg.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{msg}");
+    assert!(msg.contains("qwen4_exp"), "{msg}");
+}

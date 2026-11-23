@@ -36,3 +36,10 @@ falsification_tests:
     test_harness: "grep -c '^```bash' book/src/cli/showcase.md"
     expected_output: "stdout >= 1"
     if_fails: "Add a ```bash code block with a runnable example."
+
+  - id: FALSIFY-PAGE-CLI-SHOWCASE-004
+    name: unknown_step_names_input
+    prediction: "an unknown --step is rejected with a message naming the input and listing every valid step"
+    test_harness: "cargo test -p apr-cli --lib parse_showcase_step"
+    expected_output: "test result: ok. 3 passed"
+    if_fails: "parse_showcase_step in crates/apr-cli/src/validate.rs lost its unknown-step message or a SHOWCASE_STEPS entry no longer round-trips."

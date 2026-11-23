@@ -99,3 +99,10 @@ metadata:
 #     - playbook_path: string       # Path to playbook template ({size} placeholder)
 #     - csv_family_key: string      # Key used in CSV test result tracking
 #     - size_categories: map        # Maps size variant to category label
+
+falsification_tests:
+  - id: FALSIFY-MF-SCHEMA-001
+    description: "_schema.yaml parses, declares kind model-family, and its documented required fields exist in every family YAML"
+    test: "cargo test -p aprender-core --lib falsify_mf_schema_001_descriptor_matches_families"
+    prediction: "every field listed under 'Required fields' in this file's header is a top-level key of every contracts/model-families/*.yaml family contract"
+    if_fails: "the schema documentation names a field the family contracts do not carry, so authors of new families are misled"

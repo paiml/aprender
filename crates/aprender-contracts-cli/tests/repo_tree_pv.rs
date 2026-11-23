@@ -8,7 +8,7 @@
 //! |---|---|---|
 //! | sigma | `ont2b_sigma_gate` | Pass |
 //! | relations | `ont4_relations_gate` | Pass, typed relations present, legacy `depends_on` counted |
-//! | shapes | `ont4b_shapes_gate` | Pass, plant fired, 73 shapes, 42 plant violations |
+//! | shapes | `ont4b_shapes_gate` | Pass, plant fired, 76 shapes, 42 plant violations |
 //! | refines | `ont4e_refines_gate` | Pass, a Liskov pair checked, `pc_checker` fired |
 //! | theorem-pairing, depends-on-present | `ev11_lint_ratchets` | Pass, equal to the baseline file, which is not written |
 //!
@@ -113,8 +113,8 @@ fn the_repo_corpus_passes_with_the_plant_fired_and_the_whole_corpus_as_focus_nod
     );
     assert_eq!(x["pc_shape"], "fired", "{g}");
     // ONT-4b: exactly one, from ont:id minCount; ONT-4c1, ONT-4f and ONT-4c add plants (see the history
-    // below): 42.
-    assert_eq!(x["plant_violations"], 42, "{g}");
+    // below); #7111 adds one, from readme:kind minCount on readme-root: 43.
+    assert_eq!(x["plant_violations"], 43, "{g}");
     // The shape count is hardcoded on purpose, so adding a shape turns this red and makes you name it.
     // MEASURED: `pv extract contracts --check` reported
     // shapes_n=9, triples=15851 (the 0.69 batch, #3669, pinned pv 0.68.2 built from
@@ -148,7 +148,9 @@ fn the_repo_corpus_passes_with_the_plant_fired_and_the_whole_corpus_as_focus_nod
     // #3715 v2 adds `release-readiness-v2{.kernel,.model,.model-smoke,.sanitizer}` (like v1, a focus node only under
     // `--v2-evidence`; the smoke is its own shape so no shape exports two `<shape>/node` subjects) and the
     // per-forward `kernel-registry-v1.op`: 68 + 5 = 73.
-    assert_eq!(x["shapes_n"], 73, "{g}");
+    // PLOT-GG-001 (#6996) adds `ggplot2-ontology-v1`'s closed `ggplot2-core` shape over the 49 core rows (not in
+    // `armed_shapes`): 74. SIM3D (#7245) adds `sim3d-spec-v1` and `sim3d-receipt-v1` (not armed; they grade zero focus nodes here): 76.
+    assert_eq!(x["shapes_n"], 76, "{g}");
 }
 
 #[test]
@@ -192,5 +194,5 @@ fn the_tracked_repo_graph_is_fresh() {
     assert_eq!(r.code, 0, "{}", show(&r));
     let v: serde_json::Value = serde_json::from_str(&r.stdout).expect("stdout is JSON");
     assert!(v["triples"].as_u64().unwrap_or(0) > 5000, "{}", show(&r));
-    assert_eq!(v["shapes_n"], 73, "{}", show(&r));
+    assert_eq!(v["shapes_n"], 76, "{}", show(&r));
 }

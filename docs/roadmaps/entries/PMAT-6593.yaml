@@ -1,0 +1,22 @@
+- id: PMAT-6593
+  github_issue: 6592
+  item_type: task
+  title: move apr-format, rag and test-lib off bincode 1.x onto in-tree aprender-legacy-codec
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-11-04T00:00:00Z
+  updated: 2026-11-04T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - apr-format, aprender-rag and aprender-test-lib depend on aprender-legacy-codec instead of bincode 1.x; aprender-test drops its unused bincode dependency
+  - bincode 1.x remains only in aprender-core, aprender-distribute, aprender-present-lib and aprender-simulate (out of scope, tracked under #6592)
+  - aprender-legacy-codec is on the publish path (publish-order.txt and cascade-publish.sh tier 1, before apr-format)
+  - aprender-legacy-codec reads and writes the bincode 1.3 layout byte-for-byte (golden fixtures)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'PR #6595 commits carry PMAT-Ticket PMAT-6593 (#6593 is the PR number, not an issue, so pmat could not mint it); the tracking issue is #6592.'
+  epic: 6519

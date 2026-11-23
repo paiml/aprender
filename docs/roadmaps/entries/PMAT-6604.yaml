@@ -1,0 +1,19 @@
+- id: PMAT-6604
+  github_issue: 6604
+  item_type: task
+  title: 'LAB check: Status PROPOSED specs carry a date (aprender#6604 and six sibling spec-sweep rows)'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-11-09T17:05:24Z
+  updated: 2026-11-09T17:05:24Z
+  spec: null
+  acceptance_criteria:
+  - 'check_spec_proposed_dated.sh planted violation RED, real tree GREEN (462 specs, 10 proposed); nightly LAB workflow, never in a PR.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:ci
+  notes: null
+  epic: 6809

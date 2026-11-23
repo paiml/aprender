@@ -85,7 +85,7 @@ selftest() {
   local tmp pass=0 fail=0 rc=0
   tmp="$(mktemp -d)"
   case "$tmp" in
-    /tmp/*|/var/folders/*) : ;;
+    /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;;
     *) die "mktemp -d gave ${tmp:-<empty>}, refusing to rm -rf it" ;;
   esac
 

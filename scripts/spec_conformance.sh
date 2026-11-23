@@ -98,7 +98,7 @@ selftest() {
     local root_dag derived
     td="$(mktemp -d)" || { printf 'FAIL  mktemp -d failed\n'; return 2; }
     case "$td" in
-        /tmp/*|/var/folders/*) : ;;
+        /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;;
         *) printf 'FAIL  mktemp -d gave %s, refusing to rm -rf it\n' "${td:-<empty>}"
            return 2 ;;
     esac

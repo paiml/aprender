@@ -41,7 +41,7 @@ done
 TMP=$(mktemp -d) || exit 2
 _rm_tmp() {
   case "${TMP:-}" in
-    /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
+    /tmp/?*|/var/folders/?*|"${TMPDIR:-/tmp}"/?*) rm -rf -- "$TMP" || : ;;
     *) : ;;
   esac
 }

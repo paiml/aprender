@@ -1,0 +1,54 @@
+{
+  "row": "geom_hline",
+  "case": "only_ref",
+  "spec": "ggplot() + geom_hline(yintercept = 2) + geom_vline(xintercept = 5)",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomHline",
+      "yintercept": [2],
+      "linewidth": [0.5],
+      "linetype": [1],
+      "alpha": [null],
+      "panel": [1],
+      "group": [-1],
+      "colour_rgba": [
+        [0, 0, 0, 255]
+      ]
+    },
+    {
+      "geom": "GeomVline",
+      "xintercept": [5],
+      "linewidth": [0.5],
+      "linetype": [1],
+      "alpha": [null],
+      "panel": [1],
+      "group": [-1],
+      "colour_rgba": [
+        [0, 0, 0, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [5, 5],
+      "continuous_range": [4.9500000000000002, 5.0499999999999998],
+      "breaks": [4.9500000000000002, 4.9750000000000005, 5, 5.0250000000000004, 5.0499999999999998],
+      "labels": ["4.950", "4.975", "5.000", "5.025", "5.050"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [2, 2],
+      "continuous_range": [1.95, 2.0499999999999998],
+      "breaks": [1.9500000000000002, 1.9750000000000001, 2, 2.0250000000000004],
+      "labels": ["1.950", "1.975", "2.000", "2.025"],
+      "n_breaks_censored": 1
+    }
+  }
+}

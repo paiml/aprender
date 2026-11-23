@@ -44,7 +44,7 @@ pub enum PersistentHnswError {
     /// truncated mid-write. Phase 2 (FALSIFY-HNSW-PERSIST-002) will
     /// guarantee that a clean error here, not silent corruption, is
     /// what callers see for any partial-write scenario.
-    Decode(bincode::Error),
+    Decode(aprender_legacy_codec::Error),
 }
 
 impl std::fmt::Display for PersistentHnswError {
@@ -71,8 +71,8 @@ impl From<std::io::Error> for PersistentHnswError {
     }
 }
 
-impl From<bincode::Error> for PersistentHnswError {
-    fn from(e: bincode::Error) -> Self {
+impl From<aprender_legacy_codec::Error> for PersistentHnswError {
+    fn from(e: aprender_legacy_codec::Error) -> Self {
         Self::Decode(e)
     }
 }
@@ -108,7 +108,7 @@ impl PersistentHnsw {
         let path = path.as_ref().to_path_buf();
         let inner = if path.is_file() {
             let bytes = fs::read(&path)?;
-            bincode::deserialize::<HNSWIndex>(&bytes)?
+            aprender_legacy_codec::deserialize::<HNSWIndex>(&bytes)?
         } else {
             HNSWIndex::new(m, ef_construction, 0.0)
         };
@@ -181,7 +181,7 @@ impl PersistentHnsw {
     pub fn flush(&mut self) -> Result<(), PersistentHnswError> {
         use std::io::Write;
 
-        let bytes = bincode::serialize(&self.inner)?;
+        let bytes = aprender_legacy_codec::serialize(&self.inner)?;
         let tmp = Self::tmp_path(&self.path);
 
         // Write the full payload to a sibling temp file, fsync it.

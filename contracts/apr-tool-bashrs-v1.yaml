@@ -45,3 +45,12 @@ falsification:
 
 entity:
   type: repo
+  ref: paiml/bashrs@a51e5629d3c9c016c0987e0a385460008f305229
+
+# #7235: bound to a CI-run test. The snapshot is dated evidence captured from the GitHub API (see captured_at in
+# evidence/github/repo/), not a live check of the repo.
+falsification_tests:
+  - id: FALSIFY-APR_TOOL_BASHRS_V1-BIND-001
+    rule: "the snapshot of paiml/bashrs (evidence/github/repo/, dated evidence captured at 2026-11-18T20:13:38Z, not a live check) says archived=false, has_readme=true and has_ci_workflows=true, and its ref and nameWithOwner match this row"
+    prediction: "apr_tool_rows_hold_against_repo_snapshots fails when the snapshot is missing, disagrees with the row, or records the repo archived, without a README or without a CI workflow"
+    test: "cargo test -p aprender-contracts --lib apr_tool_rows_hold_against_repo_snapshots"

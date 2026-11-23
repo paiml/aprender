@@ -357,4 +357,6 @@ impl ComputeOp for DotQ6KOp {
 
 #[cfg(test)]
 pub mod nf4;
+#[cfg(test)]
+mod nf4_backward_tests;
 mod tests;

@@ -9,7 +9,7 @@
 # ci/sections.yml for a LAB lane; only the PR and merge_group lists are checked.
 #
 # Usage:  bash scripts/check_ci_no_pr_shadow.sh [--self-test] [WORKFLOW_FILE]
-# Wired:  ci/explicit-test-commands.d/843-ci-no-pr-shadow.cmd (--self-test).
+# Wired:  ci/explicit-test-commands.d/871-ci-no-pr-shadow.cmd (--self-test).
 set -euo pipefail
 
 check() { # FILE -> one FAIL line per --sections list that names the section; rc 1 when any
@@ -19,7 +19,7 @@ check() { # FILE -> one FAIL line per --sections list that names the section; rc
         case "$line" in
             *pr-review-shadow*) echo "FAIL  a section list names pr-review-shadow: $line"; bad=1 ;;
         esac
-    done < <(awk '/--sections/ { print }' "$f")
+    done < <(sed -e ':a' -e '/\\$/{N;s/\\\n[[:space:]]*/ /;ba' -e '}' "$f" | grep -v '^[[:space:]]*#' | awk '/--sections/ { print }')
     if [ "$n" -eq 0 ]; then echo "FAIL  no --sections list found in $f (the check would be vacuous)"; bad=1; fi
     return "$bad"
 }
@@ -32,6 +32,10 @@ self_test() {
     if check "$td/m1.yml" > /dev/null; then echo "FAIL  mutant: shadow put back in a list stayed green"; fails=1; else echo "ok    red   MUTANT: shadow put back in a --sections list"; fi
     sed "s/--sections/--other/" "$src" > "$td/m2.yml"
     if check "$td/m2.yml" > /dev/null; then echo "FAIL  mutant: a workflow with no --sections list stayed green"; fails=1; else echo "ok    red   MUTANT: no --sections list is vacuous, not green"; fi
+    python3 -c "import sys;s=open(sys.argv[1]).read();open(sys.argv[2],'w').write(s.replace(\"--sections 'guard-tree,pr-review-sign\",\"--sections \\\\\\n  'guard-tree,pr-review-shadow,pr-review-sign\",1))" "$src" "$td/m3.yml"
+    if check "$td/m3.yml" > /dev/null; then echo "FAIL  mutant: shadow in a continuation line stayed green"; fails=1; else echo "ok    red   MUTANT: --sections argument on a continuation line"; fi
+    { echo "# --sections is described here"; sed "s/--sections/--other/" "$src"; } > "$td/m4.yml"
+    if check "$td/m4.yml" > /dev/null; then echo "FAIL  mutant: a comment naming --sections made the check non-vacuous"; fails=1; else echo "ok    red   MUTANT: comment-only --sections is vacuous"; fi
     return "$fails"
 }
 

@@ -1,0 +1,19 @@
+- id: PMAT-6806
+  github_issue: 6806
+  item_type: task
+  title: 'release bump: edit workspace version without cargo-edit (Release Rehearsal 42478090078)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-11-08T16:51:47Z
+  updated: 2026-11-08T16:51:56.901345061+00:00
+  spec: null
+  acceptance_criteria:
+  - cargo set-version is a cargo-edit subcommand; runner lacks it so stage bump exits 1. Edit versions with sed in bump-version.sh, no new dependency.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6728

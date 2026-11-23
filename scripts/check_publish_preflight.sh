@@ -52,6 +52,11 @@
 #       0.70.1) the wrapper still runs and its verdict and rc are printed as EVIDENCE, as the model
 #       matrix is under R7's scope: it is not the gate for that release. A missing wrapper still
 #       refuses. Without a recorded scope R8 is unchanged.
+#   R9  previous final tag (#7372): at least one final tag `vX.Y.Z` strictly
+#       below `<version>` exists and is an ancestor of HEAD (picking the newest
+#       such ancestor tag, matching `.github/workflows/release.yml` #7371).
+#       Fails closed if tags cannot be read, a candidate tag cannot be read as
+#       a commit, or no lower final tag is an ancestor of HEAD.
 #
 # EXIT  0 every rule holds · 1 a rule refused · 2 the box cannot answer
 #       (no git/cargo/python3, not a repository). 2 is not a pass.
@@ -453,6 +458,67 @@ rule_r8() {
     return 0
 }
 
+# R9, previous final ancestor tag (#7372): matches `.github/workflows/release.yml` (#7371).
+# Picks the newest final tag `vX.Y.Z` strictly below `version` that is an ancestor of `head`
+# (so a patch cut from an older tag skips a newer sibling tag on another branch), and fails
+# closed if tags cannot be read, a candidate tag cannot be read as a commit, or no such
+# ancestor tag exists.
+# rule_r9 root head version -> prints its row; 0 accepted, 1 refused
+rule_r9() {
+    local root="$1" head="$2" version="$3" core_ver raw_tags candidates prev="" t mb_rc
+    if [ -z "$version" ]; then
+        echo "FAIL  R9 no version from R2, so the previous final ancestor tag cannot be checked"
+        return 1
+    fi
+    core_ver="${version%%[-+]*}"
+    if ! [[ "$core_ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "FAIL  R9 version '$version' is not semver X.Y.Z, so the previous final ancestor tag cannot be checked"
+        return 1
+    fi
+    if ! raw_tags="$(git -C "$root" tag -l 'v*' 2>/dev/null)"; then
+        echo "FAIL  R9 cannot read git tags in $root to resolve previous final ancestor tag below v$version"
+        return 1
+    fi
+    candidates="$(
+        printf '%s\n' "$raw_tags" \
+        | awk -v v="$core_ver" '
+            BEGIN { split(v, tv, ".") }
+            /^v[0-9]+\.[0-9]+\.[0-9]+$/ {
+                ver = substr($0, 2)
+                split(ver, cv, ".")
+                if ((cv[1] + 0 < tv[1] + 0) ||
+                    (cv[1] + 0 == tv[1] + 0 && cv[2] + 0 < tv[2] + 0) ||
+                    (cv[1] + 0 == tv[1] + 0 && cv[2] + 0 == tv[2] + 0 && cv[3] + 0 < tv[3] + 0)) {
+                    print ver
+                }
+            }' \
+        | LC_ALL=C sort -rV
+    )" || {
+        echo "FAIL  R9 failed to sort candidate previous tags below v$version"
+        return 1
+    }
+    while IFS= read -r t; do
+        [ -n "$t" ] || continue
+        if ! git -C "$root" rev-parse --verify --quiet "refs/tags/v${t}^{commit}" >/dev/null; then
+            echo "FAIL  R9 previous tag v$t cannot be read as a commit"
+            return 1
+        fi
+        mb_rc=0
+        git -C "$root" merge-base --is-ancestor "refs/tags/v$t" "$head" 2>/dev/null || mb_rc=$?
+        case "$mb_rc" in
+            0) prev="$t"; break ;;
+            1) : ;;
+            *) echo "FAIL  R9 previous tag v$t ancestry could not be read (git merge-base rc $mb_rc)"; return 1 ;;
+        esac
+    done <<< "$candidates"
+    if [ -z "$prev" ]; then
+        echo "FAIL  R9 no final ancestor tag vX.Y.Z below v$version is an ancestor of HEAD ${head:0:9}"
+        return 1
+    fi
+    echo "ok    R9 previous final tag v$prev below v$version is an ancestor of HEAD ${head:0:9}"
+    return 0
+}
+
 gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" release_ref r4_ref r4_on
     local fails=0 status version tags head
@@ -570,6 +636,9 @@ gate() {
     # R8 release-readiness-v1 over the committed evidence (#3715)
     rule_r8 "$root" "$version" "$head" || fails=1
 
+    # R9 previous final ancestor tag below v<version> (#7372)
+    rule_r9 "$root" "$head" "$version" || fails=1
+
     rm_pol_ladder "$root"
     if [ "$fails" -ne 0 ]; then
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
@@ -644,7 +713,7 @@ receipt_gate() {
 selftest() {
     local tmp pass=0 fail=0
     tmp="$(mktemp -d)"
-    case "$tmp" in /tmp/*|/var/folders/*|/mnt/*) : ;; *) die_env "mktemp gave ${tmp:-<empty>}, refusing to rm -rf it" ;; esac
+    case "$tmp" in /tmp/*|/var/folders/*|/mnt/*|"${TMPDIR:-/tmp}"/?*) : ;; *) die_env "mktemp gave ${tmp:-<empty>}, refusing to rm -rf it" ;; esac
     # SEC011: the delete is guarded by the same case the creation was, and an
     # empty or root path is left alone rather than deleted carefully.
     _rm_scratch() {
@@ -652,7 +721,7 @@ selftest() {
         [ -n "$victim" ] || return 0
         [ "$victim" != "/" ] || return 0
         case "$victim" in
-            /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$victim" ] && [ "$victim" != "/" ]; then rm -rf -- "$victim"; fi ;;
+            /tmp/?*|/var/folders/?*|/mnt/?*|"${TMPDIR:-/tmp}"/?*) if [ -n "$victim" ] && [ "$victim" != "/" ]; then rm -rf -- "$victim"; fi ;;
             *) return 0 ;;
         esac
     }
@@ -671,7 +740,10 @@ selftest() {
         git -C "$d" -c user.name=t -c user.email=t@t config commit.gpgsign false
         ( cd "$d" && cargo metadata --no-deps --offline --format-version 1 >/dev/null 2>&1 )
         git -C "$d" add -A
-        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fixture' >/dev/null
+        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'prev' >/dev/null
+        git -C "$d" tag v1.2.2
+        printf 'pub fn f_prev() {}\n' >> "$d/src/lib.rs"
+        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'fixture' >/dev/null
         git -C "$d" tag v1.2.3
         git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
         git -C "$d" update-ref refs/remotes/origin/main HEAD
@@ -747,7 +819,10 @@ FXREADY
         git -C "$d" -c user.name=t -c user.email=t@t config commit.gpgsign false
         ( cd "$d" && cargo metadata --no-deps --offline --format-version 1 >/dev/null 2>&1 )
         git -C "$d" add -A
-        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fixture' >/dev/null
+        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'prev' >/dev/null
+        git -C "$d" tag v1.2.2
+        printf 'pub fn f_prev() {}\n' >> "$d/src/lib.rs"
+        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'fixture' >/dev/null
         git -C "$d" tag v1.2.3
         git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
         mkdir -p "$d/.dogfood"
@@ -1121,6 +1196,93 @@ FXREADY
     d="$tmp/ro-baddefer"; build_repo "$d"
     write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '["publish-dry-run","bashrs"]'
     row receipt_only_unexpected_deferral_refuses 1 "FAIL  R5" "$d" receipt_gate
+
+    # R9 (#7372): previous final vX.Y.Z tag must exist and be an ancestor of HEAD
+    # (matching `.github/workflows/release.yml` #7371), failing closed when unreadable.
+    row r9_prev_ancestor_passes 0 "ok    R9 previous final tag v1.2.2 below v1.2.3 is an ancestor of HEAD" "$tmp/ok"
+
+    # Patch cut from an older tag (v1.2.1 ancestor of HEAD) when a newer lower tag (v1.2.2)
+    # sits on a diverged branch: skips non-ancestor v1.2.2 and accepts v1.2.1.
+    d="$tmp/r9-patch-cut"; build_repo "$d"
+    git -C "$d" tag -d v1.2.2 v1.2.3 >/dev/null
+    git -C "$d" reset -q --hard HEAD~1
+    git -C "$d" tag v1.2.1
+    git -C "$d" checkout -q -b r9-side
+    printf 'pub fn side() {}\n' >> "$d/src/lib.rs"
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'side 1.2.2' >/dev/null
+    git -C "$d" tag v1.2.2
+    git -C "$d" checkout -q fixture-main
+    printf 'pub fn patch() {}\n' >> "$d/src/lib.rs"
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'patch 1.2.3' >/dev/null
+    git -C "$d" tag v1.2.3
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+    git -C "$d" update-ref refs/remotes/origin/main HEAD
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row r9_patch_cut_skips_non_ancestor_tag_passes 0 "ok    R9 previous final tag v1.2.1 below v1.2.3 is an ancestor of HEAD" "$d"
+
+    # A lower final tag exists (v1.2.2) on a diverged branch, and NO lower ancestor tag exists -> refuse.
+    d="$tmp/r9-nonancestor"; build_repo "$d"
+    git -C "$d" tag -d v1.2.2 v1.2.3 >/dev/null
+    git -C "$d" reset -q --hard HEAD~1
+    git -C "$d" checkout -q -b r9-side
+    printf 'pub fn side() {}\n' >> "$d/src/lib.rs"
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'side 1.2.2' >/dev/null
+    git -C "$d" tag v1.2.2
+    git -C "$d" checkout -q fixture-main
+    printf 'pub fn patch() {}\n' >> "$d/src/lib.rs"
+    git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'patch 1.2.3' >/dev/null
+    git -C "$d" tag v1.2.3
+    git -C "$d" update-ref refs/remotes/origin/release/1.2.3 HEAD
+    git -C "$d" update-ref refs/remotes/origin/main HEAD
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row r9_non_ancestor_prev_tag_refuses 1 "FAIL  R9 no final ancestor tag" "$d"
+
+    # No final vX.Y.Z tag strictly below v1.2.3 (only prerelease v1.2.2-rc.1) -> refuse.
+    d="$tmp/r9-nolower"; build_repo "$d"
+    git -C "$d" tag -d v1.2.2 >/dev/null
+    git -C "$d" tag v1.2.2-rc.1 HEAD~1
+    row r9_no_lower_final_tag_refuses 1 "FAIL  R9 no final ancestor tag" "$d"
+
+    # Previous tag v1.2.2 cannot be read as a commit (points to a tree object), even with v1.2.1 ancestor -> fail closed.
+    d="$tmp/r9-unreadable-tag"; build_repo "$d"
+    git -C "$d" tag v1.2.1 HEAD~1
+    git -C "$d" tag -f v1.2.2 'HEAD^{tree}' >/dev/null
+    row r9_unreadable_prev_tag_refuses 1 "FAIL  R9 previous tag v1.2.2 cannot be read as a commit" "$d"
+
+    # `git tag -l` fails -> fail closed.
+    mkdir -p "$tmp/r9-tagfail-bin"
+    cat > "$tmp/r9-tagfail-bin/git" <<'FXGIT'
+#!/usr/bin/env bash
+for a in "$@"; do
+    if [ "$a" = tag ]; then exit 128; fi
+done
+exec "$FX_REAL_GIT" "$@"
+FXGIT
+    chmod +x "$tmp/r9-tagfail-bin/git"
+    FX_REAL_GIT="$(command -v git)" PATH="$tmp/r9-tagfail-bin:$PATH" \
+        row r9_git_tag_list_failure_refuses 1 "FAIL  R9 cannot read git tags" "$tmp/ok"
+
+    # Mutants for R9: each weakens one guard and must exit 0 on the bad fixture it targets (killed by its row).
+    mutant_row() { # name, sed_expr, bad_fixture_dir
+        local name="$1" expr="$2" fd="$3" self_src="${BASH_SOURCE[0]}" mut_script out rc=0
+        mut_script="$tmp/mut-${name}.sh"
+        sed "$expr" "$self_src" > "$mut_script"
+        if cmp -s "$self_src" "$mut_script"; then
+            printf '  BROKE %-36s mutant did not apply\n' "$name"; fail=$((fail + 1)); return 0
+        fi
+        if ! bash -n "$mut_script"; then
+            printf '  BROKE %-36s mutant broke bash syntax\n' "$name"; fail=$((fail + 1)); return 0
+        fi
+        out="$( PUBLISH_PREFLIGHT_ROOT="$fd" bash "$mut_script" 2>&1 )" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            printf '  ok    %-36s mutant killed (exited 0 on bad fixture)\n' "$name"; pass=$((pass + 1))
+        else
+            printf '  BROKE %-36s mutant SURVIVED (still exited %s)\n' "$name" "$rc"; fail=$((fail + 1))
+        fi
+    }
+    mutant_row m_r9_drop_rule 's/rule_r9 "\$root" "\$head" "\$version" || fails=1/:/' "$tmp/r9-nonancestor"
+    mutant_row m_r9_drop_ancestor_check 's/git -C "\$root" merge-base --is-ancestor "refs\/tags\/v\$t" "\$head" 2>\/dev\/null || mb_rc=\$?/mb_rc=0/' "$tmp/r9-nonancestor"
+    mutant_row m_r9_skip_unreadable_tag 's/if ! git -C "\$root" rev-parse --verify --quiet "refs\/tags\/v\${t}\^{commit}" >\/dev\/null; then/if false; then/; s/\*) echo "FAIL  R9 previous tag v\$t ancestry could not be read (git merge-base rc \$mb_rc)"; return 1 ;;/\*) : ;;/' "$tmp/r9-unreadable-tag"
 
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]

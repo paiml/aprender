@@ -1120,7 +1120,7 @@ selftest() {
   # unvalidated one is a loaded gun. Same guard shape as
   # scripts/check_apr_bin_resolution.sh, which is the repo's accepted form.
   case "$tmp" in
-    /tmp/*|/var/folders/*) : ;;
+    /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;;
     *) die "mktemp -d gave ${tmp:-<empty>}, refusing to rm -rf it" ;;
   esac
 

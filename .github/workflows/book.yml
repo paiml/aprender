@@ -119,10 +119,10 @@ jobs:
           # "Summary:" line, and the negated grep below read that absence as a PASS.
           # Redirect, read the status directly, and only then judge the contents.
           set +e
-          bashrs lint scripts/check_book_*.sh > /tmp/bashrs.log 2>&1
+          bashrs lint scripts/check_book_*.sh > "$RUNNER_TEMP"/bashrs.log 2>&1
           rc=$?
           set -e
-          cat /tmp/bashrs.log
+          cat "$RUNNER_TEMP"/bashrs.log
           # bashrs exits 1 for findings and >1 for tool failure (#2704).
           if [ "$rc" -gt 1 ]; then
             echo "::error title=ENV::bashrs exited $rc -- the linter did not run to a verdict"
@@ -130,8 +130,8 @@ jobs:
           fi
           # Vacuity: no summary at all means nothing was measured. Without this row
           # the assertion below passes on an empty log.
-          grep -qE "Summary:" /tmp/bashrs.log || { echo "::error::bashrs printed no Summary line"; exit 1; }
-          ! grep -qE "Summary: [1-9][0-9]* error" /tmp/bashrs.log
+          grep -qE "Summary:" "$RUNNER_TEMP"/bashrs.log || { echo "::error::bashrs printed no Summary line"; exit 1; }
+          ! grep -qE "Summary: [1-9][0-9]* error" "$RUNNER_TEMP"/bashrs.log
 
       # BOOK-CLOSEOUT-001 § Phase 1: zero broken file links
       - name: Linkcheck gate (FALSIFY-BOOK-LINKCHECK-001)

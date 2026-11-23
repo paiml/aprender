@@ -36,3 +36,17 @@ falsification_tests:
     test_harness: "grep -c '^```bash' book/src/cli/cbtop.md"
     expected_output: "stdout >= 1"
     if_fails: "Add a ```bash code block with a runnable example."
+
+  - id: FALSIFY-PAGE-CLI-CBTOP-004
+    name: brick_score_curve_and_average
+    prediction: "score_brick maps gap 1.0->100, 1.1->95, 1.2->90, 1.5->50, >=2.0->0 (budget 0 -> 100) and weighted_brick_score is the truncated equal-weight mean (empty -> 0)"
+    test_harness: "cargo test -p apr-cli --lib -- score_brick weighted_brick_score"
+    expected_output: "exit 0"
+    if_fails: "A scoring slope, clamp or truncation in cbtop_get_cpu_memory.rs changed; fix the code or the pinned table in cbtop_score_brick_tests.rs."
+
+  - id: FALSIFY-PAGE-CLI-CBTOP-005
+    name: brick_sample_statistics
+    prediction: "cv_percent_from_samples is 0 for empty/single/non-positive-mean input and uses the sample (n-1) stdev; percentiles_from_brick returns (sorted[n/2], sorted[floor(n*0.99)]) on unsorted input, (0,0) when empty, and neither panics on NaN"
+    test_harness: "cargo test -p apr-cli --lib -- cv_percent_from_samples percentiles_from_brick"
+    expected_output: "exit 0"
+    if_fails: "Variance divisor or percentile indexing in cbtop_get_cpu_memory.rs changed; fix the code or the pinned cases in cbtop_stats_helper_tests.rs."

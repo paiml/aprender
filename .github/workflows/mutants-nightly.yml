@@ -1,19 +1,25 @@
 name: Mutants Nightly
 
-# #4142 (operator ruling via the cop, 2026-09-24): the PR `mutants` job caps a diff at MUTANTS_CAP mutants and is
-# RED "too many to judge" above it. This run is the other half: once a week it mutates everything merged to main
+# infra#3828 (operator ruling, Noah 2026-11-10 16:50Z, verbatim): "NO build can do mutation outside of nightly; the end.
+# FOREVER". This workflow is the ONLY place aprender runs `cargo mutants`, and it triggers on `schedule` ONLY: no
+# pull_request, push, merge_group, train/*, workflow_call or workflow_dispatch, and no required check or gate `needs`
+# names it. No PR, merge or release waits on a mutation score; this run reports it. Guard (LAB, nightly):
+# scripts/lab/mutation_nightly_only.sh.
+#
+# #4142 (2026-09-24, superseded for the PR side by infra#3828): the PR `mutants` job is gone. Once a week this run mutates everything merged to main
 # since the newest SUCCESSFUL run (the last 7 days on a first run) across the WORKSPACE with no cap, through
 # the same scripts/mutants_diff_gate.sh, so nothing that merged is left unjudged. A survivor turns this run red and
 # names itself.
 #
 # #5228 (operator, relayed by the cop 2026-10-12: "stop and move to weekly"): 0 green in the last 10 daily runs, so
 # weekly, and it is LAB (C324 item 5): a red or unmeasured scheduled run whose previous week had no green run
-# DISABLES this workflow (job `stop`). Its owner brings it back: `gh workflow enable mutants-nightly.yml`, then a dispatch.
+# DISABLES this workflow (job `stop`). Its owner brings it back: `gh workflow enable mutants-nightly.yml`; the next
+# scheduled run measures it (no dispatch: infra#3828, schedule only).
 
 on:
   schedule:
     - cron: '0 1 * * 0'   # Sunday 01:00 UTC (mutants 180 + stop 5 ends 04:05Z): the quietest PR hours (03-05Z, 10 of 300 PR CI runs 2026-09-29..10-06) on the quietest day
-  workflow_dispatch: {}
+  # infra#3828: schedule ONLY. Adding any other trigger here turns scripts/lab/mutation_nightly_only.sh RED (MN2).
 
 permissions:
   contents: read
@@ -32,7 +38,7 @@ jobs:
       MUTANTS_JOBS: ${{ vars.MUTANTS_NIGHTLY_JOBS || '8' }}
     steps:
       - name: Pre-checkout ownership restore (EACCES self-heal)
-        # Same guard as the PR mutants job: a hard-killed docker job leaves root-owned files behind.
+        # A hard-killed docker job leaves root-owned files behind.
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
             docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
@@ -128,7 +134,7 @@ jobs:
   # weekly schedule that is this run AND last week's both non-green, so this job DISABLES the workflow then
   # (scripts/mutants_weekly_stop.sh: an 8-day window, its case table and why 7 days is wrong); `gh workflow enable
   # mutants-nightly.yml` is the owner's way back. Its own job, so it runs whatever the mutants job did (red, timed out,
-  # cancelled) and the mutants job keeps a read-only token. A dispatch never stops.
+  # cancelled) and the mutants job keeps a read-only token.
   stop:
     needs: mutants
     if: always() && github.event_name == 'schedule'

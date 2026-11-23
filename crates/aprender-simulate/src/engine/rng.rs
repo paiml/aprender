@@ -143,7 +143,7 @@ impl SimRng {
         bytes.extend_from_slice(&self.master_seed.to_le_bytes());
         bytes.extend_from_slice(&self.stream.to_le_bytes());
         // Also include serialized PCG state for uniqueness
-        if let Ok(serialized) = bincode::serialize(&self.rng) {
+        if let Ok(serialized) = aprender_legacy_codec::serialize(&self.rng) {
             bytes.extend_from_slice(&serialized);
         }
         bytes

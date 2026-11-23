@@ -14,12 +14,6 @@ ignore = [
     { id = "RUSTSEC-2024-0384", reason = "instant: transitive via web-time, no replacement available" },
     { id = "RUSTSEC-2024-0436", reason = "paste: transitive via simba/nalgebra/parquet, use pastey when upstream migrates" },
     { id = "RUSTSEC-2025-0119", reason = "number_prefix: transitive via indicatif, no replacement available" },
-    { id = "RUSTSEC-2025-0141", reason = "bincode: transitive, widely used, no drop-in replacement" },
-    # unsafe-libyaml 0.2.11 — unmaintained, no patched release exists. Enters via
-    # serde_yaml 0.9 (deprecated), serde_yaml_ng 0.10 and the registry bashrs crate.
-    # Interim only (#5205): delete this entry after the serde-saphyr swap and a bashrs
-    # release without serde_yaml_ng leave unsafe-libyaml out of Cargo.lock.
-    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml: unmaintained, no fix; via serde_yaml/serde_yaml_ng/bashrs. Delete after the serde-saphyr swap + bashrs release (#5205)" },
     # rustls-pemfile 1.x exemption removed: the reqwest 0.11 -> 0.12 bump in
     # aprender-serve dropped its last consumer, so the advisory is no longer
     # reachable and the entry was dead. Deliberately not naming the id here --
@@ -48,6 +42,8 @@ ignore = [
     # aprender-db -> duckdb -> rust_decimal, but duckdb is optional (competitive-benchmarks)
     # and rust_decimal's own rkyv dep is optional and never enabled; Cargo.lock records it
     # anyway. Fix is rkyv >=0.8.17, unavailable: rust_decimal 1.42.1 (newest) still needs 0.7.
+    { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained; no maintained replacement upgrade available; tracked in #7191" },
+    { id = "RUSTSEC-2026-0542", reason = "humantime: unmaintained (wraps chrono); no maintained replacement upgrade available; tracked in #7191" },
 ]
 
 [licenses]

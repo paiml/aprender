@@ -1,0 +1,81 @@
+metadata:
+  version: 1.0.0
+  created: '2026-11-17'
+  author: PAIML Engineering
+  description: "Epic #7149 rule R1, slice S0.2 (#7155): the receipt every nightly LAB lane writes, one cell per measurement. A cell is MEASURED or NOT_MEASURED and nothing else; a NOT_MEASURED cell names its reason from a closed enum; a check is absent or {kind, limit, ok}. scripts/release/lab_receipt_check.sh is the judge, its case table (--self-test) and its planted mutants (--mutants). LAB only: nothing on a PR, merge-queue or release path reads it."
+  kind: pattern
+  references:
+    - "scripts/release/lab_receipt_check.sh — the judge, its case table (--self-test) and its planted mutants (--mutants)"
+    - "scripts/release/nightly_train.sh — the aggregator whose kind lab rows report these receipts (S0.7, S1.2)"
+    - "GitHub issue #7149 — the epic holding rules R1 to R9; #7155 is slice S0.2"
+
+five_whys:
+  symptom: "The edge nightly ran 55 times and produced one success; no run left a per-measurement record, so the 180 min hang inside one Measure step could not be tied to a cell."
+  why_1: "A lane wrote one pass or fail for the whole job, not one entry per measurement."
+  why_2: "No shape said what a measurement entry holds, so each script would have invented its own."
+  why_3: "Without a closed state set a cell that measured nothing could be written as a pass, a skip or a blank."
+  why_4: "Nothing rejected a receipt that lacked a field, so a lane could drop the field that explains its red."
+  why_5: "The shape lived in prose, not in a contract with a judge and a falsifier."
+  root_cause: "Lab receipts had no contract. The remedy is one shape, validated by a judge: state is MEASURED or NOT_MEASURED, a NOT_MEASURED cell carries a reason from a closed enum, and any missing or unknown field makes the receipt invalid."
+
+equations:
+  receipt_shape:
+    formula: "valid(r) iff r has exactly the fields schema_version, lane, sha, runner_name, started, finished, device{model, mem_mb, temp_c_start, temp_c_end}, cells[], and every cell has id, state, value, unit, n, median, spread, baseline, delta_pct, reason and optionally check, with no other field"
+    domain: "one JSON receipt as a lane writes it"
+    codomain: "{valid, invalid} with one defect line per violation"
+    invariants:
+      - "a receipt missing any required field, or carrying an unknown field, is invalid"
+      - "an unreadable file is a caller error, never valid"
+
+  cell_state:
+    formula: "state(c) in {MEASURED, NOT_MEASURED}; reason(c) is null iff state(c) = MEASURED, else one of runner_not_started, step_timeout, build_failed, tool_missing, run_failed; check(c) is absent or {kind in {tolerance, golden, baseline, size, loss, drift}, limit, ok boolean}"
+    domain: "one cell of a receipt"
+    codomain: "{valid, invalid}"
+    invariants:
+      - "a third state value is invalid: there is no skipped, unknown or pending cell"
+      - "a NOT_MEASURED cell without a reason, or with a reason outside the enum, is invalid"
+      - "a MEASURED cell with a reason is invalid"
+      - "a check whose ok is not a boolean, whose kind is outside the enum, or that has a missing or extra field, is invalid"
+
+proof_obligations:
+  - id: LR-INV-001
+    type: invariant
+    property: "A receipt with a required field removed is invalid"
+    formal: "∀ f ∈ required(receipt): ¬has(r, f) ⇒ invalid(r)"
+    applies_to: receipt_shape
+  - id: LR-INV-002
+    type: invariant
+    property: "A cell has exactly two states"
+    formal: "∀ c: state(c) ∉ {MEASURED, NOT_MEASURED} ⇒ invalid(c)"
+    applies_to: cell_state
+  - id: LR-INV-003
+    type: invariant
+    property: "A NOT_MEASURED cell names a reason from the enum; a MEASURED cell names none"
+    formal: "∀ c: (state(c) = NOT_MEASURED ⇒ reason(c) ∈ enum) ∧ (state(c) = MEASURED ⇒ reason(c) = null)"
+    applies_to: cell_state
+  - id: LR-INV-004
+    type: invariant
+    property: "A check is absent or exactly {kind, limit, ok} with kind in the enum and ok a boolean"
+    formal: "∀ c: has(c, check) ⇒ keys(check(c)) = {kind, limit, ok} ∧ kind ∈ enum ∧ ok ∈ {true, false}"
+    applies_to: cell_state
+
+falsification_tests:
+  - id: FALSIFY-LR-001
+    rule: "The judge is right on every row of its case table"
+    prediction: "A good receipt, a cell with no check and a step_timeout reason are valid; each required receipt, device and cell field removed, an unknown field at any level, a third state, a lowercase state, a reason outside the enum, a NOT_MEASURED cell without a reason, a MEASURED cell with a reason, a check kind outside the enum, a non-boolean ok and a check with a missing or extra field are each invalid"
+    test: "bash scripts/release/lab_receipt_check.sh --self-test"
+    if_fails: "A lane can write a receipt that drops the field that explains its red, or carries a third cell state"
+
+  - id: FALSIFY-LR-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted mutant of the judge (required-field check off, unknown-field check off, reason enum widened, third state allowed, reason rule dropped either way, check kind enum widened, ok type check off, one cell field no longer required) turns --self-test RED; a mutant that changes nothing is itself a failure"
+    test: "bash scripts/release/lab_receipt_check.sh --mutants"
+    if_fails: "The case table is theater: it would pass a judge that accepts a receipt with a missing field or a third state"
+
+qa_gate:
+  id: F-LR-001
+  name: "A nightly lab receipt has a closed shape: two cell states, a reason enum, an optional exact check"
+  description: "scripts/release/lab_receipt_check.sh judges one receipt. Its case table pins every field and state rule, and its planted mutants prove the table can fail."
+  checks:
+    - "receipt_shape"
+    - "cell_state"

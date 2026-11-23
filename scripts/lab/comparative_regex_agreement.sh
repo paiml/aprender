@@ -62,7 +62,7 @@ run() {
 self_test() {
     local t pass=0 fail=0 rc out
     t="$(mktemp -d)"
-    case "$t" in /tmp/*|/var/tmp/*) : ;; *) echo "NO-GO: odd mktemp path $t" >&2; return 2 ;; esac
+    case "$t" in /tmp/*|"${TMPDIR:-/tmp}"/?*|/var/tmp/*) : ;; *) echo "NO-GO: odd mktemp path $t" >&2; return 2 ;; esac
     row() { if [ "$2" = "$3" ]; then pass=$((pass+1)); printf '  ok    %-58s %s\n' "$1" "$3"
             else fail=$((fail+1)); printf '  FAIL  %-58s want=%s got=%s\n' "$1" "$3" "$2"; fi; }
     probe() { # probe NAME WANT_RC [env assignments...]

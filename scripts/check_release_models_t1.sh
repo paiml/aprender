@@ -25,6 +25,7 @@
 #                    nor the stale rel-9.9.9; rel-9.9.7 and rel-9.9.9 are gone (#5264).
 #   gx10-unreachable ssh rc 255: STOP, "unreachable over SSH".
 #   build-fails      lambda's build fails: STOP, "BUILD-FAILED".
+#   build-refused   lambda's cargo-memcap REFUSES the build (disk under its floor, rc 28): ENV, exit 2, never BUILD-FAILED (PMAT-7235).
 #   missing-receipt  lambda's model_ladder writes nothing: STOP, "wrote no receipt".
 #   red-cell         a red cell on gx10: STOP, "the judge found red".
 #   judge-decline    the judge exits 2: STOP, "the judge DECLINED".
@@ -114,6 +115,7 @@ A_NORCPT='        echo "MODELS $h NO-GO: no receipt -- $(leg_reason "$h" "$rc")"
 A_RED='    *) echo "MODELS NO-GO: the judge found red or missing cells (rc $jrc):"'
 A_DECLINE='    2) echo "MODELS NO-GO: the judge DECLINED (rc 2)'
 A_PROOF='mt_version_is "\$got" "$ver" "$sha" || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE'
+A_MEMGREP='    if [ "$brc" -ne 0 ] && grep -qE '"'"'^cargo-memcap: (REFUSED|CANNOT MEASURE)'"'"' -- "$blog"; then'
 A_DISK='if [ -z "\$free_kib" ] || [ "\$free_kib" -lt $NEED_KIB ]; then'
 A_LLOCK='flock -n 7 || { echo "MODELS NO-GO: another models_t1.sh holds $LOCK'
 A_RLOCK='flock -n 8 || { echo "MODELS-LEG $REMOTE_HOST ENV: busy'
@@ -170,7 +172,8 @@ for a in "$R_VER" "$R_RED" "$R_LINES" "$R_DECLINE" "$R_NOJUDGE"; do
 done
 grep -q '^rule_r7() {' "$PREFLIGHT" || env_die "check_publish_preflight.sh has no rule_r7() -- the subject moved"
 
-TMP=$(mktemp -d) || exit 2
+# R34-3: fixtures live under the runner's own temp root, never the shared /tmp a concurrent job can sweep
+TMP=$(mktemp -d -p "${RUNNER_TEMP:-${TMPDIR:-/tmp}}") || exit 2
 # SEC011: validate before rm -rf. An empty or '/' value must never reach it.
 cleanup() { case "${TMP:-}" in ''|/) return 0 ;; *) [ -d "$TMP" ] && rm -rf -- "$TMP" ;; esac; }
 trap cleanup EXIT
@@ -215,6 +218,17 @@ case "${1:-}" in
   build)
     printf 'build host=%s oom=%s flock=%s\n' "$host" "${FX_OOM:-none}" "${FX_FLOCK:-0}" >> "$FX_LOG"
     [ "${FX_BUILD_FAIL_HOST:-}" = "$host" ] && { echo "error: could not compile (fixture)"; exit 101; }
+    [ "${FX_BUILD_REFUSE_HOST:-}" = "$host" ] && { echo "cargo-memcap: REFUSED: /mnt/nvme-raid0 has 189G free, under the 200G floor; no new heavy job starts (PMAT-2976)" >&2; exit 28; }
+    # FX_BUILD_RC_HOST/FX_BUILD_RC/FX_BUILD_MSG: a build that exits FX_BUILD_RC printing one of four texts
+    if [ "${FX_BUILD_RC_HOST:-}" = "$host" ]; then
+        case "${FX_BUILD_MSG:-none}" in
+            refuse)   echo "cargo-memcap: REFUSED: fixture refusal (PMAT-2976)" >&2 ;;
+            block)    printf "refused by: jobs\ncargo-memcap: REFUSED: '\x63argo build' on lambda-labs (infra#3973)\n" >&2 ;;
+            indented) echo "  cargo-memcap: REFUSED: echoed by a build script" >&2 ;;
+            *)        echo "error: fixture build output, no refusal" >&2 ;;
+        esac
+        exit "${FX_BUILD_RC:-101}"
+    fi
     s=$(git rev-parse --short=10 HEAD); [ "${FX_STALE_HOST:-}" = "$host" ] && s=deadbeef00
     mkdir -p "$tdir/release"
     printf '#!/usr/bin/env bash\nprintf "apr %s (%s)\\n"\n' "$v" "$s" > "$tdir/release/apr"
@@ -291,7 +305,7 @@ STUB
 
 # fixture NAME AUTOPILOT MODELS_T1 -> $TMP/NAME: origin (parent 9.9.8 + release 9.9.9), the main
 # checkout, the fake gx10 home. Returns 2 if it cannot be built.
-fixture() {
+fixture_build() {
     local d="$TMP/$1" r
     r="$d/repo"
     mkdir -p "$r/scripts/release" "$d/ap" || return 2
@@ -373,7 +387,27 @@ STUB
     git -C "$r" rev-parse HEAD > "$d/mc"
     # the fake gx10: its checkout sits at the PARENT, with a stale release dir beside it
     mkdir -p "$d/gx10/src" "$d/gx10/.cache/aprender-release/rel-9.9.7/target" "$d/gx10/.cache/aprender-release/rel-9.9.9/target" || return 2
-    git clone -q "$d/origin.git" "$d/gx10/src/aprender" && git -C "$d/gx10/src/aprender" checkout -q --detach HEAD^ || return 2
+    # --no-local: a plain local clone walks origin.git/objects and link()s/copies every loose file, so one that
+    # leaves that directory mid-walk kills it with "failed to copy file to ...: No such file or directory"
+    # (PR runs on a git 2.55 runner, PMAT-7284). A pack-protocol clone reads through the object store instead.
+    git clone -q --no-local "$d/origin.git" "$d/gx10/src/aprender" && git -C "$d/gx10/src/aprender" checkout -q --detach HEAD^ || return 2
+}
+# fx_diag NAME -- what a failed fixture build saw, so the next failure names its cause instead of "could not build"
+fx_diag() {
+    {   printf 'fixture-diag: %s: git %s; TMP %s (%s entries); row dir %s; loose objects in origin.git: %s\n' "$1" \
+            "$(git --version | cut -d' ' -f3)" "$([ -d "$TMP" ] && echo present || echo GONE)" "$(find "$TMP" -mindepth 1 -maxdepth 1 2> /dev/null | wc -l)" \
+            "$([ -d "$TMP/$1" ] && echo present || echo GONE)" "$(find "$TMP/$1/origin.git/objects" -type f -path '*/??/*' 2> /dev/null | wc -l)"
+        printf 'fixture-diag: %s: git gc/repack/maintenance processes: %s\n' "$1" \
+            "$(pgrep -af 'git (gc|repack|maintenance|prune)' 2> /dev/null | head -n 3 | tr '\n' ';')"
+        printf 'fixture-diag: %s: %s\n' "$1" "$(df -P "$TMP" 2> /dev/null | tail -n 1)"
+    } >&2
+}
+# fixture NAME AUTOPILOT MODELS_T1 -> fixture_build, and a failed build says what it saw
+fixture() {
+    fixture_build "$@" && return 0
+    local rc=$?
+    fx_diag "$1"
+    return "$rc"
 }
 
 # models NAME AUTOPILOT MODELS_T1 [ENV=VAL ...] -> runs `autopilot.sh 9.9.9 99 models models`
@@ -462,6 +496,35 @@ stops() { # TAG AUTOPILOT MODELS_T1 NEEDLE ENV... -> 0 when the step STOPped nam
 }
 unreachable()   { stops "unreach-$1" "$2" "$3" "MODELS gx10 NO-GO: no receipt -- unreachable over SSH" FX_SSH_DOWN=1; }
 build_fails()   { stops "build-$1" "$2" "$3" "MODELS lambda NO-GO: no receipt -- BUILD-FAILED" FX_BUILD_FAIL_HOST=lambda; }
+build_refused() {
+    local rc; stops "refused-$1" "$2" "$3" "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build" FX_BUILD_REFUSE_HOST=lambda; rc=$?
+    [ "$rc" = 0 ] || return "$rc"
+    ! grep -q 'BUILD-FAILED' "$TMP/refused-$1/ap/STATUS" || { printf 'a refused build was named BUILD-FAILED\n'; return 1; }
+    grep -q 'rc=2' "$TMP/refused-$1/ap/STATUS" || { printf 'models_t1.sh did not exit 2 (ENV)\n'; return 1; }
+    return 0
+}
+# build_rc TAG RC MSG WANT AP MT -> WANT env: STOP names ENV (exit 2, never BUILD-FAILED); WANT bf: STOP names BUILD-FAILED, never ENV
+build_rc() {
+    local t="rc-$1" want=$2 d n; d="$TMP/rc-$1"
+    if [ "$want" = env ]; then
+        stops "$t" "$7" "$8" "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build" FX_BUILD_RC_HOST=lambda FX_BUILD_RC="$3" FX_BUILD_MSG="$4" || return $?
+        ! grep -q 'BUILD-FAILED' "$d/ap/STATUS" || { printf 'a refusal was named BUILD-FAILED\n'; return 1; }
+        grep -q 'rc=2' "$d/ap/STATUS" || { printf 'models_t1.sh did not exit 2 (ENV)\n'; return 1; }
+        grep -qE "refused the build \(.* rc $3\)" "$d/ap/STATUS" || { printf 'the refusal did not carry the build exit code %s\n' "$3"; return 1; }
+    else
+        stops "$t" "$7" "$8" "MODELS lambda NO-GO: no receipt -- BUILD-FAILED" FX_BUILD_RC_HOST=lambda FX_BUILD_RC="$3" FX_BUILD_MSG="$4" || return $?
+        ! grep -q 'ENV: cargo-memcap' "$d/ap/STATUS" || { printf 'a real build failure was named ENV\n'; return 1; }
+    fi
+    return 0
+}
+# rows: TAG-PREFIX is $1 (real|m-name) so each mutant has its own fixture dirs
+r_env_rc2_block()    { build_rc "envrc2-$1" env 2 block x x "$2" "$3"; }
+r_env_rc75()         { build_rc "envrc75-$1" env 75 refuse x x "$2" "$3"; }
+r_bf_text_rc101()    { build_rc "bftext101-$1" bf 101 refuse x x "$2" "$3"; }
+r_bf_rc28_no_text()  { build_rc "bf28-$1" bf 28 none x x "$2" "$3"; }
+r_bf_rc2_no_text()   { build_rc "bf2-$1" bf 2 none x x "$2" "$3"; }
+r_bf_indented_101()  { build_rc "bfind101-$1" bf 101 indented x x "$2" "$3"; }
+r_bf_indented_28()   { build_rc "bfind28-$1" bf 28 indented x x "$2" "$3"; }
 missing()       { stops "missing-$1" "$2" "$3" "MODELS lambda NO-GO: no receipt -- model_ladder.sh wrote no receipt" FX_NO_RECEIPT_HOST=lambda; }
 red_cell()      { stops "red-$1" "$2" "$3" "MODELS NO-GO: the judge found red" FX_RED_HOST=gx10; }
 decline()       { stops "decline-$1" "$2" "$3" "MODELS NO-GO: the judge DECLINED" FX_JUDGE_DECLINE=1; }
@@ -597,7 +660,10 @@ r_stale()   { # an apr built from another commit: its surface would derive anoth
 }
 
 # ---- the rows ---------------------------------------------------------------------------------
-for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails build_fails" \
+for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails build_fails" "build-refused build_refused" \
+            "build-refused-rc2-block r_env_rc2_block" "build-refused-rc75 r_env_rc75" "build-text-rc101-is-build-failed r_bf_text_rc101" \
+            "build-rc28-no-text-is-build-failed r_bf_rc28_no_text" "build-rc2-no-text-is-build-failed r_bf_rc2_no_text" \
+            "build-indented-text-rc101-is-build-failed r_bf_indented_101" "build-indented-text-rc28-is-build-failed r_bf_indented_28" \
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
             "stale-binary stale" "disk-refusal disk" "t1-lock-held t1_held" "gx10-lock-held gx10_held" "oom-victim oom_victim" \
             "ladder-explicit ladder_explicit" "measure-bogus measure_bogus" "crux-green-pair crux_green" \
@@ -650,6 +716,32 @@ for spec in "r7-green r7_green" "r7-red r7_red" "r7-missing r7_missing" "r7-decl
     msg=$($2 real "$PREFLIGHT"); row "$1" "$?" "$msg"
 done
 
+# ---- PMAT-7284: how the fixture builder clones, and what a failed build reports ---------------------
+# A git shim logs every call and, with FX_CLONE_FAIL=1, fails a clone with the error the PR runs printed.
+FX_REAL_GIT=$(command -v git); export FX_REAL_GIT
+mkdir -p "$TMP/fx-shim"
+cat > "$TMP/fx-shim/git" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FX_GITLOG"
+if [ "${FX_CLONE_FAIL:-0}" = 1 ]; then
+    for a in "$@"; do [ "$a" = clone ] && { echo "fatal: failed to copy file to 'x/.git/objects/4f/57': No such file or directory" >&2; exit 128; }; done
+fi
+exec "$FX_REAL_GIT" "$@"
+STUB
+chmod +x "$TMP/fx-shim/git"
+fx_clone_row() { # -> 0 when the fixture's gx10 clone goes through the pack protocol, not a loose-file walk
+    ( PATH="$TMP/fx-shim:$PATH" FX_GITLOG="$TMP/fx-clone.log" fixture fx-clone "$AUTOPILOT" "$MODELS" ) > /dev/null 2>&1 || { printf 'the fixture did not build\n'; return 2; }
+    grep -qE '^clone -q --no-local .*origin\.git' "$TMP/fx-clone.log" || { printf 'gx10 was cloned with a local object walk: %s\n' "$(grep '^clone' "$TMP/fx-clone.log" | head -n 1)"; return 1; }
+}
+fx_diag_row() { # -> 0 when a failed build returns 2 AND says what it saw
+    local out frc
+    out=$( ( PATH="$TMP/fx-shim:$PATH" FX_GITLOG="$TMP/fx-fail.log" FX_CLONE_FAIL=1 fixture fx-fail "$AUTOPILOT" "$MODELS" ) 2>&1 ); frc=$?
+    [ "$frc" = 2 ] || { printf 'a failed clone returned %s, not 2\n' "$frc"; return 1; }
+    grep -q '^fixture-diag: fx-fail: git .*TMP present' <<< "$out" || { printf 'no fixture-diag line: %s\n' "$(head -n 2 <<< "$out" | tr '\n' ' ')"; return 1; }
+}
+msg=$(fx_clone_row); row "fixture-clone-no-local" "$?" "$msg"
+msg=$(fx_diag_row);  row "fixture-failure-diagnosed" "$?" "$msg"
+
 # ---- the mutants ------------------------------------------------------------------------------
 # mutant NAME SRC ANCHOR REPLACEMENT ROWFN [autopilot] -- replace ANCHOR's first line, run ROWFN
 mutant() {
@@ -673,6 +765,15 @@ PY
 mutant shared-target    "$MODELS" "$A_SHARED" 'export CARGO_TARGET_DIR="\$repo/target"' green_pair
 mutant no-255-reason    "$MODELS" "$A_255" 'elif false; then' unreachable
 mutant build-ignored    "$MODELS" "$A_BUILD" '        || true' build_fails
+mutant guard-any-rc "$MODELS" '        case $brc in 2|28|75)' '        case $brc in *)' r_bf_text_rc101
+mutant guard-text-ignored "$MODELS" "$A_MEMGREP" '    if [ "$brc" -ne 0 ] && true; then' r_bf_rc28_no_text
+mutant guard-text-ignored-rc2 "$MODELS" "$A_MEMGREP" '    if [ "$brc" -ne 0 ] && true; then' r_bf_rc2_no_text
+mutant guard-text-unanchored "$MODELS" "$A_MEMGREP" '    if [ "$brc" -ne 0 ] && grep -qE '"'"'(cargo-memcap: (REFUSED|CANNOT MEASURE)|error)'"'"' -- "$blog"; then' r_bf_rc28_no_text
+mutant guard-text-unanchored-indent "$MODELS" "$A_MEMGREP" '    if [ "$brc" -ne 0 ] && grep -qE '"'"'cargo-memcap: (REFUSED|CANNOT MEASURE)'"'"' -- "$blog"; then' r_bf_indented_28
+mutant guard-101-is-refusal-text "$MODELS" '        case $brc in 2|28|75)' '        case $brc in 2|28|75|101)' r_bf_text_rc101
+mutant guard-drops-75 "$MODELS" '        case $brc in 2|28|75)' '        case $brc in 2|28)' r_env_rc75
+mutant guard-drops-2 "$MODELS" '        case $brc in 2|28|75)' '        case $brc in 28|75)' r_env_rc2_block
+mutant refusal-is-build "$MODELS" '        case $brc in 2|28|75)' '        case $brc in 99)' build_refused
 mutant no-receipt-ok    "$MODELS" "$A_NORCPT" '        continue' missing
 mutant red-is-go        "$MODELS" "$A_RED" '    *) ;; 99) echo' red_cell
 mutant decline-is-go    "$MODELS" "$A_DECLINE" '    2) ;; 98) echo "' decline

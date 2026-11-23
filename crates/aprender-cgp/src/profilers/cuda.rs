@@ -213,7 +213,7 @@ pub fn ncu_metrics_to_profile(
             }
         });
 
-    let timestamp = chrono::Utc::now().to_rfc3339();
+    let timestamp = crate::rfc3339::now_rfc3339();
 
     FullProfile {
         version: "2.0".to_string(),

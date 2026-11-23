@@ -103,7 +103,8 @@ Those three symbols are genuine post-0.63.0 additions (verified against the
 published 0.63.0 tarballs). Nothing is broken. **Do not abort a cut over this.**
 
 STAGE-PRECONDITION: cargo package -p apr-cli requires stage CASCADE_READY
-STAGE-PRECONDITION: cargo package -p apr-format requires stage MEANINGFUL
+STAGE-PRECONDITION: cargo package -p apr-format requires stage CASCADE_READY
+STAGE-PRECONDITION: cargo package -p aprender-legacy-codec requires stage MEANINGFUL
 
 Ask the tree which stage it is at before interpreting any result:
 
@@ -118,12 +119,12 @@ bash scripts/check_gate5_stage.sh --explain apr-cli
 | `POST_BUMP_PRE_CASCADE` | Version bumped, siblings not published at it yet. Cargo says `failed to select a version … candidate versions found which didn't match` — *not* `no matching package named`, which is the distinct error for a crate that was never published at all. Expected until the cascade reaches them. |
 | `CASCADE_READY` | Every sibling is live at this version. A failure here is a real defect. |
 
-**The stage-independent substitute.** `apr-format` is a workspace leaf with zero
+**The stage-independent substitute.** `aprender-legacy-codec` is a workspace leaf with zero
 sibling dependencies, so it packages identically at every stage and still proves
-the tarball/`include!()`/manifest machinery works:
+the tarball and manifest machinery works (it has no `include!()` files, so that half is apr-cli's run):
 
 ```
-cargo package -p apr-format --allow-dirty 2>&1 | tail -5
+cargo package -p aprender-legacy-codec --allow-dirty 2>&1 | tail -5
 ```
 
 Run that pre-bump. Run the real gate

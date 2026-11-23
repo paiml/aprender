@@ -163,7 +163,7 @@ fn version_line() -> String {
     )
 }
 
-const USAGE: &str = "usage: aprender-rollup plan | build <dir> | verify <branch> <head-sha> <sha|-> <n,..> [--apply]";
+const USAGE: &str = "usage: aprender-rollup plan | build <dir> | verify <branch> <head-sha> <sha|-> <n,..> [--apply] | fold <base.yaml> <entries-dir> | check <roadmap.yaml> <entries-dir>";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -179,6 +179,10 @@ fn main() -> ExitCode {
         }
         "plan" | "build" => run(cmd, args.get(2).map(String::as_str)),
         "verify" => verify(&args[2..]),
+        // #6313: roadmap.yaml as a pure function of (base, entries/). Aggregate on stdout; rc 0, or 2 = not measured.
+        "fold" => return fold_cmd(&args[1..]),
+        // #5962: roadmap.yaml == fold(base, entries/) and the fold is idempotent; rc 1 = refused.
+        "check" => return check_cmd(&args[1..]),
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);
@@ -204,5 +208,39 @@ mod tests {
         assert!(l.starts_with(&want) && l.ends_with(')'), "{l}");
         let sha = &l[want.len()..l.len() - 1];
         assert!(!sha.is_empty() && sha == env!("APR_GIT_SHA"), "{l}");
+    }
+}
+
+fn fold_cmd(args: &[String]) -> ExitCode {
+    match aprender_rollup::fold::parse_args(args)
+        .and_then(|(base, entries)| aprender_rollup::fold::fold(&base, &entries))
+    {
+        Ok(text) => {
+            print!("{text}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("not_measured: {e}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn check_cmd(args: &[String]) -> ExitCode {
+    let Ok(aprender_rollup::fold::Cmd::Check(roadmap, entries)) =
+        aprender_rollup::fold::parse_cmd(args)
+    else {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
+    };
+    match aprender_rollup::fold::check(&roadmap, &entries) {
+        Ok(msg) => {
+            println!("ok {msg}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("FAIL {e}");
+            ExitCode::from(1)
+        }
     }
 }

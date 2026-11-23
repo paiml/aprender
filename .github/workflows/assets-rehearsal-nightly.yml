@@ -63,9 +63,9 @@ jobs:
         run: bash scripts/release/assets_rehearsal.sh tag | tee -a "$GITHUB_OUTPUT"
   build:
     name: pv ${{ matrix.target }} on ${{ matrix.host }}
+    timeout-minutes: 120
     needs: assets
     runs-on: ${{ fromJSON(matrix.labels) }}
-    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -161,36 +161,43 @@ jobs:
               esac
               ldd --version | head -1 > /workspace/target/BUILDER_GLIBC
               rustc --version > /workspace/target/BUILDER_RUSTC
-              cargo build --release --locked --bin pv -p aprender-contracts-cli --features update-check,build-sha --target "$T"
-              strip "/workspace/target/$T/release/pv"'
+              cargo build --release --locked --bin pv --bin pv-readme -p aprender-contracts-cli --features update-check,build-sha --target "$T"
+              strip "/workspace/target/$T/release/pv" "/workspace/target/$T/release/pv-readme"'
           mkdir -p "target/$T/release"
+          # #7010: pv-readme rides in the pv archive. It is the README SHACL check other repos run
+          # in CI, and an asset no release carries is a check no runner can have.
           cp "$CACHE/target/$T/release/pv" "target/$T/release/pv"
+          cp "$CACHE/target/$T/release/pv-readme" "target/$T/release/pv-readme"
           {
             echo "### pv $T built on ${{ matrix.host }} inside ${{ matrix.image }}"
             echo "- toolchain: $(cat "$CACHE/target/BUILDER_RUSTC")"
             echo "- builder glibc: $(cat "$CACHE/target/BUILDER_GLIBC")"
           } >> "$GITHUB_STEP_SUMMARY"
-          ls -la "target/$T/release/pv"
+          ls -la "target/$T/release/pv" "target/$T/release/pv-readme"
       - name: The asset runs, and its floor is what its bytes require
         run: |
-          BIN="target/${{ matrix.target }}/release/pv"
-          "$BIN" --version
-          case "${{ matrix.target }}" in
-            *-musl)
-              n=$(objdump -p "$BIN" | grep -c 'NEEDED' || true)
-              echo "dynamic NEEDED entries: $n (expected 0)"
-              if [ "$n" -ne 0 ]; then echo "::error::$BIN is a musl asset with $n dynamic dependencies"; exit 1; fi
-              FLOOR="static (musl)" ;;
-            *)
-              FLOOR=$(objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+(\.[0-9]+)?' | sort -u -t_ -k2 -V | tail -1)
-              got=${FLOOR#GLIBC_}
-              if [ -n "$got" ] && [ "$(printf '%s\n%s\n' "$got" 2.31 | sort -V | tail -1)" != 2.31 ]; then
-                echo "::error::$BIN needs $FLOOR, above the GLIBC_2.31 floor this lane promises"; exit 1
-              fi
-              [ -n "$FLOOR" ] || FLOOR="none (no versioned glibc imports)" ;;
-          esac
-          echo "- glibc floor of this asset (objdump): $FLOOR" >> "$GITHUB_STEP_SUMMARY"
-          echo "asset glibc floor: $FLOOR"
+          # #7013: every binary the archive ships is graded, not only pv.
+          for NAME in pv pv-readme; do
+            BIN="target/${{ matrix.target }}/release/$NAME"
+            [ -x "$BIN" ] || { echo "::error::$BIN is missing: the archive would ship without $NAME"; exit 1; }
+            "$BIN" --version
+            case "${{ matrix.target }}" in
+              *-musl)
+                n=$(objdump -p "$BIN" | grep -c 'NEEDED' || true)
+                echo "dynamic NEEDED entries: $n (expected 0)"
+                if [ "$n" -ne 0 ]; then echo "::error::$BIN is a musl asset with $n dynamic dependencies"; exit 1; fi
+                FLOOR="static (musl)" ;;
+              *)
+                FLOOR=$(objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+(\.[0-9]+)?' | sort -u -t_ -k2 -V | tail -1)
+                got=${FLOOR#GLIBC_}
+                if [ -n "$got" ] && [ "$(printf '%s\n%s\n' "$got" 2.31 | sort -V | tail -1)" != 2.31 ]; then
+                  echo "::error::$BIN needs $FLOOR, above the GLIBC_2.31 floor this lane promises"; exit 1
+                fi
+                [ -n "$FLOOR" ] || FLOOR="none (no versioned glibc imports)" ;;
+            esac
+            echo "- glibc floor of $NAME (objdump): $FLOOR" >> "$GITHUB_STEP_SUMMARY"
+            echo "$NAME glibc floor: $FLOOR"
+          done
       - name: Package archive
         id: package
         run: |
@@ -198,7 +205,7 @@ jobs:
           TARGET="${{ matrix.target }}"
           ARCHIVE="pv-${VERSION}-${TARGET}"
           mkdir -p "$ARCHIVE"
-          cp "target/${TARGET}/release/pv" "$ARCHIVE/"
+          cp "target/${TARGET}/release/pv" "target/${TARGET}/release/pv-readme" "$ARCHIVE/"
           for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do
             [ -f "$f" ] && cp "$f" "$ARCHIVE/"
           done
@@ -288,6 +295,7 @@ jobs:
           git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
           git show "FETCH_HEAD:scripts/release/asset_version_check.sh" > "$RUNNER_TEMP/asset_version_check.sh"
           git show "FETCH_HEAD:scripts/nightly_manifest.py" > "$RUNNER_TEMP/nightly_manifest.py"
+          git show "FETCH_HEAD:scripts/release/release_bin_filter.sh" > "$RUNNER_TEMP/release_bin_filter.sh"
           case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
           git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
           bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
@@ -305,7 +313,9 @@ jobs:
             -v "$CACHE/registry:/usr/local/cargo/registry" \
             -w /workspace \
             rust:1.93.0-bullseye \
-            cargo metadata --locked --no-deps --format-version 1 > "$RUNNER_TEMP/metadata.json"
+            cargo metadata --locked --no-deps --format-version 1 > "$RUNNER_TEMP/metadata.raw.json"
+          # #6502: publish=false and *-ci-tools packages are never shipped
+          bash "$RUNNER_TEMP/release_bin_filter.sh" "$RUNNER_TEMP/metadata.raw.json" > "$RUNNER_TEMP/metadata.json"
           ALL=$(python3 "$RUNNER_TEMP/nightly_manifest.py" bins --metadata "$RUNNER_TEMP/metadata.json")
           BINS=$(echo "$ALL" | tr ',' '\n' | grep -vxE 'apr|pv' | paste -sd, -)
           if [ -z "$BINS" ]; then echo "::error::no [[bin]] derived from the tag tree"; exit 1; fi
@@ -392,9 +402,9 @@ jobs:
           retention-days: 5
   build-apr-cuda:
     name: apr (cuda) ${{ matrix.target }} on ${{ matrix.host }}
+    timeout-minutes: 120
     needs: assets
     runs-on: ${{ fromJSON(matrix.labels) }}
-    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -545,9 +555,9 @@ jobs:
           retention-days: 5
   build-apr-cpu:
     name: apr (cpu) ${{ matrix.target }} on ${{ matrix.host }}
+    timeout-minutes: 120
     needs: assets
     runs-on: ${{ fromJSON(matrix.labels) }}
-    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -711,9 +721,9 @@ jobs:
           retention-days: 5
   build-apr-darwin:
     name: apr (cpu) aarch64-apple-darwin on mini
+    timeout-minutes: 120
     needs: assets
     runs-on: [self-hosted, macOS, ARM64, mini-builder]
-    timeout-minutes: 120
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:

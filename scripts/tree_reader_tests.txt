@@ -33,6 +33,7 @@ apr-cli	--test	cli_commands
 apr-cli	--test	falsification_crux_a_01
 apr-cli	--test	falsification_crux_a_03
 apr-cli	--test	falsification_crux_a_20
+apr-cli	--test	falsification_recipe_lora_dry_run
 apr-cli	--test	pixel_regression
 apr-cli	--test	registry_failure_catalogue
 apr-cli	--test	thinking_budgets_mirror
@@ -41,6 +42,7 @@ apr-format	--test	golden_fixtures
 aprender-build-sha	--lib	<root>
 aprender-cgp	--lib	analysis::contracts
 aprender-ci-tools	--lib	nextest_fail_fast
+aprender-ci-tools	--test	rollup_fold
 aprender-compute-xtask	--bins
 aprender-contracts	--lib	binding
 aprender-contracts	--lib	build_helper
@@ -88,13 +90,17 @@ aprender-contracts	--lib	query::persist
 aprender-contracts	--lib	readme_gen
 aprender-contracts	--lib	schema
 aprender-contracts	--lib	schema::no_test_debt
+aprender-contracts	--lib	schema::work_tickets
 aprender-contracts	--lib	scoring::drift
 aprender-contracts	--lib	tree
 aprender-contracts	--test	apr_serve_api_key_auth_contract
+aprender-contracts	--test	falsification_pr_spot_labels
 aprender-contracts	--test	kani_harness_generation
 aprender-contracts	--test	probar_test_generation
 aprender-contracts	--test	validate_contracts
 aprender-contracts-cli	--lib	commands::certify
+aprender-contracts-cli	--lib	commands::check_symbolic
+aprender-contracts-cli	--lib	commands::lint
 aprender-contracts-cli	--lib	commands::obligations
 aprender-contracts-cli	--lib	commands::verify_pipeline
 aprender-contracts-cli	--lib	contract_walk
@@ -137,6 +143,7 @@ aprender-contracts-cli	--test	pvl_obligations_golden
 aprender-contracts-cli	--test	pvl_zero_contracts
 aprender-contracts-cli	--test	repo_tree_pv
 aprender-contracts-cli	--test	shapes_vacuity
+aprender-contracts-cli	--test	sim3d_spec
 aprender-core	--lib	format::metadata_bounds_contract_falsify
 aprender-core	--lib	format::model_family_loader
 aprender-core	--lib	format::ship_001
@@ -178,6 +185,7 @@ aprender-orchestrate	--lib	agent::repl_directives
 aprender-orchestrate	--lib	analyzer
 aprender-orchestrate	--lib	cli::agent
 aprender-orchestrate	--lib	cli::falsify
+aprender-orchestrate	--lib	cli::oracle::rag_index
 aprender-orchestrate	--lib	falsification::auditors::tests
 aprender-orchestrate	--lib	falsification::invariants
 aprender-orchestrate	--lib	falsification::jidoka
@@ -190,6 +198,7 @@ aprender-orchestrate	--lib	stack::hero_image
 aprender-orchestrate	--lib	stack::quality_checker
 aprender-orchestrate	--lib	stack::quality_format
 aprender-present-cli	--bins
+aprender-present-cli	--test	present_cli_surface_gate
 aprender-present-lib	--lib	browser::shell_autocomplete
 aprender-present-terminal	--lib	<root>
 aprender-present-terminal	--lib	ptop
@@ -208,6 +217,9 @@ aprender-serve	--lib	gpu::adapters::wgpu_adapter
 aprender-serve	--lib	infer
 aprender-serve	--lib	kernel_registry
 aprender-serve	--lib	quantize::contract_tests
+aprender-serve	--test	qwen4_exp_attn_parity
+aprender-serve	--test	qwen4_exp_embed_parity
+aprender-serve	--test	qwen4_exp_refusal
 aprender-shell	--lib	model
 aprender-simulate	--lib	demos::tsp_grasp
 aprender-simulate	--lib	edd::runner
@@ -229,5 +241,7 @@ aprender-test-lib	--lib	perf_gate::witness
 aprender-train	--lib	hf_pipeline::export::pipeline
 aprender-train	--lib	models::llama_370m
 aprender-train	--lib	research::archive::tests
+aprender-viz	--lib	grammar::ggplot2_oracle
+aprender-viz	--lib	plot_cli
 aprender-viz	--test	raster_determinism
 aprender-viz	--test	render_determinism

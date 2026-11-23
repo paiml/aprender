@@ -111,9 +111,16 @@ fn facet_wrap_over_three_lineages_renders_three_panels() {
 /// the flipped render equals the *unflipped* render instead.
 #[test]
 fn coord_flip_swaps_the_axes() {
-    let mut swapped = DataFrame::new();
-    swapped.add_column_f32("x", &[10.0, 20.0, 30.0, 40.0]);
-    swapped.add_column_f32("y", &[1.0, 2.0, 3.0, 4.0]);
+    // Not monotone on purpose: fixture() is a straight diagonal, its own mirror image, so once the
+    // grid follows the breaks (PLOT-GG-001) a correct flip of it draws the unflipped figure.
+    let frame = |x: &[f32], y: &[f32]| {
+        let mut df = DataFrame::new();
+        df.add_column_f32("x", x);
+        df.add_column_f32("y", y);
+        df
+    };
+    let (a, b) = ([1.0, 2.0, 3.0, 4.0], [10.0, 40.0, 20.0, 30.0]);
+    let swapped = frame(&b, &a);
 
     let render = |df: DataFrame, coord: Coord| {
         GGPlot::new()
@@ -129,8 +136,8 @@ fn coord_flip_swaps_the_axes() {
             .to_vec()
     };
 
-    let flipped = render(fixture(), Coord::cartesian().flip());
-    let plain = render(fixture(), Coord::cartesian());
+    let flipped = render(frame(&a, &b), Coord::cartesian().flip());
+    let plain = render(frame(&a, &b), Coord::cartesian());
     let swapped_cols = render(swapped, Coord::cartesian());
 
     assert_eq!(

@@ -33,3 +33,14 @@ falsification:
     description: "output after eviction matches recompute from scratch"
     test: "Related tests in crates/aprender-serve/src/"
     evidence: "cargo test --lib"
+
+# PMAT-7235: bound to CI-run tests (--lib).
+falsification_tests:
+  - id: FALSIFY-PIPELINE_CACHE_V1-BIND-001
+    rule: "covers FALSIFY-PIPELINE_CACHE_V1_001: cache.len() increases by 1 per decode step"
+    prediction: "test_kv_cache_grows_with_tokens asserts the length after each forward step"
+    test: "cargo test -p aprender-serve --lib test_kv_cache_grows_with_tokens"
+  - id: FALSIFY-PIPELINE_CACHE_V1-BIND-002
+    rule: "covers FALSIFY-PIPELINE_CACHE_V1_002: recomputing from scratch reproduces the cached output"
+    prediction: "test_kv_cache_recompute_from_scratch_matches passes; fails when a fresh cache gives different logits"
+    test: "cargo test -p aprender-serve --lib test_kv_cache_recompute_from_scratch_matches"

@@ -33,3 +33,15 @@ falsification:
     description: "A^T^T == A for all tile sizes"
     test: "Related tests in crates/aprender-compute/src/backends/"
     evidence: "cargo test --lib"
+
+falsification_tests:
+  - id: FALSIFY-GEMM-BACKWARD-001
+    description: "dW = X^T dY and dX = dY W^T match a naive reference (CPU reference; the tiled GPU kernel is NOT CI evidence)"
+    test: "cargo test -p aprender-compute --lib test_gemm_backward_matches_naive_reference"
+    prediction: "Relative error below 1e-5"
+    if_fails: "Backward GEMM math is wrong"
+  - id: FALSIFY-GEMM-BACKWARD-002
+    description: "Transpose is an involution across tile-straddling shapes"
+    test: "cargo test -p aprender-compute --lib test_transpose_involution_across_tile_sizes"
+    prediction: "(A^T)^T equals A for every shape"
+    if_fails: "Tiled transpose corrupts data at tile edges"

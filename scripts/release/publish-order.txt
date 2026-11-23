@@ -1,5 +1,6 @@
 aprender-build-sha
 aprender-update
+aprender-legacy-codec
 apr-format
 aprender-common
 aprender-contracts-macros

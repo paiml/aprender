@@ -239,6 +239,41 @@ pub(crate) fn scalar(v: Option<&serde_yaml::Value>) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// SHACL-PATCH (#7365) review round 3: `documents` is the one walk every extractor shares, so it must parse
+    /// contract text exactly as `serde_yaml` does. A quoted string or a non-facet key that merely looks like a
+    /// wide facet bound must come through byte-for-byte, and the contract must not drop out of the corpus.
+    #[test]
+    fn documents_do_not_rewrite_quoted_or_non_facet_scalars() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cdir = dir.path().join("contracts");
+        std::fs::create_dir_all(&cdir).expect("mkdir");
+        std::fs::write(
+            cdir.join("q.yaml"),
+            "name: q\nlabel: \"bounds {minInclusive: 18446744073709551616}\"\nnote: 'minInclusive: 18446744073709551616'\nfoo_minInclusive: 18446744073709551615\n",
+        )
+        .expect("write");
+        let docs = documents(&cdir);
+        assert_eq!(
+            docs.len(),
+            1,
+            "the contract must not drop out of extraction"
+        );
+        let d = &docs[0].2;
+        assert_eq!(
+            d.get("label").and_then(serde_yaml::Value::as_str),
+            Some("bounds {minInclusive: 18446744073709551616}")
+        );
+        assert_eq!(
+            d.get("note").and_then(serde_yaml::Value::as_str),
+            Some("minInclusive: 18446744073709551616")
+        );
+        assert_eq!(
+            d.get("foo_minInclusive")
+                .and_then(serde_yaml::Value::as_u64),
+            Some(u64::MAX)
+        );
+    }
+
     #[test]
     fn a_contract_becomes_a_typed_subject_with_what_it_says_and_nothing_more() {
         let doc: serde_yaml::Value = serde_yaml::from_str(

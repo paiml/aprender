@@ -15,6 +15,7 @@ include!("lib_parse_tensors.rs");
 include!("lib_parse.rs");
 include!("lib_parse_rosetta_02.rs");
 include!("lib_extract_paths.rs");
+include!("lib_validate_helpers.rs");
 include!("lib_execute_export_convert.rs");
 include!("lib_verbose_inheritance_parse.rs");
 include!("lib_parse_thinking_3723.rs");
@@ -22,5 +23,6 @@ include!("lib_parse_serve.rs");
 include!("lib_dispatch_coverage.rs");
 include!("lib_dogfood_2392.rs");
 include!("lib_falsify_2606_mcp_serve_argv.rs");
+include!("lib_run_refusal_7331.rs");
 include!("lib_parse_ptx_debug_4062.rs");
 }

@@ -14,7 +14,7 @@ use wasm_bindgen::JsCast;
 use web_sys::{window, HtmlCanvasElement};
 
 /// Embedded .apr model file - loaded at compile time
-const SENTIMENT_MODEL_BYTES: &[u8] = include_bytes!("../../../../demo/assets/sentiment_mini.apr");
+const SENTIMENT_MODEL_BYTES: &[u8] = include_bytes!("../../assets/sentiment_mini.apr");
 
 // ============================================================================
 // WASM-EXPORTED SHOWCASE DEMO

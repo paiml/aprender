@@ -29,13 +29,18 @@ use std::fs;
 use std::io::Read;
 #[cfg(feature = "dev-server")]
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(feature = "dev-server")]
 use std::sync::atomic::{AtomicU64, Ordering};
 use tiny_http::{Response, Server};
 #[cfg(feature = "dev-server")]
 use tungstenite::accept;
+
+// PLOT-GG-001 (#6918): parser lands first; the plot verb adopts it next.
+#[cfg(test)]
+mod ggspec;
+mod page;
 
 #[derive(Parser)]
 #[command(name = "aprender-present")]
@@ -151,12 +156,25 @@ enum Commands {
         #[arg(long)]
         skip_build: bool,
     },
+
+    /// Draw a plot from CSV data and a ggplot2-like spec (terminal or SVG)
+    Plot(plot::PlotArgs),
 }
+
+mod plot;
 
 fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Plot(args) => {
+            let env = plot::Env::from_process();
+            let (mut out, mut err) = (std::io::stdout().lock(), std::io::stderr().lock());
+            if let Err(e) = plot::run(&args, &env, &mut out, &mut err) {
+                eprintln!("error: {e}");
+                std::process::exit(e.exit_code());
+            }
+        }
         Commands::Serve { port, dir, watch } => {
             serve(port, dir, watch);
         }
@@ -208,6 +226,15 @@ fn main() {
         }
     }
 }
+
+/// The crate `wasm-pack` builds, relative to the workspace root. Until aprender#6888 this was
+/// `crates/presentar`, a path that stopped existing at the monorepo merge.
+const WASM_CRATE_DIR: &str = "crates/aprender-present-lib";
+
+/// Base name of the generated glue (`<name>.js`, `<name>_bg.wasm`). The generated loader
+/// (`page::boot_module`) imports it by this name, so it is pinned here rather than derived
+/// from the crate.
+const WASM_OUT_NAME: &str = "presentar";
 
 #[cfg(feature = "dev-server")]
 /// Atomic counter for triggering hot reload
@@ -503,7 +530,9 @@ fn rebuild_wasm() {
     let status = Command::new("wasm-pack")
         .args([
             "build",
-            "crates/presentar",
+            WASM_CRATE_DIR,
+            "--out-name",
+            WASM_OUT_NAME,
             "--target",
             "web",
             "--out-dir",
@@ -521,18 +550,30 @@ fn rebuild_wasm() {
 
 fn bundle(output: PathBuf, no_optimize: bool) {
     println!("Building Presentar WASM bundle...");
+    let cwd = std::env::current_dir().expect("current directory");
+    build_wasm_release(&output, &cwd);
+    refuse_missing_glue(&output);
+    if !no_optimize {
+        optimize_wasm(&output);
+    }
+    write_bundle_page(&output);
+    print_bundle_size(&output);
+}
 
-    // Build with wasm-pack
+/// Build the release WASM with wasm-pack into the bundle's glue directory; exit 1 on failure.
+fn build_wasm_release(output: &Path, cwd: &Path) {
     let status = Command::new("wasm-pack")
         .args([
             "build",
-            "crates/presentar",
+            WASM_CRATE_DIR,
+            "--out-name",
+            WASM_OUT_NAME,
             "--target",
             "web",
             "--release",
             "--out-dir",
         ])
-        .arg(format!("../../{}", output.join("pkg").display()))
+        .arg(page::glue_dir(output, cwd))
         .status()
         .expect("wasm-pack failed");
 
@@ -540,28 +581,82 @@ fn bundle(output: PathBuf, no_optimize: bool) {
         eprintln!("wasm-pack build failed");
         std::process::exit(1);
     }
+}
 
-    // Run wasm-opt for size reduction.
-    if !no_optimize {
-        let wasm_file = output.join("pkg/presentar_bg.wasm");
-        if wasm_file.exists() {
-            println!("Optimizing with wasm-opt...");
-            let _ = Command::new("wasm-opt")
-                .args(["-Oz", "-o"])
-                .arg(&wasm_file)
-                .arg(&wasm_file)
-                .status();
+/// A page without its glue cannot load: say so instead of shipping it.
+fn refuse_missing_glue(output: &Path) {
+    let missing = page::missing_glue(output, WASM_OUT_NAME);
+    if missing.is_empty() {
+        return;
+    }
+    eprintln!(
+        "bundle refused: the generated glue is not in {}",
+        output.display()
+    );
+    for file in &missing {
+        eprintln!("  - {file}");
+    }
+    std::process::exit(1);
+}
+
+/// Run wasm-opt for size reduction; a missing wasm-opt or WASM file is not an error.
+fn optimize_wasm(output: &Path) {
+    let wasm_file = output.join("pkg/presentar_bg.wasm");
+    if wasm_file.exists() {
+        println!("Optimizing with wasm-opt...");
+        let _ = Command::new("wasm-opt")
+            .args(["-Oz", "-o"])
+            .arg(&wasm_file)
+            .arg(&wasm_file)
+            .status();
+    }
+}
+
+/// The page: the project page if it runs no script of its own, else the generated one.
+/// The only script in a bundle is the generated loader (aprender#6893).
+/// A refused bundle must not leave an earlier run's unaudited page beside fresh glue.
+/// `-o www` (or any spelling or symlink of it) would delete the source page before reading it.
+fn write_bundle_page(output: &Path) {
+    let out_page = output.join("index.html");
+    let src_page = Path::new("www/index.html");
+    if same_page(&out_page, src_page) {
+        eprintln!(
+            "bundle refused: output page {} is the source page {}; choose another --output",
+            out_page.display(),
+            src_page.display()
+        );
+        std::process::exit(1);
+    }
+    remove_stale(&out_page);
+    remove_stale(&output.join("pkg").join(page::BOOT_FILE));
+    let project_page = read_project_page();
+    match page::finish_bundle(output, WASM_OUT_NAME, project_page.as_deref()) {
+        Ok(page::PageSource::Project) => println!("Copied www/index.html (no script of its own)"),
+        Ok(page::PageSource::Generated) => println!("Generated index.html"),
+        Err(reasons) => {
+            eprintln!("www/index.html refused: a bundled page runs only the generated loader");
+            for reason in &reasons {
+                eprintln!("  - {reason}");
+            }
+            std::process::exit(1);
         }
     }
+}
 
-    // Copy index.html if exists
-    if PathBuf::from("www/index.html").exists() {
-        fs::create_dir_all(&output).ok();
-        fs::copy("www/index.html", output.join("index.html")).ok();
-        println!("Copied index.html");
+/// `www/index.html` if present, `None` if absent; any other read error exits 1.
+fn read_project_page() -> Option<String> {
+    match fs::read_to_string("www/index.html") {
+        Ok(html) => Some(html),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            eprintln!("cannot read www/index.html: {e}");
+            std::process::exit(1);
+        }
     }
+}
 
-    // Print bundle size
+/// Print the bundle size when the WASM file exists.
+fn print_bundle_size(output: &Path) {
     let wasm_file = output.join("pkg/presentar_bg.wasm");
     if wasm_file.exists() {
         let size = fs::metadata(&wasm_file).map(|m| m.len()).unwrap_or(0);
@@ -569,6 +664,35 @@ fn bundle(output: PathBuf, no_optimize: bool) {
         println!("Bundle built successfully!");
         println!("  Output: {}", output.display());
         println!("  WASM size: {} KB", size / 1024);
+    }
+}
+
+/// True when both paths name the same file; an absent file is compared by its canonical parent.
+fn same_page(a: &Path, b: &Path) -> bool {
+    fn canon(p: &Path) -> Option<PathBuf> {
+        if let Ok(c) = fs::canonicalize(p) {
+            return Some(c);
+        }
+        let name = p.file_name()?;
+        let parent = p.parent().filter(|d| !d.as_os_str().is_empty());
+        let dir = fs::canonicalize(parent.unwrap_or_else(|| Path::new("."))).ok()?;
+        Some(dir.join(name))
+    }
+    match (canon(a), canon(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// Remove a stale file; NotFound is fine, any other error stops the verb naming the path.
+fn remove_stale(path: &Path) {
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            eprintln!("cannot remove {}: {e}", path.display());
+            std::process::exit(1);
+        }
     }
 }
 
@@ -602,28 +726,14 @@ layout:
     );
     fs::write(project_dir.join("app.yaml"), manifest).expect("write manifest");
 
-    // Create index.html
-    let html = r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Presentar App</title>
-</head>
-<body>
-    <canvas id="canvas" width="800" height="600"></canvas>
-    <script type="module">
-        import init, { App } from './pkg/presentar.js';
-        async function main() {
-            await init();
-            const app = new App('canvas');
-            // Your app code here
-        }
-        main();
-    </script>
-</body>
-</html>
-"#;
+    // Create index.html: one canvas and the generated loader, no script of its own.
+    let html = page::page_html(name, page::COUNTER_CANVAS_ID, 800, 600).unwrap_or_else(|e| {
+        eprintln!("{e}");
+        std::process::exit(1);
+    });
     fs::write(project_dir.join("www/index.html"), html).expect("write html");
+    // The loader the page names; `bundle` and the watcher fill the rest of pkg/.
+    page::write_boot_module(&project_dir.join("www/pkg"), WASM_OUT_NAME).expect("write loader");
 
     println!();
     println!("Project created! Next steps:");
@@ -1399,6 +1509,53 @@ fn get_cache_control(path: &PathBuf) -> &'static str {
 mod tests {
     use super::*;
 
+    /// aprender#6888: `bundle` and the `serve` watcher must name a crate that exists and that
+    /// can be built as a wasm module. Reverting `WASM_CRATE_DIR` to `crates/presentar` fails here.
+    #[test]
+    fn falsify_6888_wasm_crate_dir_is_a_real_cdylib_crate() {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(WASM_CRATE_DIR)
+            .join("Cargo.toml");
+        let text =
+            fs::read_to_string(&manifest).unwrap_or_else(|e| panic!("{}: {e}", manifest.display()));
+        assert!(
+            text.contains("\"cdylib\""),
+            "{} is not a cdylib crate",
+            manifest.display()
+        );
+    }
+
+    /// The generated loader imports the glue by the pinned name.
+    #[test]
+    fn falsify_6888_generated_loader_imports_the_pinned_glue_name() {
+        let boot = page::boot_module(WASM_OUT_NAME);
+        assert!(boot.contains(&format!("from './{WASM_OUT_NAME}.js'")));
+    }
+
+    /// aprender#6893: the page `new` writes passes the bundle audit, and its loader is there.
+    #[test]
+    fn falsify_6893_new_project_page_runs_only_the_generated_loader() {
+        let dir = std::env::temp_dir().join(format!("present-new-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        new_project(dir.to_str().expect("utf-8 temp path"));
+        let html = fs::read_to_string(dir.join("www/index.html")).expect("page");
+        assert_eq!(page::audit_page(&html), Ok(()));
+        assert!(html.contains(page::COUNTER_CANVAS_ID));
+        let boot = fs::read_to_string(dir.join("www/pkg").join(page::BOOT_FILE)).expect("loader");
+        assert_eq!(boot, page::boot_module(WASM_OUT_NAME));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// aprender#6893: the only script in this file is the dev-server hot-reload snippet, which
+    /// is never written into a bundle. A second script literal here fails.
+    #[test]
+    fn falsify_6893_main_rs_holds_no_page_script_but_hot_reload() {
+        let source = include_str!("main.rs");
+        let open = ["<", "script"].concat();
+        assert_eq!(source.matches(&open).count(), 1, "only HOT_RELOAD_SCRIPT");
+    }
+
     #[test]
     fn test_grade_to_value() {
         assert_eq!(grade_to_value("A+"), 97);
@@ -1739,5 +1896,34 @@ layout:
         assert!(files.iter().any(|(p, _)| p.ends_with("level3.txt")));
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    fn bundle_scratch(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("present-bundle-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("pkg")).expect("scratch dir");
+        dir
+    }
+
+    /// The glue check passes (returns, no exit) once both generated glue files are present.
+    #[test]
+    fn refuse_missing_glue_returns_when_the_glue_is_complete() {
+        let dir = bundle_scratch("glue");
+        fs::write(dir.join("pkg").join(format!("{WASM_OUT_NAME}.js")), "").expect("js");
+        fs::write(dir.join("pkg").join(format!("{WASM_OUT_NAME}_bg.wasm")), "").expect("wasm");
+        assert!(page::missing_glue(&dir, WASM_OUT_NAME).is_empty());
+        refuse_missing_glue(&dir);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Without a WASM file, optimizing and reporting the size are no-ops that leave the tree alone.
+    #[test]
+    fn optimize_and_size_report_skip_an_absent_wasm_file() {
+        let dir = bundle_scratch("nowasm");
+        optimize_wasm(&dir);
+        print_bundle_size(&dir);
+        assert!(!dir.join("pkg/presentar_bg.wasm").exists());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

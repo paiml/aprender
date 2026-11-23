@@ -14,7 +14,7 @@ categories = ["visualization", "graphics", "science", "wasm"]
 
 [dependencies]
 # Core SIMD/GPU acceleration
-trueno = { version = "0.72.3", path = "../aprender-compute", package = "aprender-compute", default-features = false }
+trueno = { version = "0.75.0", path = "../aprender-compute", package = "aprender-compute", default-features = false }
 
 # Shared Batuta stack utilities (display traits, formatting)
 batuta-common = { workspace = true }
@@ -52,10 +52,10 @@ kurbo = { version = "0.13", optional = true }
 resvg = { version = "0.45", optional = true, default-features = false }
 
 # Optional: ML integration
-aprender = { path = "../aprender-core", version = "0.72.3", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.75.0", package = "aprender-core", optional = true }
 
 # Optional: Graph integration
-trueno-graph = { version = "0.72.3", path = "../aprender-graph", package = "aprender-graph", default-features = false, optional = true }
+trueno-graph = { version = "0.75.0", path = "../aprender-graph", package = "aprender-graph", default-features = false, optional = true }
 
 # Optional: Database integration
 trueno-db = { workspace = true, optional = true }
@@ -66,6 +66,11 @@ trueno-db = { workspace = true, optional = true }
 
 # Optional: Serialization (for ML integration)
 serde = { version = "1.0", features = ["derive"], optional = true }
+
+# Optional: the plot verb (`plot-cli`), used by `apr plot` (#6991).
+clap = { workspace = true, optional = true }
+# `--spec file.yaml` of the plot verb.
+serde-saphyr = { workspace = true, optional = true }
 
 # NOTE: realizar (=aprender-serve) + repartir (=aprender-distribute) removed (APR-MONO
 # self-containment): both were unused in viz src, and serve→viz is the correct direction
@@ -79,14 +84,21 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 # only remaining consumers were monitor-gated tests/examples that imported the deleted
 # module, so the feature, its sub-features, those deps, and the gated code were all removed.
 
+# Optional: WASM support. Declared target-independent: a cfg(target_os = "linux") table
+# hides these from wasm32-unknown-unknown (#6911). Optional, so non-wasm builds never pull them.
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["console"] }
+
 # Dynamic library loading for AMD GPU (ROCm SMI)
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 
-# Optional: WASM support
-wasm-bindgen = { version = "0.2", optional = true }
-js-sys = { version = "0.3", optional = true }
-web-sys = { version = "0.3", optional = true, features = ["console"] }
+# build.rs derives the plot verb's proven set from the ggplot2 row contracts (#6991).
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde-saphyr = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 # Testing
@@ -96,6 +108,12 @@ criterion = { version = "0.6", features = ["html_reports"] }
 # Test utilities
 tempfile = "3.10"
 approx = "0.5"
+
+# ggplot2 conformance fixtures (src/grammar/ggplot2_oracle.rs) are JSON.
+serde_json = { workspace = true }
+# build.rs's generator, tested in src/plot_cli (#6909).
+serde = { version = "1.0", features = ["derive"] }
+serde-saphyr = { workspace = true }
 
 
 [features]
@@ -124,6 +142,10 @@ db = ["dep:trueno-db"]
 
 # Terminal output support
 terminal = []
+
+# The plot verb: CSV to terminal or SVG, limited to the proven rows (#6991).
+# cli-roles: each argument carries its role type, which `apr surface` reads (#3745).
+plot-cli = ["dep:clap", "dep:serde", "dep:serde-saphyr", "batuta-common/cli-roles"]
 
 # SVG output support
 svg = []

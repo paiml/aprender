@@ -103,7 +103,45 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             aprender_contracts_cli::dispatch(command.clone())
                 .map_err(|e| CliError::ValidationFailed(format!("pv: {e}"))),
         ),
+        #[cfg(feature = "visualization")]
+        Commands::Plot(args) => Some(plot_result(args, cli.json, cli.quiet)),
         _ => None,
+    }
+}
+
+/// `apr plot` (#6991): the proven-only verb, run from the `plot_cli` library function, so
+/// the grammar cannot drift from the contract. The plot goes to stdout; a refusal names what is not
+/// proven and exits non-zero.
+#[cfg(feature = "visualization")]
+fn plot_result(
+    args: &trueno_viz::plot_cli::cli::PlotFlags,
+    json: bool,
+    quiet: bool,
+) -> Result<(), CliError> {
+    // The plot is the output and has no JSON form; a flag that would change the output is
+    // refused, not accepted and ignored.
+    for (on, flag) in [(json, "--json"), (quiet, "--quiet")] {
+        if on {
+            return Err(CliError::ValidationFailed(format!(
+                "plot: {flag} is not supported; the plot goes to stdout"
+            )));
+        }
+    }
+    let env = trueno_viz::plot_cli::Env::from_process();
+    let (mut out, mut err) = (std::io::stdout().lock(), std::io::stderr().lock());
+    trueno_viz::plot_cli::cli::run(args, &env, &mut out, &mut err)
+        .map_err(plot_error_to_cli)
+}
+
+/// Keep `plot_cli`'s usage/failed split (PMAT-7082) on apr's existing exit codes: a command the verb
+/// does not take is `ValidationFailed` (5, as the `--json` refusal above); a bad or unreadable input
+/// is `InvalidInput` (4, "the input could not be parsed"). No new code, no contract change.
+#[cfg(feature = "visualization")]
+fn plot_error_to_cli(e: trueno_viz::plot_cli::PlotError) -> CliError {
+    use trueno_viz::plot_cli::PlotError;
+    match e {
+        PlotError::Usage(m) => CliError::ValidationFailed(format!("plot: {m}")),
+        PlotError::Failed(m) => CliError::InvalidInput(format!("plot: {m}")),
     }
 }
 
@@ -385,6 +423,11 @@ fn dispatch_run_command(cli: &Cli) -> Option<Result<(), CliError>> {
         json_schema: json_schema.as_deref().map(str::to_owned),
         grammar: grammar.as_deref().map(str::to_owned),
     };
+    // #7331: the known-unrunnable refusal comes first on EVERY run entry (exit 12): above
+    // the accelerator plan (exit 5 / 14) and the `--batch-jsonl` early return.
+    if let Err(e) = commands::run::refuse_known_checkpoint(source) {
+        return Some(Err(e));
+    }
     request_f2_revalidate(*revalidate);
     // Above the `batch_jsonl` early return below (see `run_accel_plan`).
     let (effective_no_gpu, accel_forced) =
@@ -625,9 +668,15 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             weights,
             json,
             quality,
+            no_weights,
         } => {
             let (v, f, w, j, q) = (*vocab, *filters, *weights, *json || cli.json, *quality);
-            crate::pipe::with_stdin_support(file, |p| inspect::run(p, v, f, w, j, q))
+            if *no_weights {
+                // #7330: config + index only; never opens a shard.
+                crate::commands::inspect_families::run_no_weights(file.as_ref(), j)
+            } else {
+                crate::pipe::with_stdin_support(file, |p| inspect::run(p, v, f, w, j, q))
+            }
         }
 
         // GH-685: forward cli.verbose to debug
@@ -1088,9 +1137,28 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             experimental_mps,
             gpu_share,
             profile,
+            recipe,
         }) => {
             if *profile {
                 eprintln!("StepProfiler enabled for finetune (PMAT-486)");
+            }
+            if let Some(recipe) = recipe.as_deref() {
+                return Some(finetune::run_from_recipe(
+                    recipe,
+                    &finetune::RecipeRunFlags {
+                        vram_gb: *vram,
+                        plan_only: *plan,
+                        output_path: output.as_deref(),
+                        model_size: model_size.as_deref(),
+                        checkpoint_format,
+                        gpus: gpus.as_deref(),
+                        gpu_backend,
+                        wait_gpu: *wait_gpu,
+                        json_output: cli.json,
+                        experimental_mps: *experimental_mps,
+                        gpu_share: *gpu_share,
+                    },
+                ));
             }
             finetune::run(
                 file.as_deref(),
@@ -1327,5 +1395,21 @@ mod batch_jsonl_logprobs_4026 {
         )
         .expect_err("missing files");
         assert!(!err.to_string().contains("--logprobs"), "{err}");
+    }
+
+    #[cfg(feature = "visualization")]
+    #[test]
+    fn plot_usage_error_exits_5() {
+        let e = crate::plot_error_to_cli(trueno_viz::plot_cli::PlotError::Usage("unknown key".into()));
+        assert_eq!(e.exit_code_value(), 5, "{e}");
+        assert!(e.to_string().contains("plot: unknown key"), "{e}");
+    }
+
+    #[cfg(feature = "visualization")]
+    #[test]
+    fn plot_failure_exits_4() {
+        let e = crate::plot_error_to_cli(trueno_viz::plot_cli::PlotError::Failed("cannot read x.csv".into()));
+        assert_eq!(e.exit_code_value(), 4, "{e}");
+        assert!(e.to_string().contains("plot: cannot read x.csv"), "{e}");
     }
 }

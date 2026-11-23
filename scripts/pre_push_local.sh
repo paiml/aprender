@@ -85,7 +85,7 @@ step_preflight() {
   local f miss=0
   for f in scripts/ci_guards.sh scripts/guard_tree.sh scripts/tests/guard_tree_test.sh \
     scripts/check_vendored_schemas.sh scripts/contracts_gate.sh scripts/pv_bin.sh \
-    scripts/ci/quick_tier_groups.sh scripts/lib/ci_guard_steps.sh; do
+    scripts/ci/quick_tier_groups.sh scripts/ci/quick_tier_targets.sh scripts/lib/ci_guard_steps.sh; do
     [ -f "$f" ] || { echo "preflight: missing $f (is this checkout current?)"; miss=1; }
   done
   # The runner image carries these on PATH; a bare shell (fat_driver, ssh, cron) often does not, and the
@@ -202,11 +202,15 @@ step_quick() {
   mapfile -t crates < "$sel"
   bash scripts/ci/quick_tier_groups.sh --metadata "$meta" "${crates[@]}" > "$calls" || return 1
   [ -s "$calls" ] || { echo "quick tier: crates selected but the split printed no nextest call"; return 1; }
-  local rc=0 line pkgs c
+  local rc=0 line pkgs c flags
   while IFS= read -r line; do
     pkgs=(); for c in $line; do pkgs+=(-p "$c"); done
-    echo "nextest call: ${pkgs[*]}"
-    cargo nextest run --profile ci --no-fail-fast "${pkgs[@]}" --lib --tests || rc=1
+    # #6898: --lib only when a package of this call has a library target, as CI derives it
+    # shellcheck disable=SC2086  # $line is crate names: word splitting is the point, as in the loop above
+    c="$(bash scripts/ci/quick_tier_targets.sh --metadata "$meta" $line)" || return 1
+    read -ra flags <<< "$c"
+    echo "nextest call: ${flags[*]} ${pkgs[*]}"
+    cargo nextest run --profile ci --no-fail-fast "${pkgs[@]}" "${flags[@]}" || rc=1
   done < "$calls"
   return "$rc"
 }

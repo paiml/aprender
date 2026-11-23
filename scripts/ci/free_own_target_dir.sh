@@ -25,6 +25,7 @@
 #       1 bad arguments: an unsafe name or a non-numeric run id
 
 set -uo pipefail
+SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT  # PMAT-6647: scratch dies with the script
 
 ROOT=${APR_CI_TARGET_ROOT:-/mnt/nvme-raid0/targets/aprender-ci}
 IMAGE=${IMAGE:-localhost:5000/sovereign-ci:stable}
@@ -79,6 +80,7 @@ free_own() {
 self_test() {
     local t fails=0
     t=$(mktemp -d) || return 2
+    SCRATCH+=("$t")
     ROOT=$t/aprender-ci
     chk() { # <name> <condition-rc>
         if [ "$2" -eq 0 ]; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi

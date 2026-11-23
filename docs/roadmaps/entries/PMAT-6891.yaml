@@ -1,0 +1,20 @@
+- id: PMAT-6891
+  github_issue: 6891
+  item_type: task
+  title: 'present: Waveform widget, sample-to-path mapping (pure, bounded), audio source later'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-11T18:23:45Z
+  updated: 2026-11-11T18:23:45Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+  epic: 6728

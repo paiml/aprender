@@ -103,7 +103,7 @@ serde = { version = "1.0", features = ["derive"] }
 # is why those tests previously asserted the INEXACTNESS instead. The feature adds no
 # dependency (`float_roundtrip = []` in serde_json's manifest).
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
-bincode = "1.3"
+aprender-legacy-codec = { workspace = true }
 rmp-serde = "1.3"  # MessagePack for .apr metadata (spec §2)
 tempfile = "3.14"  # Streaming APR writer temp file (realizar#136)
 
@@ -135,7 +135,7 @@ trueno-quant = { workspace = true }
 # APR-2231: sovereign `.apr` container leaf. aprender-core From-wraps its
 # AprFormatError into AprenderError and re-exports it (no API break). Leaf has
 # no dependency back on core, so this introduces no publish cycle.
-apr-format = { path = "../apr-format", version = "0.72" }
+apr-format = { path = "../apr-format", version = "0.75.0" }
 
 # NOTE: trueno-rag (=aprender-rag) removed (APR-MONO self-containment): aprender-rag
 # depends on aprender-core + aprender-serve, so core→rag closed a core→rag→serve→core
@@ -235,7 +235,7 @@ provable-contracts = { workspace = true }  # versioned (#4175): tests call its i
 # Same publish-time cycle break as renacer above.
 entrenar = { path = "../aprender-train", package = "aprender-train" }
 serde-saphyr = { workspace = true }  # YAML contract binding in tests (FALSIFY-SHIP-009 GATE-APR-PROV-004)
-serde_yaml = "0.9"  # models/modernbert test only: a laya judge path, frozen until LT-1's receipt (#5208)
+serde_yaml = { package = "serde_norway", version = "0.9" }  # models/modernbert test only: a laya judge path, frozen until LT-1's receipt (#5208)
 # The in-tree contract crate is reached through `provable-contracts` above: upstream
 # repointed that key from the crates.io package to ../aprender-contracts, which is
 # exactly what the old `setfit-contract-schema` alias (plan 01-08, D-14) existed to

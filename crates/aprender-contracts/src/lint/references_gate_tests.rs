@@ -168,3 +168,25 @@ fn a_trailing_period_is_trimmed_so_the_path_is_checked_not_skipped() {
         vec!["a-v1: crates/x/src/gone.rs".to_string()]
     );
 }
+
+#[test]
+fn a_duplicate_dead_entry_fails_the_count_even_with_a_set_baseline() {
+    // aprender#6587: with `dead_reference_set` present the count key was never checked, so a second copy of an
+    // already-accepted dead path passed. The count ratchet must hold alongside the member check.
+    let t = repo(&["crates/x/src/gone.rs", "crates/x/src/gone.rs"]);
+    write(
+        t.path(),
+        "contracts/lint-baseline.json",
+        r#"{"dead_references": 1, "dead_reference_set": ["a-v1: crates/x/src/gone.rs"]}"#,
+    );
+    let (r, rules) = run(t.path());
+    assert!(!r.passed);
+    assert_eq!(rules, vec!["PV-RAT-004".to_string()]);
+    // One copy, equal to the baseline count, passes.
+    write(
+        t.path(),
+        "contracts/a-v1.yaml",
+        &contract(&["crates/x/src/gone.rs"]),
+    );
+    assert!(run(t.path()).0.passed);
+}

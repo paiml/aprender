@@ -1,0 +1,119 @@
+name: Release
+
+# One command: gh workflow run release.yml -f version=0.73.0 [-f dry_run=true]
+# Publish only (aprender#6886): gh workflow run release.yml -f version=0.72.5 -f publish_only=true -f dry_run=false
+#   for a version the promote timer already tagged: no bump, no tag, no push. scripts/release/publish_tagged.sh takes the
+#   night's CRUX receipts for the tag commit from nightly-evidence and runs that commit's cascade-publish.sh, which asks
+#   clean-room on the exact tag commit and the publish preflight. Case table: falsify_publish_tagged.sh.
+# bump on release/X.Y.Z -> infra clean-room on THAT sha -> tag -> cascade publish -> binary-release.
+# KZ-001 item b, aprender#6729. Logic and case table: scripts/release/one_command.sh, falsify_one_command.sh.
+# dry_run=true stops after the bump (WOULD lines): no push, no tag, no publish. Needs no crates.io token.
+# Real run publishes via crates.io Trusted Publishing (OIDC, no stored CARGO_REGISTRY_TOKEN secret) and needs secret
+# INFRA_ACTIONS_READ (clean-room dispatch on paiml/infra; name kept: release_lanes.sh and its falsifier rows reference it).
+# token_auth=true (operator ruling 2026-11-12 07:50Z, until crates.io has a Trusted Publisher for every crate): skip the
+#   OIDC exchange and publish with the stored repo secret CARGO_REGISTRY_TOKEN, the way 0.72.3 went out. Default false.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'X.Y.Z to release (must be above the last tag)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Stop after the bump; no push, tag or publish'
+        default: true
+        type: boolean
+      sha:
+        description: 'The green nightly sha to release (40 hex, on main). The release never builds from main HEAD (T5). Unused with publish_only'
+        required: false   # one_command.sh still refuses a missing or malformed sha (exit 2); publish_only reads the tag
+        default: ''
+        type: string
+      token_auth:
+        description: 'Publish with the stored CARGO_REGISTRY_TOKEN secret instead of Trusted Publishing (OIDC)'
+        default: false
+        type: boolean
+      publish_only:
+        description: 'Publish a version that is ALREADY TAGGED (by the promote timer). No bump, no tag, no push'
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write   # Trusted Publishing: OIDC exchange for a short-lived crates.io token
+  actions: write    # gh workflow run binary-release.yml
+  issues: read      # check_reconcile.sh R1/R5 list issues
+  pull-requests: write   # T5: next_dev_bump.sh opens the X.(Y+1).0-dev bump PR on main after the tag
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    environment: infra-read   # holds the INFRA_ACTIONS_READ the nightly release lanes read paiml/infra with; only main may use it (#6907)
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: git identity
+        run: |
+          git config user.name "aprender-release"
+          git config user.email "noreply@paiml.com"
+      - name: check_reconcile.sh (T-5 reconcile gate, before any tag or publish)
+        # RECON1 (aprender#7194): R1..R4 must all be zero or nothing is tagged or published. Runs on the bump path
+        # (tag not made yet: judged at the release sha via --rev) and on publish_only (tag exists). Unmasked on purpose.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+          SHA: ${{ inputs.sha }}
+          PUBLISH_ONLY: ${{ inputs.publish_only && '1' || '0' }}
+        run: |
+          set -uo pipefail
+          # previous tag = newest final vX.Y.Z strictly below this version and an ancestor of the cut
+          cutref="$SHA"; [ "$PUBLISH_ONLY" = 1 ] && cutref="v$VERSION"
+          candidates=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | grep -vxF "$VERSION" \
+            | { sort -V; printf '%s\n' "$VERSION"; } | sort -V | awk -v v="$VERSION" '$0==v{exit} {print}' | sort -rV)
+          prev=''
+          while IFS= read -r t; do
+            [ -n "$t" ] || continue
+            git merge-base --is-ancestor "v$t" "$cutref" && { prev="$t"; break; }
+          done <<< "$candidates"
+          [ -n "$prev" ] || { echo "::error::no final ancestor tag below v$VERSION: the reconcile window cannot be named"; exit 2; }
+          rev=()
+          [ "$PUBLISH_ONLY" = 1 ] || rev=(--rev "$SHA")
+          rc=0
+          setsid --wait bash scripts/check_reconcile.sh "v$VERSION" --prev-tag "v$prev" ${rev[@]+"${rev[@]}"} || rc=$?
+          case $rc in
+            0) echo "RECONCILE v$VERSION (window v$prev..): R1..R4 all zero (rc=0)" ;;
+            1) echo "::error::reconcile refused v$VERSION (rc=1): see the R1..R4 lines above"; exit 1 ;;
+            *) echo "::error::reconcile could not be judged (rc=$rc): Unknown is not a pass"; exit 1 ;;
+          esac
+      - id: auth
+        if: ${{ !inputs.dry_run && !inputs.token_auth }}
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      - name: release
+        env:
+          GH_TOKEN: ${{ secrets.INFRA_ACTIONS_READ }}
+          CARGO_REGISTRY_TOKEN: ${{ (inputs.token_auth && !inputs.dry_run) && secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+          VERSION: ${{ inputs.version }}
+          DRY: ${{ inputs.dry_run && '1' || '0' }}
+          SHA: ${{ inputs.sha }}
+          NDB_GH_TOKEN: ${{ github.token }}   # GH_TOKEN above reads paiml/infra only
+          PUBLISH_ONLY: ${{ inputs.publish_only && '1' || '0' }}
+        run: |
+          if [ "$PUBLISH_ONLY" = 1 ]; then
+            bash scripts/release/publish_tagged.sh "$VERSION" "$DRY"
+          else
+            bash scripts/release/one_command.sh "$VERSION" "$DRY" "$SHA"
+          fi
+      - name: binary assets
+        # publish_only: the promote timer's own printed step dispatches Binary Release for its tag; not repeated here
+        if: ${{ !inputs.dry_run && !inputs.publish_only }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: gh workflow run binary-release.yml --ref "v$VERSION" -f tag="v$VERSION"

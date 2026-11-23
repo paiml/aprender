@@ -1,0 +1,18 @@
+- id: PMAT-6723
+  github_issue: 6723
+  item_type: task
+  title: 35 scripts accept RS-5 per-runner TMPDIR scratch dirs
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T21:37:44Z
+  updated: 2026-11-03T21:37:44Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519

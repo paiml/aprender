@@ -82,10 +82,12 @@ gate_probe() { # <file> -> prints ok/FAIL lines, returns 1 on a defect, 2 if the
     # leak: the step env carries EVT=pull_request (x86-main, run 39888226186); a merge_group row must still be RED (#6061)
     EVT=pull_request GRD="" g "guards CANCELLED stays RED when the step env leaks EVT=pull_request" 1 "$G" "$D"
     ROWEVT=pull_request GRDR="" g "pull_request: guards not run is not RED" 0 "$G" "$D"
-    # #5955: a PR head runs pr-light, not the heavy jobs; their missing results are not owed there, a failed pr-light is RED
-    # determinism does not run on a PR head: its missing compare is a skip there, never a RED (and x86-main still is)
-    ROWEVT=pull_request g "pull_request: determinism skipped (no results output) is not RED" 0 "$G" ""
-    ROWEVT=pull_request g "pull_request: heavy jobs skipped (no results output) pass when pr-light passed" 0 "" ""
+    # #7272: a PR head runs pr-light AND every heavy job a push runs; a heavy job's missing result is RED there too,
+    # determinism included (no event skips DET:determinism-compare), and a failed pr-light is RED
+    ROWEVT=pull_request g "pull_request: all fat needs green and pr-light green (control)" 0 "$G" "$D"
+    ROWEVT=pull_request g "pull_request: determinism skipped (no results output) is RED" 1 "$G" ""
+    ROWEVT=pull_request g "pull_request: x86-main skipped (no results output) is RED even when pr-light passed" 1 "" "$D"
+    ROWEVT=pull_request g "pull_request: heavy jobs skipped (no results output) are RED even when pr-light passed" 1 "" ""
     ROWEVT=pull_request PRL=failure g "pull_request: pr-light failed is RED" 1 "$G" "$D"
     rm -f "${s:?}"
     return "$rc"

@@ -134,3 +134,15 @@ status_history:
     date: "2026-05-20"
     pr: "paiml/aprender (streaming SSE follow-up to M32d)"
     summary: "Initial contract registered. Codifies the per-token SSE streaming requirement post-M32d. Engineer playbook: 3 phases ~6-8 hours total. Operator-actionable once M32d merges."
+
+falsification_tests:
+  - id: FALSIFY-QWEN3-MOE-STREAM-001
+    description: "The streaming sink delivers each token before the next is generated (sink level; the HTTP/SSE path over a real GGUF is model-gated and ignored, NOT CI evidence)"
+    test: "cargo test -p aprender-serve --lib sink_delivers_each_token_before_the_next_is_generated"
+    prediction: "Token n is receivable before token n+1 is produced"
+    if_fails: "Tokens are buffered until generation ends"
+  - id: FALSIFY-QWEN3-MOE-STREAM-002
+    description: "Generation stops when the client disconnects"
+    test: "cargo test -p aprender-serve --lib sink_stops_generation_when_the_client_is_gone"
+    prediction: "streams_abandoned() == 1 and generation halts"
+    if_fails: "Server keeps generating for a gone client"

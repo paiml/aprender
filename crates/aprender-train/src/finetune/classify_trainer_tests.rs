@@ -5305,6 +5305,19 @@ fn test_save_checkpoint_safetensors_carries_head_and_lora_tensors() {
     assert_eq!(a.dtype(), safetensors::tensor::Dtype::F32);
 }
 
+/// #7293: same trainer state must save byte-identical model.safetensors.
+#[test]
+fn test_save_checkpoint_safetensors_is_byte_deterministic() {
+    let mut t = ckpt_trainer_s();
+    let mut first: Option<Vec<u8>> = None;
+    for _ in 0..8 {
+        let dir = tempfile::tempdir().expect("tempdir");
+        t.save_checkpoint(dir.path(), 2, &ckpt_metrics_s()).expect("save");
+        let b = std::fs::read(dir.path().join("model.safetensors")).expect("read");
+        assert_eq!(first.get_or_insert_with(|| b.clone()), &b);
+    }
+}
+
 #[test]
 fn test_save_checkpoint_writes_hf_config_and_peft_adapter_config() {
     let dir = tempfile::tempdir().expect("tempdir");

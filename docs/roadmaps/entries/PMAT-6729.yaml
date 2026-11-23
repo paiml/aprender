@@ -1,0 +1,19 @@
+- id: PMAT-6729
+  github_issue: 6729
+  item_type: task
+  title: 'KZ-001 b: one-command release workflow'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-11-04T14:16:18Z
+  updated: 2026-11-04T14:16:25.581378253+00:00
+  spec: null
+  acceptance_criteria:
+  - 'release.yml workflow_dispatch + scripts/release/one_command.sh. Falsifier: 0.73.0 from one command <=90min, 0 cop steps.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5348

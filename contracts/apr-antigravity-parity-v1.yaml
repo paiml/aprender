@@ -198,3 +198,25 @@ non_goals:
   - 'NOT a claim that Google Antigravity ships apr support today — see APR-ANTIGRAVITY-INTEGRATION-001 (BYOK/endpoint tracking).'
   - 'NOT a "beat Antigravity" benchmark — Antigravity is a harness apr plugs INTO, not a fourth-pillar incumbent to out-score. The beat framing stays Claude-Code-only (beat-claude-code-parity-v1).'
   - 'NOT project-scale agentic parity — that gap (Arena 0.20) is model/agentic-emission, tracked separately; this contract holds the wire+prompt-portability layer constant so that gap is isolable.'
+
+# #7235: the data-layer part of the conditions above, bound to the canonical
+# harness-IR tests (crates/aprender-serve/src/harness_ir/tests.rs). The
+# agent-loop trace equivalence (-002, whole) and the single-loop provenance
+# (-004) have no harness yet and stay PLANNED, unbound.
+falsification_tests:
+  - id: FALSIFY-AGY-PARITY-001
+    rule: "[condition FALSIFY-AGY-PARITY-001] each wire format round-trips through the canonical IR without losing or inventing a field (anthropic exact, gemini exact on its native shape)"
+    prediction: "the falsify_ir_*_roundtrip tests pass; they fail when a codec drops or invents a field"
+    test: "cargo test -p aprender-serve --lib harness_ir::tests::falsify_ir_anthropic_roundtrip"
+  - id: FALSIFY-AGY-PARITY-002
+    rule: "[condition FALSIFY-AGY-PARITY-001, gemini half] a gemini functionCall/functionResponse turn round-trips"
+    prediction: "falsify_ir_gemini_roundtrip_002 passes; it fails when the gemini codec loses a part"
+    test: "cargo test -p aprender-serve --lib harness_ir::tests::falsify_ir_gemini_roundtrip_002"
+  - id: FALSIFY-AGY-PARITY-003
+    rule: "[condition FALSIFY-AGY-PARITY-002, data layer only] the same prompt decoded from either wire format yields the same canonical content (role, text, tool name, args)"
+    prediction: "falsify_ir_cross_harness_003 passes; it fails when the two formats decode to different semantics"
+    test: "cargo test -p aprender-serve --lib harness_ir::tests::falsify_ir_cross_harness_003"
+  - id: FALSIFY-AGY-PARITY-004
+    rule: "[condition FALSIFY-AGY-PARITY-003] a tool's JSON-Schema survives both codecs unchanged (input_schema == functionDeclarations parameters)"
+    prediction: "falsify_ir_tool_schema_004 passes; it fails when either codec alters the schema"
+    test: "cargo test -p aprender-serve --lib harness_ir::tests::falsify_ir_tool_schema_004"

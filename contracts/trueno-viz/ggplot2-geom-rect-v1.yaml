@@ -1,0 +1,96 @@
+metadata:
+  id: ggplot2-geom-rect-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-16'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row (PLOT-GG-001, paiml/aprender#6909) - geom_rect layer data. The four bounds xmin, xmax, ymin and ymax are the data, kept as given (reversed bounds stay reversed); there are no x or y columns. Defaults: fill #595959FF, linewidth 0.5, linetype 1, colour NA. The scales train on all four bounds. Scope: continuous numeric x and y, one panel, identity stat, default coordinate system; a facet, group, data-mapped colour, fill, alpha, size, shape or label, a non-identity stat, a non-default coordinate system, text, infinite or non-finite values return a typed Err (Rendering, UnknownColumn, ScaleDomain, UnsupportedCoord or UnsupportedStat), never a panic. The Rust DataFrame has no integer type, so fixtures force doubles. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 under R; R is never run at test time. Every case goes through the public builder and layout(), compared at 1e-9 rel + 1e-12 abs.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_rect'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_rect/generate.R'
+equations:
+  rect_bounds:
+    formula: "xmin,xmax,ymin,ymax = data columns, unchanged"
+    domain: numeric columns, continuous scales, no facet
+    codomain: BuiltLayer.rects and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; colours and warnings exact
+    preconditions:
+    - trained x and y ranges are non-degenerate, else ScaleDomain
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+    - every layer has the identity stat, else UnsupportedStat
+proof_obligations:
+- id: GGRECT-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact colours, warnings)'
+  applies_to: rect_bounds
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_rect_oracle::bounds_are_the_data
+    severity: ERROR
+  group_or_style_cases:
+    description: fixed fill, colour and alpha fixtures are reproduced
+    check: grammar::ggplot2_rect_oracle::fixed_fill_colour_and_alpha
+    severity: ERROR
+  edge_cases:
+    description: out-of-scope inputs are refused with a typed Err
+    check: grammar::ggplot2_rect_oracle::mapped_aesthetics_facets_stats_and_coords_are_refused
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGRECT-001
+  rule: "The right edge is the xmax column"
+  prediction: "mutation (xmax is read from the xmin column) turns bounds_are_the_data RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_rect_oracle::bounds_are_the_data
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRECT-002
+  rule: "The default rect fill is grey35"
+  prediction: "mutation (rect fill red channel 89 becomes 51) turns bounds_are_the_data RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_rect_oracle::bounds_are_the_data
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRECT-003
+  rule: "The default rect outline is 0.5 mm wide"
+  prediction: "mutation (rect linewidth 0.5 becomes 0.2) turns bounds_are_the_data RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_rect_oracle::bounds_are_the_data
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRECT-004
+  rule: "A rect trains its y lower bound"
+  prediction: "mutation (train drops ymin (`extend(extend(extend(y, &built.y), &r.ymin), &r.ymax)` loses `&r.ymin`)) turns bounds_are_the_data RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_rect_oracle::bounds_are_the_data
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRECT-005
+  rule: "A rect trains its x upper bound, reversed or not"
+  prediction: "mutation (train drops xmax (`extend(extend(extend(x, &built.x), &r.xmin), &r.xmax)` loses `&r.xmax`)) turns reversed_bounds_are_kept_as_given RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_rect_oracle::reversed_bounds_are_kept_as_given
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRECT-006
+  rule: "A degenerate trained range is refused"
+  prediction: "mutation (path::require_trained stops covering rect-family layers) turns a_single_zero_area_rect_has_a_degenerate_scale RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_rect_oracle::a_single_zero_area_rect_has_a_degenerate_scale
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRECT-007
+  rule: "A rect takes no x or y"
+  prediction: "mutation (the x/y refusal is skipped (`if aes.x.is_some() || aes.y.is_some() {` becomes `if false {`)) turns x_and_y_aesthetics_are_refused RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_rect_oracle::x_and_y_aesthetics_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRECT-008
+  rule: "A missing bound mapping is refused"
+  prediction: "mutation (the missing-mapping error becomes an empty column) turns a_missing_bound_mapping_or_column_is_refused RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_rect_oracle::a_missing_bound_mapping_or_column_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRECT-009
+  rule: "A rect layer is refused by to_svg and to_framebuffer, not returned undrawn"
+  prediction: "mutation (draw_frame no longer refuses rect-family layers (the `rects::is_rect_family` branch removed)) turns a_rect_is_refused_by_both_renderers_not_returned_empty RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_rect_oracle::a_rect_is_refused_by_both_renderers_not_returned_empty
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GGRECT-001
+  name: ggplot2 conformance (geom_rect)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the geom_rect fixtures
+  checks:
+  - primary_cases
+  - group_or_style_cases
+  - edge_cases

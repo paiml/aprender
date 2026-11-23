@@ -1,0 +1,71 @@
+{
+  "row": "geom_rect",
+  "case": "with_point",
+  "spec": "ggplot(d) + geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax)) + geom_point(data = dpt, aes(x, y))",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "warnings": [],
+  "layers": [
+    {
+      "geom": "GeomRect",
+      "xmin": [1, 2, -1],
+      "xmax": [3, 5, 0.5],
+      "ymin": [2, 0, 3],
+      "ymax": [4, 1.5, 6],
+      "linewidth": [0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1],
+      "alpha": [null, null, null],
+      "panel": [1, 1, 1],
+      "group": [-1, -1, -1],
+      "fill_rgba": [
+        [89, 89, 89, 255],
+        [89, 89, 89, 255],
+        [89, 89, 89, 255]
+      ],
+      "colour_rgba": [
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "geom": "GeomPoint",
+      "x": [7],
+      "y": [-2],
+      "shape": [19],
+      "size": [1.5],
+      "alpha": [null],
+      "stroke": [0.5],
+      "panel": [1],
+      "group": [-1],
+      "fill_rgba": [
+        null
+      ],
+      "colour_rgba": [
+        [0, 0, 0, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [-1, 7],
+      "continuous_range": [-1.3999999999999999, 7.4000000000000004],
+      "breaks": [0, 2.5, 5],
+      "labels": ["0.0", "2.5", "5.0"],
+      "n_breaks_censored": 2
+    },
+    "y": {
+      "limits": [-2, 6],
+      "continuous_range": [-2.3999999999999999, 6.4000000000000004],
+      "breaks": [-2, 0, 2, 4, 6],
+      "labels": ["-2", "0", "2", "4", "6"],
+      "n_breaks_censored": 0
+    }
+  }
+}

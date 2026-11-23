@@ -181,3 +181,19 @@ toyota_way_principles:
     `pmcp`, the inventory entries become the input to whatever
     register-tool API pmcp exposes — the macro stays, only the
     consumer changes.
+
+# #7235: the inventory gates above as `--lib` tests (the tests/falsify_inventory_*.rs
+# targets are in no CI job).
+falsification_tests:
+  - id: FALSIFY-INVENTORY-001
+    rule: "[condition FALSIFY-INVENTORY-001] iterating the inventory yields the same tool set as the old hardcoded list"
+    prediction: "live_inventory_yields_phase_one_tool_set passes; it fails when a tool is dropped or added"
+    test: "cargo test -p aprender-mcp --lib live_inventory_yields_phase_one_tool_set"
+  - id: FALSIFY-INVENTORY-002
+    rule: "[condition FALSIFY-INVENTORY-002] two tools registered under one name are refused, not silently shadowed"
+    prediction: "from_entries_refuses_duplicate_tool_name passes; it fails when a duplicate name is accepted"
+    test: "cargo test -p aprender-mcp --lib from_entries_refuses_duplicate_tool_name"
+  - id: FALSIFY-INVENTORY-003
+    rule: "[condition FALSIFY-INVENTORY-003] tools/call through the default worker reaches the real dispatcher"
+    prediction: "default_worker_dispatch_is_the_real_tool_dispatcher passes; it fails when dispatch is stubbed or mis-routed"
+    test: "cargo test -p aprender-mcp --lib default_worker_dispatch_is_the_real_tool_dispatcher"

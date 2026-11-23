@@ -454,3 +454,13 @@ definitions:
       type: { const: thinking }
       thinking: { type: string }
       signature: { type: string, description: 'Optional signature produced by realizar for reasoning verification' }
+
+# #7235: the proxy itself ships in M6 (all six gates PLANNED). What exists today
+# is the Anthropic wire codec of the canonical harness IR; its tool_use and
+# tool_result blocks (content_block_tool_use/_tool_result above) are tested here.
+# The proxy's HTTP behaviour (-001, -002, -004..-006) stays unbound.
+falsification_tests:
+  - id: FALSIFY-CLAUDE-PROXY-001
+    rule: "[condition FALSIFY-CLAUDE-PROXY-003, codec layer only] Anthropic tool_use and tool_result content blocks round-trip losslessly through the canonical IR"
+    prediction: "falsify_ir_anthropic_roundtrip_001 and _001b pass; they fail when a tool_use id, name or input, or a tool_result pairing, is lost"
+    test: "cargo test -p aprender-serve --lib harness_ir::tests::falsify_ir_anthropic_roundtrip"

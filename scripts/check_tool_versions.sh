@@ -213,7 +213,7 @@ if [ "${1:-}" = "--self-test" ]; then
     n=0
     TD=$(mktemp -d "${TMPDIR:-/tmp}/tool-versions-test.XXXXXX") || exit 2
     case "$TD" in
-        /tmp/*|/var/folders/*) : ;;
+        /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/?*) : ;;
         *) printf 'FAIL: mktemp -d gave %s, refusing to use it\n' "${TD:-<empty>}"; exit 1 ;;
     esac
     trap 'rm -rf "${TD:?}"' EXIT

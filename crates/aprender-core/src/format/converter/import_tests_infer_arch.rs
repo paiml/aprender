@@ -529,3 +529,33 @@
             assert_eq!(Architecture::EmbeddingGemma2.map_name(name), name);
         }
     }
+
+    /// #7169: `apr import` of a `qwen4_exp` checkpoint refuses by name from
+    /// config.json, before any tensor read, and never writes an .apr.
+    #[test]
+    fn test_apr_import_refuses_qwen4_exp_by_name_7169() {
+        for cfg in [
+            r#"{"model_type":"qwen4_exp","architectures":["Qwen4ExpForConditionalGeneration"],"text_config":{"model_type":"qwen4_exp_text"}}"#,
+            r#"{"architectures":["Qwen4ExpForConditionalGeneration"]}"#,
+        ] {
+            let dir = tempfile::tempdir().expect("tmp");
+            // Header-only safetensors; the refusal must fire before tensors are read.
+            let mut bytes = 2u64.to_le_bytes().to_vec();
+            bytes.extend_from_slice(b"{}");
+            let model = dir.path().join("model.safetensors");
+            std::fs::write(&model, bytes).expect("write model");
+            std::fs::write(dir.path().join("config.json"), cfg).expect("write cfg");
+            let out = dir.path().join("out.apr");
+            let err = apr_import(
+                model.to_str().expect("utf8"),
+                &out,
+                ImportOptions::default(),
+            )
+            .expect_err("must refuse");
+            let msg = err.to_string();
+            for n in ["qwen4_exp", "sparse-attention indexer", "mtp", "refusal, not a fallback"] {
+                assert!(msg.contains(n), "{n} missing from: {msg}");
+            }
+            assert!(!out.exists(), "no .apr may be written");
+        }
+    }

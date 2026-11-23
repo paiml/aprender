@@ -23,6 +23,21 @@ pub enum PointShape {
     X,
 }
 
+impl PointShape {
+    /// The R `pch` code ggplot2 uses for this shape (`Circle` is ggplot2's default, 19).
+    #[must_use]
+    pub const fn pch(self) -> u8 {
+        match self {
+            PointShape::Circle => 19,
+            PointShape::Square => 15,
+            PointShape::Triangle => 17,
+            PointShape::Diamond => 18,
+            PointShape::Cross => 3,
+            PointShape::X => 4,
+        }
+    }
+}
+
 /// Geometry type specification.
 #[derive(Debug, Clone)]
 pub enum GeomType {
@@ -41,6 +56,8 @@ pub enum GeomType {
         /// Fill alpha.
         alpha: f32,
     },
+    /// Band between `ymin` and `ymax` (`geom_ribbon()`).
+    Ribbon,
     /// Bars.
     Bar {
         /// Bar width (0-1 fraction of available space).
@@ -55,8 +72,23 @@ pub enum GeomType {
     Boxplot,
     /// Violin plot.
     Violin,
-    /// Tile/rectangle (for heatmaps).
-    Tile,
+    /// `geom_tile`: a rectangle centred on (`x`, `y`). `width` and `height` are ggplot2's
+    /// parameters of the same name; `None` sizes the tile by the data resolution.
+    Tile {
+        /// Fixed width in data units.
+        width: Option<f64>,
+        /// Fixed height in data units.
+        height: Option<f64>,
+    },
+    /// `geom_rect`: a rectangle from `xmin`, `xmax`, `ymin` and `ymax`.
+    Rect,
+    /// `geom_raster`: one cell per (`x`, `y`), sized by the grid spacing.
+    Raster {
+        /// Where the cell sits horizontally (`xmin = x - w * (1 - hjust)`: 0 puts x on the cell's right edge, 1 on its left edge).
+        hjust: f64,
+        /// Where the cell sits vertically (`ymin = y - h * (1 - vjust)`: 0 puts y on the cell's top edge, 1 on its bottom edge).
+        vjust: f64,
+    },
     /// Text labels.
     Text,
     /// Horizontal line.
@@ -69,11 +101,39 @@ pub enum GeomType {
         /// X intercept.
         xintercept: f32,
     },
+    /// A ggplot2 4.0.3 distribution layer built by `layout()` (see `dist.rs`).
+    Dist(super::dist::DistSpec),
+    /// Connected line segments in data order (`geom_path`).
+    Path,
+    /// Stair-step line (`geom_step`).
+    Step {
+        /// Which way the stair turns first.
+        direction: StepDirection,
+    },
+    /// Line `y = slope * x + intercept` (`geom_abline`); trains no scale.
+    Abline {
+        /// Slope.
+        slope: f32,
+        /// Intercept.
+        intercept: f32,
+    },
     /// Smooth curve (loess/lm).
     Smooth {
         /// Smoothing method.
         method: SmoothMethod,
     },
+}
+
+/// Direction of a `geom_step` (ggplot2 `direction`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StepDirection {
+    /// Horizontal then vertical (`"hv"`, ggplot2's default).
+    #[default]
+    Hv,
+    /// Vertical then horizontal (`"vh"`).
+    Vh,
+    /// Steps change at the midpoint between x values (`"mid"`).
+    Mid,
 }
 
 /// Smoothing method.
@@ -116,6 +176,12 @@ impl Geom {
         Self { geom_type: GeomType::Area { alpha: 0.3 }, aes: None, stat: None }
     }
 
+    /// Create a ribbon geometry.
+    #[must_use]
+    pub fn ribbon() -> Self {
+        Self { geom_type: GeomType::Ribbon, aes: None, stat: None }
+    }
+
     /// Create a bar geometry.
     #[must_use]
     pub fn bar() -> Self {
@@ -147,7 +213,46 @@ impl Geom {
     /// Create a tile geometry (for heatmaps).
     #[must_use]
     pub fn tile() -> Self {
-        Self { geom_type: GeomType::Tile, aes: None, stat: None }
+        Self { geom_type: GeomType::Tile { width: None, height: None }, aes: None, stat: None }
+    }
+
+    /// Create a rectangle geometry (`geom_rect`).
+    #[must_use]
+    pub fn rect() -> Self {
+        Self { geom_type: GeomType::Rect, aes: None, stat: None }
+    }
+
+    /// Create a raster geometry (`geom_raster`), centred cells (`hjust = vjust = 0.5`).
+    #[must_use]
+    pub fn raster() -> Self {
+        Self { geom_type: GeomType::Raster { hjust: 0.5, vjust: 0.5 }, aes: None, stat: None }
+    }
+
+    /// Set a raster's `hjust`, widened through its shortest decimal form so 0.3 stays 0.3.
+    #[must_use]
+    pub fn hjust(mut self, hjust: f32) -> Self {
+        if let GeomType::Raster { hjust: ref mut h, .. } = self.geom_type {
+            *h = format!("{hjust}").parse().unwrap_or(f64::from(hjust));
+        }
+        self
+    }
+
+    /// Set a raster's `vjust`, widened through its shortest decimal form so 0.3 stays 0.3.
+    #[must_use]
+    pub fn vjust(mut self, vjust: f32) -> Self {
+        if let GeomType::Raster { vjust: ref mut v, .. } = self.geom_type {
+            *v = format!("{vjust}").parse().unwrap_or(f64::from(vjust));
+        }
+        self
+    }
+
+    /// Set a tile's `height`, widened through its shortest decimal form so 0.3 stays 0.3.
+    #[must_use]
+    pub fn height(mut self, height: f32) -> Self {
+        if let GeomType::Tile { height: ref mut h, .. } = self.geom_type {
+            *h = Some(format!("{height}").parse().unwrap_or(f64::from(height)));
+        }
+        self
     }
 
     /// Create a text geometry.
@@ -166,6 +271,33 @@ impl Geom {
     #[must_use]
     pub fn vline(xintercept: f32) -> Self {
         Self { geom_type: GeomType::Vline { xintercept }, aes: None, stat: None }
+    }
+
+    /// Create a path geometry: points joined in data order.
+    #[must_use]
+    pub fn path() -> Self {
+        Self { geom_type: GeomType::Path, aes: None, stat: None }
+    }
+
+    /// Create a stair-step geometry, direction `hv`.
+    #[must_use]
+    pub fn step() -> Self {
+        Self { geom_type: GeomType::Step { direction: StepDirection::Hv }, aes: None, stat: None }
+    }
+
+    /// Create an abline: `y = slope * x + intercept`.
+    #[must_use]
+    pub fn abline(slope: f32, intercept: f32) -> Self {
+        Self { geom_type: GeomType::Abline { slope, intercept }, aes: None, stat: None }
+    }
+
+    /// Set the direction of a step geometry.
+    #[must_use]
+    pub fn direction(mut self, direction: StepDirection) -> Self {
+        if let GeomType::Step { direction: ref mut d } = self.geom_type {
+            *d = direction;
+        }
+        self
     }
 
     /// Create a smooth line.
@@ -192,6 +324,10 @@ impl Geom {
     pub fn width(mut self, width: f32) -> Self {
         match &mut self.geom_type {
             GeomType::Line { width: ref mut w } | GeomType::Bar { width: ref mut w } => *w = width,
+            GeomType::Dist(spec) => spec.width = format!("{width}").parse().ok(),
+            GeomType::Tile { width: ref mut w, .. } => {
+                *w = Some(format!("{width}").parse().unwrap_or(f64::from(width)));
+            }
             _ => {}
         }
         self
@@ -203,15 +339,21 @@ impl Geom {
         if let GeomType::Histogram { bins: ref mut b } = self.geom_type {
             *b = bins;
             self.stat = Some(Stat::Bin { bins });
+        } else if let GeomType::Dist(spec) = &mut self.geom_type {
+            spec.bins = bins;
         }
         self
     }
 
-    /// Set the area alpha.
+    /// Set the area alpha, or a distribution layer's fixed alpha (clamped to `[0, 1]`, as
+    /// `Aes::alpha_value` does; widened through its shortest decimal form, so 0.3 stays 0.3).
     #[must_use]
     pub fn alpha(mut self, alpha: f32) -> Self {
-        if let GeomType::Area { alpha: ref mut a } = self.geom_type {
-            *a = alpha.clamp(0.0, 1.0);
+        let clamped = alpha.clamp(0.0, 1.0);
+        match &mut self.geom_type {
+            GeomType::Area { alpha: a } => *a = clamped,
+            GeomType::Dist(spec) => spec.alpha = format!("{clamped}").parse().ok(),
+            _ => {}
         }
         self
     }
@@ -338,7 +480,7 @@ mod tests {
     #[test]
     fn test_geom_tile() {
         let g = Geom::tile();
-        assert!(matches!(g.geom_type, GeomType::Tile));
+        assert!(matches!(g.geom_type, GeomType::Tile { width: None, height: None }));
         assert!(g.stat.is_none());
     }
 
@@ -490,7 +632,9 @@ mod tests {
             GeomType::Histogram { bins: 30 },
             GeomType::Boxplot,
             GeomType::Violin,
-            GeomType::Tile,
+            GeomType::Tile { width: None, height: None },
+            GeomType::Rect,
+            GeomType::Raster { hjust: 0.5, vjust: 0.5 },
             GeomType::Text,
             GeomType::Hline { yintercept: 0.0 },
             GeomType::Vline { xintercept: 0.0 },

@@ -137,6 +137,15 @@ jobs:
         run: |
           [ "$STATE" = green ] || { echo "::error::models RED on C $C: $REASON"; exit 1; }
           echo "models GREEN on C $C"
+      # the rehearse job runs on another runner: the verified bundle reaches it as an artifact (D2)
+      - name: Hand the verified models-crux bundle to the night
+        if: steps.relay.outputs.bundle != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: models-crux-relayed
+          path: ${{ steps.relay.outputs.bundle }}
+          if-no-files-found: error
+          retention-days: 7
 
   rehearse:
     name: rehearse
@@ -164,9 +173,16 @@ jobs:
         run: |
           bash scripts/release/rehearse.sh --selftest
           bash scripts/release/rehearse.sh --mutants
+      - name: Take the relayed models-crux bundle of C (t2's CRUX receipt dir, D2)
+        if: needs.models.result == 'success'
+        uses: actions/download-artifact@v7   # same major as the upload-artifact above
+        with:
+          name: models-crux-relayed
+          path: ${{ runner.temp }}/models-crux-relayed
       - name: The night on C (exit 0 GREEN, 1 RED, 2 not_measured)
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_REHEARSAL_CRUX_DIR: ${{ needs.models.result == 'success' && format('{0}/models-crux-relayed', runner.temp) || '' }}
         run: |
           set -o pipefail
           bash scripts/release/rehearse.sh --run --state "$RUNNER_TEMP/rehearsal" --commit "$C" --in-run "$GITHUB_RUN_ID" \

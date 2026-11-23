@@ -1,0 +1,19 @@
+- id: PMAT-6621
+  github_issue: 6621
+  item_type: task
+  title: 'PRM-001 G11 stale: paiml-implement#420 shipped in v1.8.2 (aprender#6621)'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-11-09T17:05:24Z
+  updated: 2026-11-09T17:05:24Z
+  spec: null
+  acceptance_criteria:
+  - 'Spec row said #420 unreleased; merge-base proves it is in v1.8.2 and v1.8.3.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: 6809

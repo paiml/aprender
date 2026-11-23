@@ -1,0 +1,11 @@
+{
+  "ref": "paiml/bashrs@a51e5629d3c9c016c0987e0a385460008f305229",
+  "nameWithOwner": "paiml/bashrs",
+  "defaultBranch": "main",
+  "sha": "a51e5629d3c9c016c0987e0a385460008f305229",
+  "url": "https://github.com/paiml/bashrs",
+  "archived": false,
+  "has_readme": true,
+  "has_ci_workflows": true,
+  "captured_at": "2026-11-18T20:13:38Z"
+}

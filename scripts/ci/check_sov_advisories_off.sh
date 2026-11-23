@@ -5,6 +5,7 @@
 #   2. the vendored body reads that input in both steps and skips the scan on it
 # usage: check_sov_advisories_off.sh [SECTIONS] [VENDORED] | --self-test
 set -euo pipefail
+SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT  # PMAT-6647: scratch dies with the script
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$HERE/../.." && pwd)"
@@ -21,7 +22,7 @@ check() { # SECTIONS VENDORED -> 0 ok, 1 gap
 
 self_test() {
     local d bad=0 rc
-    d=$(mktemp -d)
+    d=$(mktemp -d); SCRATCH+=("$d")
     # shellcheck disable=SC2064
     trap "rm -rf -- '${d:?}'" RETURN
     case_() { # name want sections vendored

@@ -1,0 +1,78 @@
+{
+  "row": "scale_edge",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "refusals": [
+    {
+      "name": "cont_labels_short",
+      "spec": "breaks = c(1, 3, 5), labels = c('a', 'b')",
+      "r_error": "`breaks` and `labels` must have the same length.",
+      "r_continuous_range": null
+    },
+    {
+      "name": "cont_labels_long",
+      "spec": "breaks = c(1, 3, 5), labels = c('a', 'b', 'c', 'd')",
+      "r_error": "`breaks` and `labels` must have the same length.",
+      "r_continuous_range": null
+    },
+    {
+      "name": "cont_labels_default_breaks",
+      "spec": "labels = c('a', 'b')",
+      "r_error": "`breaks` and `labels` have different lengths.",
+      "r_continuous_range": null
+    },
+    {
+      "name": "disc_labels_short",
+      "spec": "breaks = c('a', 'b', 'c'), labels = c('A', 'B')",
+      "r_error": "`breaks` and `labels` must have the same length.",
+      "r_continuous_range": null
+    },
+    {
+      "name": "disc_labels_default_breaks_short",
+      "spec": "labels = c('A', 'B')",
+      "r_error": null,
+      "r_continuous_range": [0.40000000000000002, 3.6000000000000001]
+    },
+    {
+      "name": "expand_neg_mult",
+      "spec": "expand = expansion(mult = -0.6)",
+      "r_error": null,
+      "r_continuous_range": [3, 4]
+    },
+    {
+      "name": "expand_neg_add",
+      "spec": "expand = expansion(add = -1)",
+      "r_error": null,
+      "r_continuous_range": [2, 5]
+    },
+    {
+      "name": "expand_nan",
+      "spec": "expand = expansion(mult = c(NaN, 0))",
+      "r_error": null,
+      "r_continuous_range": [1, 6]
+    },
+    {
+      "name": "expand_inf_add",
+      "spec": "expand = expansion(add = Inf)",
+      "r_error": null,
+      "r_continuous_range": [1, 6]
+    },
+    {
+      "name": "disc_expand_neg",
+      "spec": "expand = expansion(add = -0.9)",
+      "r_error": null,
+      "r_continuous_range": [1, 3]
+    },
+    {
+      "name": "limits_na_hi_below_data",
+      "spec": "limits = c(10, NA)",
+      "r_error": null,
+      "r_continuous_range": ["-Inf", 10]
+    }
+  ]
+}

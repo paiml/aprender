@@ -547,6 +547,8 @@ impl IndexConfig {
             .collect(),
             python_corpus_dirs: vec![
                 "../hf-ground-truth-corpus",
+                "../hugging-face-ground-truth-corpus",
+                "../databricks-scala-ground-truth-corpus",
                 "../jax-ground-truth-corpus",
                 "../vllm-ground-truth-corpus",
                 "../algorithm-competition-corpus",
@@ -871,5 +873,36 @@ mod tests {
         assert_eq!(config.rust_corpus_dirs.len(), original_rust_corpus);
         assert_eq!(config.python_corpus_dirs.len(), original_python);
         assert_eq!(config.private_dir_count, original_private_count);
+    }
+
+    /// Corpus contracts (`contracts/apr-corpus-*-v1.yaml`) promise "Corpus indexed
+    /// in oracle RAG pipeline": every contract's repo must be a default index dir.
+    #[test]
+    fn falsify_apr_corpus_every_contract_repo_is_rag_indexed() {
+        let config = IndexConfig::new();
+        let indexed: Vec<&String> =
+            config.rust_corpus_dirs.iter().chain(config.python_corpus_dirs.iter()).collect();
+        let contracts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
+        let mut checked = 0usize;
+        let entries = std::fs::read_dir(&contracts).expect("contracts dir readable");
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !(name.starts_with("apr-corpus-") && name.ends_with("-v1.yaml")) {
+                continue;
+            }
+            let text = std::fs::read_to_string(entry.path()).expect("contract readable");
+            let repo = text
+                .lines()
+                .find_map(|l| l.trim().strip_prefix("repo: \"paiml/"))
+                .and_then(|r| r.strip_suffix('"'))
+                .expect("corpus contract declares repo: \"paiml/<name>\"");
+            let dir = format!("../{repo}");
+            assert!(
+                indexed.iter().any(|d| **d == dir),
+                "{name}: {dir} is not in the default RAG index dirs"
+            );
+            checked += 1;
+        }
+        assert!(checked >= 13, "expected >= 13 corpus contracts, saw {checked}");
     }
 }

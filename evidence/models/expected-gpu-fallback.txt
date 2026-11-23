@@ -1,0 +1,4 @@
+# Models known to fall back from GPU to CPU. One line each: "<gguf basename> <issue number>".
+# Read by scripts/lab/check_gpu_fallback_witness.sh (LAB, nightly). An entry whose issue is closed,
+# or whose model now runs on the GPU, is red: remove the entry only by fixing the defect.
+Qwen3-0.6B-Q4_K_M.gguf 7285

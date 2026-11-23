@@ -41,3 +41,12 @@ beat:
   baseline_sourced_date: "2026-06-13"
   approved_compute: CPU
   ci_gate_name: "beat_pytorch_autograd_grad"
+
+# #5291 batch 2: the beat gate above, bound as a falsification test. The test
+# holds TOL = 1e-4 (= beat_threshold) and asserts the loss and the worst
+# gradient difference against the pinned PyTorch values stay below it.
+falsification_tests:
+  - id: FALSIFY-BEAT-PYTORCH-AUTOGRAD-001
+    rule: "apr autograd loss and every parameter gradient match the pinned PyTorch values within the tolerance"
+    prediction: "beat_apr_autograd_matches_pytorch_gradients passes; it fails when any gradient differs from PyTorch by more than the tolerance"
+    test: "cargo test -p aprender-core --test beat_pytorch_autograd_grad beat_apr_autograd_matches_pytorch_gradients"

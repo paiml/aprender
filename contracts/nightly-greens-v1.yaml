@@ -1,5 +1,5 @@
 metadata:
-  version: 1.1.1
+  version: 1.2.0
   created: '2026-10-03'
   author: PAIML Engineering
   description: "A check may be enforced at publish only after its inputs were produced green on main, nightly, three times (operator ruling C280 item 12, the P0 for 0.70.2). scripts/release/nightly_greens.sh is the count: it reads one producer's run history and answers ready, not ready or not_measured, and prints the run IDs of the three green nights. A night with no run, a cancelled run or a run still going is never green, and a retried green is not a green."
@@ -39,6 +39,7 @@ equations:
       - "LAST older than the day before --as-of is stale, and stale is not_measured"
       - "need is 3 for every check but release-rehearsal, which needs 1 (C355 item 6: the count is lowered, the check stays); neither an option nor an environment value can change either, and the name is compared exactly, never as a glob"
       - "every verdict prints streak (in a row) and total (every green night), so both readings of 'three times' stay visible"
+      - "a lab lane's check (the exact names lab-edge, lab-edge-opt, lab-wasm, lab-box; epic #7149 R3) needs 7 and also prints notgreen, the nights in a row not green ending at --as-of, a night with no run counting as not green; any other name keeps its need and prints no notgreen"
 
 proof_obligations:
   - id: NG-INV-001
@@ -72,6 +73,12 @@ proof_obligations:
     formal: "∀ h, h': h' = h ∪ {r : night(r) > as_of} ⇒ verdict(h', as_of) = verdict(h, as_of)"
     applies_to: streak_verdict
 
+  - id: NG-INV-007
+    type: invariant
+    property: "A lab lane is stopped only when none of its last 7 nights was green, only from main, and never on fewer than 7 nights"
+    formal: "stop(lane) ⇒ ref = main ∧ nights(lane) ≥ 7 ∧ total(last 7 nights) = 0 ∧ tonight ≠ success"
+    applies_to: streak_verdict
+
 falsification_tests:
   - id: FALSIFY-NG-001
     rule: "The count is right on every row of its case table"
@@ -84,6 +91,12 @@ falsification_tests:
     prediction: "Each planted mutant (need 2, need from the environment, the release-rehearsal need raised to 3 or set to 0, not keyed on its name, also keyed on nightly-train, or keyed by any glob in place of the exact compare (release-*, a release-rehearsal prefix, *rehearsal, release-rehearsa?, [rR]elease-rehearsal), or the name rewritten before the compare (a stripped x- or ?- prefix, a stripped .*, digit or - suffix; a space or / is refused by the name check, a deleted letter), or also keyed on nightly.train, or given to every check, a retried green counted, failure not red, void counted green, red or pending ranked below green, the older of two runs kept, every branch counted, rows after --as-of counted, a red newest night skipped, no staleness bound, an absent night read as the start, a streak off by one, leap years ignored) turns --selftest RED; a mutant that changes nothing or does not parse is itself a failure"
     test: "bash scripts/release/nightly_greens.sh --mutants"
     if_fails: "The case table is theater: it would pass a judge that lets a check be enforced before its inputs were produced green its need of times (three, or one for release-rehearsal)"
+
+  - id: FALSIFY-NG-003
+    rule: "The lab stop step disables on seven not-green nights and on nothing less"
+    prediction: "Seven not-green nights (failure, cancelled, timed out, a retried green, a green only on another branch, a night with no run) make lab_stop.sh call gh workflow disable with the lane workflow; six, one green anywhere in the window, fewer than seven nights, a green tonight, a ref that is not main, and a failed call (exit 1) behave as the case table says; each mutant (call dropped, ref check dropped, workflow name changed, young-lane check dropped, tonight ignored, stop on one green, window of three, history not cut) turns the table red"
+    test: "bash scripts/release/lab_stop.sh --self-test && bash scripts/release/lab_stop.sh --mutants"
+    if_fails: "A lab workflow can be disabled on a good week, or left running through seven dead nights, or disabled from a branch"
 
 qa_gate:
   id: F-NG-001

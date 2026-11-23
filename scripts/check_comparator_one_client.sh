@@ -299,7 +299,7 @@ prove_walkers_engaged() {
     PROBE_DIR="$(mktemp -d)" || return 1
     d="$PROBE_DIR"
     case "$d" in
-        /tmp/*|/var/folders/*) : ;;
+        /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;;
         *) printf '  WALKER-DEAD  refusing probe dir %s\n' "$d" >&2; return 1 ;;
     esac
 
@@ -506,7 +506,7 @@ selftest() {
     fi
     echo "  ok    shell, make and literal walkers returned the expected lines"
     CASE_DIR="$(mktemp -d)" || exit 2
-    case "$CASE_DIR" in /tmp/*|/var/folders/*) : ;; *) echo "refusing $CASE_DIR"; exit 2 ;; esac
+    case "$CASE_DIR" in /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;; *) echo "refusing $CASE_DIR"; exit 2 ;; esac
     local pass=0 fail=0
 
     _row() { # name, expect(detect|ignore), extension, body

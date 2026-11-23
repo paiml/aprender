@@ -57,7 +57,7 @@ ignored_keys_for() {
     local cfg="$1" dir
     dir="$(mktemp -d)" || return 1
     case "$dir" in
-        /tmp/*|/var/folders/*) : ;;
+        /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;;
         *) printf 'BADTMP %s\n' "${dir:-<empty>}"; return 1 ;;
     esac
     mkdir -p "$dir/src"

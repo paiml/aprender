@@ -56,6 +56,9 @@ impl SafetensorsToAprConverter {
         // inconsistencies (vocab/hidden mismatch) BEFORE assembly. The SafeTensors
         // format does not enforce these — safetensors-lib / Transformers / Ollama
         // load such artifacts and run garbage; apr rejects them at load.
+        // #7169 S1: qwen4_exp has no forward; refuse by name before any tensor read.
+        // #7333: an `mtp.*` head is refused first, by name (PR #7356 lane-1 finding 1).
+        crate::qwen4_exp::check_checkpoint(config, source.tensor_names())?;
         Self::validate_structural_consistency(source)?;
 
         let apr_config = Self::build_apr_config(config)?;

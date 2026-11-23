@@ -367,22 +367,67 @@ fn parse_generated(text: &str) -> Option<(u32, f64)> {
     Some((tokens, ms))
 }
 
-/// One clean apr steady-state decode measurement (marginal tok/s), or None if a
-/// run hit early EOS (didn't reach the forced budget) and must be discarded.
-fn apr_decode_tps_once(apr_bin: &str, gguf: &Path) -> Option<f64> {
-    let (lo_tok, lo_ms) = apr_run(apr_bin, gguf, N_LOW)?;
-    let (hi_tok, hi_ms) = apr_run(apr_bin, gguf, N_HIGH)?;
+/// Why one apr decode attempt was discarded (never changes what counts as clean).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DropReason {
+    /// No parsable `Generated <N> tokens in <ms>ms` line from the LOW or HIGH run.
+    Parse,
+    /// A run stopped before the forced token budget (early EOS).
+    EarlyEos,
+    /// Differential time `hi_ms - lo_ms` was <= 0 (scheduling hiccup).
+    NonPositiveDelta,
+}
+
+impl DropReason {
+    const ALL: [Self; 3] = [Self::Parse, Self::EarlyEos, Self::NonPositiveDelta];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Parse => "parse",
+            Self::EarlyEos => "early-eos",
+            Self::NonPositiveDelta => "dms<=0",
+        }
+    }
+}
+
+/// One clean apr steady-state decode measurement (marginal tok/s), or the
+/// `(reason, detail)` for why the attempt must be discarded.
+fn apr_decode_tps_once(apr_bin: &str, gguf: &Path) -> Result<f64, (DropReason, String)> {
+    let lo = apr_run(apr_bin, gguf, N_LOW);
+    let hi = apr_run(apr_bin, gguf, N_HIGH);
+    let (Some((lo_tok, lo_ms)), Some((hi_tok, hi_ms))) = (lo, hi) else {
+        return Err((
+            DropReason::Parse,
+            format!("no 'Generated N tokens in Xms' line (low={lo:?}, high={hi:?})"),
+        ));
+    };
     // Both runs must have generated the full forced budget, else the differential
     // is meaningless (the model stopped early).
     if lo_tok != N_LOW || hi_tok != N_HIGH {
-        return None;
+        return Err((
+            DropReason::EarlyEos,
+            format!("lo_tok={lo_tok} (want {N_LOW}), hi_tok={hi_tok} (want {N_HIGH})"),
+        ));
     }
     let dms = hi_ms - lo_ms;
     if dms <= 0.0 {
-        return None; // scheduling hiccup (e.g. JIT stall on the LOW run)
+        // scheduling hiccup (e.g. JIT stall on the LOW run)
+        return Err((
+            DropReason::NonPositiveDelta,
+            format!("dms={dms:.1} <= 0 (t_long={hi_ms:.1}, t_short={lo_ms:.1})"),
+        ));
     }
     let marginal_tokens = f64::from(N_HIGH - N_LOW);
-    Some(marginal_tokens / (dms / 1000.0))
+    Ok(marginal_tokens / (dms / 1000.0))
+}
+
+/// Per-reason drop counts, e.g. `parse=0, early-eos=1, dms<=0=3`.
+fn drop_summary(drops: &[DropReason]) -> String {
+    DropReason::ALL
+        .iter()
+        .map(|r| format!("{}={}", r.label(), drops.iter().filter(|d| *d == r).count()))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// One ollama warm decode measurement: `ollama run <model> <prompt> --verbose`,
@@ -455,9 +500,17 @@ fn beat_ollama_decode_throughput_speed() {
     // is the right estimator. We attempt a few extra to backfill the rare early-EOS
     // so the gate's median has APR_MEDIAN_N clean samples. ---
     let mut apr_tps = Vec::new();
-    for _ in 0..APR_ATTEMPTS {
-        if let Some(t) = apr_decode_tps_once(&apr_bin, gguf_path) {
-            apr_tps.push(t);
+    let mut drops: Vec<DropReason> = Vec::new();
+    for attempt in 1..=APR_ATTEMPTS {
+        match apr_decode_tps_once(&apr_bin, gguf_path) {
+            Ok(t) => apr_tps.push(t),
+            Err((reason, detail)) => {
+                eprintln!(
+                    "decode-trial attempt {attempt}/{APR_ATTEMPTS} dropped: {} ({detail})",
+                    reason.label()
+                );
+                drops.push(reason);
+            },
         }
         if apr_tps.len() >= APR_MEDIAN_N {
             break;
@@ -466,9 +519,10 @@ fn beat_ollama_decode_throughput_speed() {
     assert!(
         apr_tps.len() >= APR_MEDIAN_N,
         "could not collect {APR_MEDIAN_N} clean apr decode trials for the median-of-{APR_MEDIAN_N} \
-         gate (got {} in {APR_ATTEMPTS} attempts; if many are early-EOS/stalls the #2049 FP8 fix \
-         may be missing from this binary — see contract DEPENDENCY)",
-        apr_tps.len()
+         gate (got {} in {APR_ATTEMPTS} attempts; dropped by reason: {}; if many are early-EOS/stalls \
+         the #2049 FP8 fix may be missing from this binary — see contract DEPENDENCY)",
+        apr_tps.len(),
+        drop_summary(&drops)
     );
     // Take exactly APR_MEDIAN_N samples for the enforced median (median-of-7).
     let apr_med = median(&apr_tps[..APR_MEDIAN_N]);

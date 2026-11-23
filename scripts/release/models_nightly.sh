@@ -98,7 +98,160 @@ ws_version() {
 vget() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }'; }
 
 # foreign_t1 OWN-PGID < "pgid args" lines -> every models_t1.sh process outside OWN-PGID
-foreign_t1() { awk -v own="$1" '$1 != own && $0 ~ /[ \/]models_t1\.sh( |$)/'; }
+# A line is decided by the program that actually receives models_t1.sh, not by the first word of the line, and it is
+# a NON-run only when that is provable; anything ambiguous stays a run (fail closed).
+#  - Known transparent wrappers (timeout, setsid, nice, ionice, taskset, flock, stdbuf, env, sudo, nohup, time, exec,
+#    command) are skipped with their own options and operands; an option the table does not know makes the line a run.
+#  - The program behind them is a non-run when it is a linter, editor, pager, searcher or copier that cannot execute
+#    its operands (bashrs lint, vim, tail, grep, git log, ...; git and bashrs only for a read-only subcommand, an
+#    editor only without a command option), or a shell carrying -n / -D (parse, do not execute).
+#  - A shell's -c string is judged one simple command at a time (split on ; & | ( ) and a backquote); a
+#    simple command is a run when models_t1.sh is its program or any of its words and it is not provably a non-run.
+#  - Any other program with a models_t1.sh word on its line is a run (a wrapper script, python, xargs, find -exec).
+foreign_t1() {
+    local prog
+    prog=$(cat <<'AWK'
+        function strip(x) { gsub(/["\047]/, "", x); return x }
+        function ist1(x) { x = strip(x); return x ~ /(^|[^A-Za-z0-9_.-])models_t1\.sh([^A-Za-z0-9_.-]|$)/ }
+        function anyt1(w, a, b,   i) { for (i = a; i <= b; i++) if (ist1(w[i])) return 1; return 0 }
+        # skipw WRAPPER-WORD ARRAY FIRST LAST -> index of the wrapped program, or -1 when an option is not in the table
+        function skipw(w, p, i, b,   x, nm, tsc, pos) {
+            tsc = 0
+            for (;;) {
+                if (i > b) return -1
+                x = strip(w[i])
+                if (x == "--") { i++; break }
+                if (substr(x, 1, 1) != "-") break
+                if (index(WF[p], " " x " ")) { i++; continue }
+                if (index(WA[p], " " x " ")) { if (x == "-c") tsc = 1; i += 2; continue }
+                nm = x; sub(/=.*/, "", nm)
+                if (x ~ /^--/ && nm != x && index(WA[p], " " nm " ")) { i++; continue }
+                if (p == "nice" && x ~ /^-[0-9]+$/) { i++; continue }
+                if (p == "stdbuf" && x ~ /^-[ioe]./) { i++; continue }
+                return -1   # M_WRAP_UNKNOWN_OPT
+            }
+            pos = WP[p]
+            if (p == "taskset" && tsc) pos = 0
+            if (i + pos > b + 1) return -1
+            return i + pos
+        }
+        # nonrun_ok PROGRAM FIRST LAST -> 1 when this program provably does not execute its operands
+        function nonrun_ok(w, p, j, b,   x, k) {
+            if (p == "git") {
+                while (j <= b) {
+                    x = strip(w[j])
+                    if (x == "-C") { j += 2; continue }
+                    if (x == "--no-pager" || x == "-P" || x == "--paginate" || x == "-p") { j++; continue }
+                    break
+                }
+                return (j <= b && (strip(w[j]) in GITRO)) ? 1 : 0   # M_GIT_SUBCOMMAND
+            }
+            if (p == "bashrs") return (j <= b && (strip(w[j]) in BRS)) ? 1 : 0   # M_BASHRS_SUBCOMMAND
+            if (p in EDIT) {
+                for (k = j; k <= b; k++) {
+                    x = strip(w[k])
+                    if (x ~ /^(-[A-Za-z]*[cSs]|--cmd|--eval|--funcall|--load|--script|\+.*)$/) return 0   # M_EDITOR_COMMAND
+                }
+            }
+            return 1
+        }
+        # shellrun ARRAY FIRST SHELL-INDEX LAST
+        function shellrun(w, a, i, b,   j, x, k, n, ch, np, noexec, cf, sg) {
+            j = i + 1; noexec = 0; cf = 0
+            while (j <= b) {
+                x = strip(w[j])
+                if (x == "--") { j++; break }
+                if (x ~ /^[-+][A-Za-z]+$/) {
+                    np = 0; n = length(x); sg = substr(x, 1, 1)
+                    for (k = 2; k <= n; k++) {
+                        ch = substr(x, k, 1)
+                        if (sg == "+" && (ch == "n" || ch == "c" || ch == "D")) return anyt1(w, a, b)   # M_PLUS_N
+                        if (ch == "n" || ch == "D") noexec = 1
+                        else if (ch == "c") cf = 1
+                        else if (ch == "o" || ch == "O") np++
+                        else if (index("lisexvfuEHPpBbhkmtaCrIT", ch) == 0) return anyt1(w, a, b)   # M_SHELL_UNKNOWN_LETTER
+                    }
+                    j += 1 + np; continue   # M_OPTION_ARG
+                }
+                if (x ~ /^--/) {
+                    if (index(" --norc --noprofile --posix --login --restricted --verbose --debugger --noediting ", " " x " ")) { j++; continue }
+                    if (x == "--rcfile" || x == "--init-file") { j += 2; continue }   # M_RCFILE_ARG
+                    return anyt1(w, a, b)   # M_SHELL_UNKNOWN_LONG
+                }
+                break   # M_SCRIPT_OPERAND
+            }
+            if (noexec) return 0   # M_NOEXEC
+            if (cf && j <= b) return str(w, j, b)   # M_C_STRING
+            if (j <= b && ist1(w[j])) return 1
+            return anyt1(w, a, b)
+        }
+        # one simple command, words a..b
+        function seg(w, a, b,   i, p, j) {
+            i = a
+            for (;;) {
+                while (i <= b && strip(w[i]) ~ /^[A-Za-z_][A-Za-z0-9_]*=/) i++   # M_ASSIGNMENT
+                if (i > b) return anyt1(w, a, b)
+                p = strip(w[i]); sub(/.*\//, "", p)
+                if (!(p in WA)) break   # M_WRAPPER
+                j = skipw(w, p, i + 1, b)
+                if (j < 0) return anyt1(w, a, b)
+                i = j
+            }
+            if (ist1(w[i])) return 1
+            if (p in NONRUN) return nonrun_ok(w, p, i + 1, b) ? 0 : anyt1(w, a, b)   # M_NONRUN
+            if (p in SHELL) return shellrun(w, a, i, b)
+            return anyt1(w, a, b)
+        }
+        # a command string: words j..b are split on shell operators and each simple command is judged on its own
+        function str(w, j, b,   s, n, t, k, st) {
+            s = ""
+            for (k = j; k <= b; k++) s = s " " strip(w[k])
+            gsub(/[;&|()\140]/, " ; ", s)   # M_SPLIT
+            n = split(s, t, " ")
+            st = 1
+            for (k = 1; k <= n + 1; k++) {
+                if (k > n || t[k] == ";") {
+                    if (k - 1 >= st && seg(t, st, k - 1)) return 1
+                    st = k + 1   # M_EVERY_SEGMENT
+                }
+            }
+            return 0
+        }
+        BEGIN {
+            nn = split("bashrs shellcheck shfmt vim vi nvim view nano emacs less more most cat head tail grep egrep fgrep diff cmp ls wc stat file sha256sum md5sum ps pgrep pkill man cp mv rm tee echo printf test git", npg, " ")
+            for (k = 1; k <= nn; k++) NONRUN[npg[k]] = 1
+            nn = split("vim vi nvim view nano emacs less more most", npg, " ")
+            for (k = 1; k <= nn; k++) EDIT[npg[k]] = 1
+            nn = split("log diff show blame status add commit grep ls-files rev-parse ls-tree cat-file shortlog describe", npg, " ")
+            for (k = 1; k <= nn; k++) GITRO[npg[k]] = 1
+            nn = split("lint check format purify audit score parse explain gate make", npg, " ")
+            for (k = 1; k <= nn; k++) BRS[npg[k]] = 1
+            nn = split("bash sh dash zsh ksh", npg, " ")
+            for (k = 1; k <= nn; k++) SHELL[npg[k]] = 1
+            WA["timeout"] = " -k --kill-after -s --signal "; WF["timeout"] = " --foreground --preserve-status -v --verbose "; WP["timeout"] = 1
+            WA["setsid"] = " "; WF["setsid"] = " -c --ctty -f --fork -w --wait "; WP["setsid"] = 0
+            WA["nice"] = " -n --adjustment "; WF["nice"] = " "; WP["nice"] = 0
+            WA["ionice"] = " -c --class -n --classdata "; WF["ionice"] = " -t --ignore "; WP["ionice"] = 0
+            WA["taskset"] = " -c --cpu-list "; WF["taskset"] = " -a --all-tasks "; WP["taskset"] = 1
+            WA["flock"] = " -w --timeout -E --conflict-exit-code "; WF["flock"] = " -n --nonblock --nb -x --exclusive -s --shared -o --close "; WP["flock"] = 1
+            WA["stdbuf"] = " -i -o -e --input --output --error "; WF["stdbuf"] = " "; WP["stdbuf"] = 0
+            WA["env"] = " -u --unset -C --chdir "; WF["env"] = " -i --ignore-environment "; WP["env"] = 0
+            WA["sudo"] = " -u --user -g --group -h --host -p --prompt -C -D --chdir -r --role -t --type -T --command-timeout -U --other-user "
+            WF["sudo"] = " -E --preserve-env -H --set-home -n --non-interactive -S --stdin -b --background -P -k -A --askpass "; WP["sudo"] = 0
+            WA["nohup"] = " "; WF["nohup"] = " "; WP["nohup"] = 0
+            WA["time"] = " "; WF["time"] = " -p "; WP["time"] = 0
+            WA["exec"] = " "; WF["exec"] = " "; WP["exec"] = 0
+            WA["command"] = " "; WF["command"] = " "; WP["command"] = 0
+        }
+        $1 != own {
+            for (i = 2; i <= NF; i++) w[i] = $i
+            if (seg(w, 2, NF)) print
+        }
+AWK
+    )
+    awk -v own="$1" "$prog"
+}
+
 # The process table foreign_t1 reads. MODELS_NIGHTLY_PS_TABLE (a file of "pgid args" lines) is for
 # the self-test only: on a host where anyone is running a models_t1.sh fixture, the real table would
 # refuse every e2e row. The host units never set it.
@@ -460,7 +613,7 @@ cfxc() {
 }
 
 self_test() {
-    local tmp pass=0 fail=0 d o rc c1 c2 c3 work repo bare clone
+    local tmp pass=0 fail=0 d o rc c1 c2 c3 c4 c5 work repo bare clone
     tmp=$(mktemp -d) || exit 3
     tmp=$(cd "$tmp" && pwd -P)
     cd -- "$tmp" || exit 3; export GIT_CEILING_DIRECTORIES="${tmp%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
@@ -492,6 +645,10 @@ self_test() {
     row go_line_with_nonzero_exit_is_not_green 0 "$N" "$G" -- cl "$d" 1
     d="$tmp/c/build"; cfx "$d" none ok "MODELS lambda NO-GO: no receipt -- BUILD-FAILED (rc 3)" "MODELS NO-GO: the judge found red or missing cells (rc 1):"
     row build_failure_is_red 0 "${R}lambda NO-GO: no receipt -- BUILD-FAILED" "" -- cl "$d" 1
+    d="$tmp/c/memcap"; cfx "$d" none ok "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build (cargo rc 28) -- nothing was built or measured (rc 3)" "MODELS NO-GO: the judge found red or missing cells (rc 1):"
+    row cargo_memcap_refusal_is_not_measured 0 "${N}MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused" "$R" -- cl "$d" 2
+    d="$tmp/c/memcap-red"; cfx "$d" none red "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build (cargo rc 28) -- nothing was built or measured (rc 3)"
+    row refusal_beside_a_real_red_cell_stays_red 0 "${R}gx10 receipt has red cells" "" -- cl "$d" 2
     d="$tmp/c/notrel"; cfx "$d" ok none "MODELS gx10 NO-GO: no receipt -- NOT-THE-RELEASE: 'apr 1' (want 'apr 2') (rc 3)"
     row binary_not_c_is_red 0 "${R}gx10 NO-GO: no receipt -- NOT-THE-RELEASE" "" -- cl "$d" 1
     d="$tmp/c/wrongbin"; cfx "$d" wrong ok "MODELS lambda NO-GO: the receipt was measured by 'apr 0.0.1 (000000000)', not 'apr $ST_V ($ST_S)'"
@@ -561,6 +718,87 @@ self_test() {
     # -- foreign_t1 and no_token
     row foreign_models_t1_is_seen 0 "77 bash scripts/release/models_t1.sh" "" -- foreign_t1 5 <<< $'77 bash scripts/release/models_t1.sh 0.70.2 abc out\n5 bash scripts/release/models_t1.sh 9.8.7 c out\n78 vim models_t1.sh.log'
     row own_group_and_lookalikes_are_not_foreign 0 "" "models_t1" -- foreign_t1 5 <<< $'5 bash scripts/release/models_t1.sh 9.8.7 c out\n78 tail -f out/models_t1.sh.log'
+    # one ps line per row, each asserted on its own: a run is printed back, a non-run prints nothing
+    t1_run() { row "t1_run_$1" 0 "9 $2" "" -- foreign_t1 5 <<< "9 $2"; }
+    t1_not() { row "t1_not_$1" 0 "" "9 " -- foreign_t1 5 <<< "9 $2"; }
+    t1_run direct "/r/scripts/release/models_t1.sh 1 c o"
+    t1_run bash_script "bash scripts/release/models_t1.sh 1 c o"
+    t1_run env_setsid_bash_x "env A=b setsid --wait bash -x scripts/release/models_t1.sh 1 c o"
+    t1_run timeout_kill_after "timeout -k 30 21600 bash /r/scripts/release/models_t1.sh 1.2.3 c /o"
+    t1_run timeout_s_kill "timeout -s KILL 5 bash scripts/release/models_t1.sh a"
+    t1_run timeout_signal_term "timeout --signal TERM 5 bash scripts/release/models_t1.sh a"
+    t1_run flock "flock /tmp/F bash models_t1.sh a"
+    t1_run nohup "nohup bash scripts/release/models_t1.sh a"
+    t1_run sudo_u "sudo -u u bash scripts/release/models_t1.sh a"
+    t1_run sudo_u_git "sudo -u git bash scripts/release/models_t1.sh a"
+    t1_run ionice "ionice -c 3 bash scripts/release/models_t1.sh a"
+    t1_run taskset "taskset -c 0-3 bash scripts/release/models_t1.sh a"
+    t1_run time "time bash scripts/release/models_t1.sh a"
+    t1_run exec "exec bash scripts/release/models_t1.sh a"
+    t1_run stdbuf_o_L "stdbuf -o L bash scripts/release/models_t1.sh a"
+    t1_run bash_o_pipefail "bash -o pipefail scripts/release/models_t1.sh a"
+    t1_run bash_plus_x "bash +x scripts/release/models_t1.sh a"
+    t1_run bash_rcfile "bash --rcfile /f scripts/release/models_t1.sh a"
+    t1_run env_u "env -u VAR bash scripts/release/models_t1.sh a"
+    t1_run env_C "env -C /d bash scripts/release/models_t1.sh a"
+    t1_run nice_n_plus "nice -n +5 bash scripts/release/models_t1.sh a"
+    t1_run bash_lc_string 'bash -lc "models_t1.sh a"'
+    t1_run sh_c_exec_bash "sh -c exec bash scripts/release/models_t1.sh"
+    t1_run bash_c_after_options "bash -o pipefail -c \"scripts/release/models_t1.sh a\""
+    t1_not bashrs_lint "bashrs lint --level error scripts/release/autopilot.sh scripts/release/models_t1.sh"
+    t1_not vim "vim scripts/release/models_t1.sh"
+    t1_not bash_c_grep "bash -c grep -c x scripts/release/models_t1.sh"
+    t1_not cat "cat /r/models_t1.sh"
+    t1_not tail_log "tail -f out/models_t1.sh.log"
+    t1_not git_blame "git log -p -- scripts/release/models_t1.sh"
+    t1_not bash_n "bash -n models_t1.sh"
+    t1_not sh_n "sh -n scripts/release/models_t1.sh"
+    t1_not bash_D "bash -D scripts/release/models_t1.sh"
+    t1_not no_models_t1_word "timeout 5 bash scripts/release/other.sh 1.2"
+    t1_not bare_dot "sleep ."
+    t1_not nice_wrapped_bash_n "nice -n 5 bash -n scripts/release/models_t1.sh"
+    t1_run compound_git_pull_then_run 'bash -c git pull && /r/scripts/release/models_t1.sh a'
+    t1_run compound_echo_then_bash 'bash -c echo go; bash scripts/release/models_t1.sh a'
+    t1_run compound_test_then_sh 'sh -c test -x x && models_t1.sh'
+    t1_run compound_bash_n_then_run 'bash -c bash -n a.sh; models_t1.sh'
+    t1_run compound_echo_n_then_run 'bash -c echo -n x; bash models_t1.sh'
+    t1_run compound_git_fetch_exec 'bash -c git fetch -q && exec bash scripts/release/models_t1.sh 1.2.3 c /o'
+    t1_run compound_rm_then_run 'bash -c rm -rf /tmp/out && bash scripts/release/models_t1.sh 1.2.3 c /o'
+    t1_run compound_test_then_dot 'bash -c test -d /r && . scripts/release/models_t1.sh 1.2.3 c /o'
+    t1_run compound_bash_n_other_then_run 'bash -c bash -n scripts/release/models_t1.sh && bash scripts/release/models_t1.sh 1.2.3 c /o'
+    t1_run compound_attached_separator 'bash -c echo go;bash scripts/release/models_t1.sh a'
+    t1_run git_C_not_a_subcommand 'git -C /r bash scripts/release/models_t1.sh a'
+    t1_run git_exec_alias 'git -c alias.x=!bash x scripts/release/models_t1.sh'
+    t1_run bashrs_run 'bashrs run scripts/release/models_t1.sh'
+    t1_run vim_command_option 'vim -c !bash scripts/release/models_t1.sh'
+    t1_run script_operand_then_n 'bash /usr/local/bin/wrapper.sh -n 1 bash scripts/release/models_t1.sh 1.2.3 c /o'
+    t1_run python_wrapper 'python3 run.py scripts/release/models_t1.sh'
+    t1_run xargs_bash 'xargs bash scripts/release/models_t1.sh'
+    t1_run wrapper_unknown_option 'timeout --weird 5 bashrs lint scripts/release/models_t1.sh'
+    t1_run shell_unknown_letter 'bash -Zn scripts/release/models_t1.sh'
+    t1_run shell_plus_n 'bash +n scripts/release/models_t1.sh'
+    t1_run shell_unknown_long 'bash --weird -n scripts/release/models_t1.sh'
+    t1_run stdin_redirect_attached 'bash -c bash <scripts/release/models_t1.sh'
+    t1_run prefix_assignment_run 'A=b bash scripts/release/models_t1.sh a'
+    t1_not timeout_bashrs_lint 'timeout 60 bashrs lint --no-ignore --level error --format json scripts/release/models_t1.sh'
+    t1_not setsid_bashrs_lint 'setsid --wait bashrs lint --level error scripts/release/models_t1.sh'
+    t1_not nice_shellcheck 'nice -n 10 shellcheck scripts/release/models_t1.sh'
+    t1_not sudo_vim 'sudo vim scripts/release/models_t1.sh'
+    t1_not env_git_log 'env GIT_PAGER=cat git log -p -- scripts/release/models_t1.sh'
+    t1_not c_cd_then_bashrs 'bash -c cd /repo && bashrs lint --level error scripts/release/models_t1.sh'
+    t1_not c_assign_grep 'bash -c LC_ALL=C grep -n foo scripts/release/models_t1.sh'
+    t1_not c_set_then_shellcheck 'bash -c set -euo pipefail; shellcheck scripts/release/models_t1.sh'
+    t1_not taskset_mask_bashrs 'taskset 0x3 bashrs lint scripts/release/models_t1.sh'
+    t1_not taskset_c_bashrs 'taskset -c 0 bashrs lint scripts/release/models_t1.sh'
+    t1_not timeout_long_kill_after 'timeout --kill-after=30 60 shellcheck scripts/release/models_t1.sh'
+    t1_not git_C_log 'git -C /r --no-pager log -p scripts/release/models_t1.sh'
+    t1_not bash_o_then_n 'bash -o pipefail -n scripts/release/models_t1.sh'
+    t1_not bash_norc_n 'bash --norc -n scripts/release/models_t1.sh'
+    t1_not bash_rcfile_n 'bash --rcfile /f -n scripts/release/models_t1.sh'
+    t1_not bash_nc_string 'bash -nc scripts/release/models_t1.sh'
+    t1_not prefix_lookalike 'python3 /r/xmodels_t1.sh a'
+    t1_not suffix_lookalike 'python3 /r/models_t1.sh.bak a'
+    t1_not nonrun_then_other_cmd_nonrun 'bash -c echo a; vim scripts/release/models_t1.sh; cat x'
     row no_token_holds_in_a_clean_env 0 "" "" -- no_token
     row env_registry_token_refused 1 "" "" -- env CARGO_REGISTRY_TOKEN=x bash -c "$(declare -f no_token); no_token"
     row named_registry_token_refused 1 "" "" -- env CARGO_REGISTRIES_X_TOKEN=x bash -c "$(declare -f no_token); no_token"
@@ -594,6 +832,9 @@ echo "MODELS_T1_SCOPE=${MODELS_T1_SCOPE-unset}"
 echo "MODELS_T1_MEASURE=${MODELS_T1_MEASURE-unset}"
 red=0; [ "${STUB_MODE:-green}" != red ] || red=2
 [ "${STUB_MODE:-green}" != slow ] || exec sleep 30
+# PMAT-7235: a refused lambda build (cargo-memcap, disk under its floor) is ENV, exit 2; a real one is BUILD-FAILED, exit 1
+[ "${STUB_MODE:-green}" != refuse ] || { echo "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build (cargo rc 28) -- nothing was built or measured (rc 3)"; exit 2; }
+[ "${STUB_MODE:-green}" != buildfail ] || { echo "MODELS lambda NO-GO: no receipt -- BUILD-FAILED (rc 3)"; echo "MODELS NO-GO: the judge found red or missing cells (rc 1):"; exit 1; }
 if [ "${MODELS_T1_MEASURE:-ladder}" = crux ]; then
     v=PASS; [ "$red" = 0 ] || v=RED
     for h in lambda gx10; do
@@ -663,6 +904,19 @@ STUB
     c3=$(git -C "$tmp/src" rev-parse HEAD)
     row e2e_timeout_is_not_measured 0 "RUN not_measured at ${c3:0:9}" "" -- env STUB_MODE=slow bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work" --timeout 2
     row e2e_not_measured_is_measured_again 0 "RUN green at ${c3:0:9}" "SKIP" -- nightly --run --repo "$repo" --work "$work"
+    # PMAT-7235 / L23: a refused build measured nothing, so it is not_measured and the next run measures C again;
+    # a real build failure is red and final (flake-fishing protection: a real red is never re-rolled)
+    echo refuse >> "$tmp/src/Cargo.toml"; git -C "$tmp/src" commit -q -am c4 && git -C "$tmp/src" push -q "$bare" main || exit 3
+    c4=$(git -C "$tmp/src" rev-parse HEAD)
+    row e2e_refused_build_is_not_measured 0 "RUN not_measured at ${c4:0:9}" "RUN red" -- env STUB_MODE=refuse bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
+    row e2e_refused_build_verdict_is_not_measured 0 "state=not_measured" "state=red" -- cat "$work/$PENDING/$c4/verdict"
+    row e2e_refused_build_second_run_runs_again 0 "RUN not_measured at ${c4:0:9}" "SKIP" -- env STUB_MODE=refuse bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
+    row e2e_refused_build_then_green_is_measured 0 "RUN green at ${c4:0:9}" "SKIP" -- nightly --run --repo "$repo" --work "$work"
+    echo buildfail >> "$tmp/src/Cargo.toml"; git -C "$tmp/src" commit -q -am c5 && git -C "$tmp/src" push -q "$bare" main || exit 3
+    c5=$(git -C "$tmp/src" rev-parse HEAD)
+    row e2e_real_build_failure_is_red 0 "RUN red at ${c5:0:9}" "RUN not_measured" -- env STUB_MODE=buildfail bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
+    row e2e_real_build_failure_verdict_is_red 0 "state=red" "state=not_measured" -- cat "$work/$PENDING/$c5/verdict"
+    row e2e_real_build_failure_second_run_skips 0 "SKIP: ${c5:0:9} is already measured red" "RUN " -- nightly --run --repo "$repo" --work "$work"
     row e2e_token_refused 3 "REFUSED: a registry token" "RUN " -- env CARGO_REGISTRY_TOKEN=x bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
     row e2e_publish_token_refused 3 "REFUSED: a registry token" "PUBLISHED" -- env CARGO_REGISTRY_TOKEN=x bash "$SCRIPT_PATH" --publish --repo "$repo" --work "$work"
     mkdir -p "$tmp/fake"; printf 'sleep 30\n' > "$tmp/fake/models_t1.sh"
@@ -840,7 +1094,33 @@ m43_publish_takes_a_measure	s/\[ -z "\$MEAS" \] [|][|] \[ "\$MODE" != --publish 
 m44_crux_takes_the_ladder_go_line	s/GO_RE=.MODELS GO \\\(CRUX smoke\\\) on./GO_RE="MODELS GO.*on"/
 m45_crux_names_the_ladder_measurer	s/MEASURER_RE=.crux_sweep_shards\\\.sh./MEASURER_RE="model_ladder\\.sh"/
 m46_masked_node_counted_as_token	s/\[ ! -r "\$ch\/credentials" \] && \[ ! -r "\$ch\/credentials.toml" \]/[ ! -e "$ch\/credentials" ] \&\& [ ! -e "$ch\/credentials.toml" ]/
-m47_cargo_home_credentials_ignored	/\[ ! -r "\$ch\/credentials" \] && \[ ! -r "\$ch\/credentials.toml" \]/d'
+m47_cargo_home_credentials_ignored	/\[ ! -r "\$ch\/credentials" \] && \[ ! -r "\$ch\/credentials.toml" \]/d
+m48_nonrunners_ignored	s#if \(p in NONRUN\) return#if (0) return#
+m49_no_exec_shell_counted_a_run	s#if \(noexec\) return 0#if (0) return 0#
+m50_c_string_unread	s#if \(cf && j <= b\) return str#if (0) return str#
+m51_wrapper_not_skipped	s#if \(!\(p in WA\)\) break#break#
+m52_only_the_first_segment_judged	s#st = k \+ 1#st = n + 2#
+m53_command_string_not_split	s#gsub\(/\[;&\|\(\)\\140\]/, " ; ", s\)#s = s#
+m54_unknown_wrapper_option_skipped	s#return -1   \# M_WRAP_UNKNOWN_OPT#i++; continue#
+m55_git_any_subcommand	s#\(strip\(w\[j\]\) in GITRO\)#1#
+m56_bashrs_any_subcommand	s#\(strip\(w\[j\]\) in BRS\)#1#
+m57_editor_command_ignored	s#return 0   \# M_EDITOR_COMMAND#continue#
+m58_unknown_shell_letter_ignored	s#return anyt1\(w, a, b\)   \# M_SHELL_UNKNOWN_LETTER#continue#
+m59_plus_n_read_as_noexec	s#if \(sg == "\+" && \(ch == "n" [|][|] ch == "c" [|][|] ch == "D"\)\) return anyt1\(w, a, b\)   \# M_PLUS_N#if (0) ch = ch#
+m60_shell_option_arg_not_consumed	s#j \+= 1 \+ np; continue#j += 1; continue#
+m61_rcfile_arg_not_consumed	s#\{ j \+= 2; continue \}   \# M_RCFILE_ARG#{ j++; continue }#
+m62_unknown_long_option_skipped	s#return anyt1\(w, a, b\)   \# M_SHELL_UNKNOWN_LONG#j++; continue#
+m63_options_read_after_script_operand	s#break   \# M_SCRIPT_OPERAND#j++; continue#
+m64_assignment_not_skipped	s#while \(i <= b && strip\(w\[i\]\) ~ /\^\[A-Za-z_\]\[A-Za-z0-9_\]\*=/\) i\+\+#while (0) i++#
+m66_wrapper_positional_not_skipped	s#return i \+ pos$#return i#
+m67_taskset_cpu_list_not_marked	s#if \(x == "-c"\) tsc = 1;#if (x == "-c") tsc = 0;#
+m68_models_t1_suffix_unbounded	s#models_t1\\\.sh\(\[\^A-Za-z0-9_\.-\]\|\$\)/#models_t1\\.sh/#
+m69_models_t1_prefix_unbounded	s#/\(\^\|\[\^A-Za-z0-9_\.-\]\)models_t1#/models_t1#
+m70_git_C_operand_not_skipped	s#if \(x == "-C"\) \{ j \+= 2; continue \}#if (x == "-C") { j++; continue }#
+m71_shell_D_not_noexec	s#if \(ch == "n" [|][|] ch == "D"\) noexec = 1#if (ch == "n") noexec = 1#
+m72_refusal_is_final	s/case \$s in green[|]red[)] say/case $s in green|red|not_measured) say/
+m73_env_refusal_is_red	s/[(]BUILD-FAILED[|]NOT-THE-RELEASE/(BUILD-FAILED|ENV:|NOT-THE-RELEASE/
+m74_real_build_failure_rerolled	s/case \$s in green[|]red[)] say/case $s in green) say/'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3

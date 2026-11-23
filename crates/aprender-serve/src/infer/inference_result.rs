@@ -14,6 +14,13 @@ pub(crate) fn mark_generation_start() {
     GENERATION_START.with(|c| c.set(Some(std::time::Instant::now())));
 }
 
+/// #6588: whether a generation mark is set on this thread, without consuming it. A test reads it
+/// to prove the CPU loop (which marks right before its first forward) never started.
+#[cfg(test)]
+pub(crate) fn generation_started() -> bool {
+    GENERATION_START.with(|c| c.get().is_some())
+}
+
 fn take_generation_start() -> Option<std::time::Instant> {
     GENERATION_START.with(std::cell::Cell::take)
 }

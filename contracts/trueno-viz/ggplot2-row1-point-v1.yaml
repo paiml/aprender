@@ -1,0 +1,133 @@
+metadata:
+  id: ggplot2-row1-point-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row 1 (PLOT-GG-001, paiml/aprender#6909) — geom_point with the default
+    scale_x_continuous / scale_y_continuous. aprender-viz's BuiltGGPlot::layout() must reproduce
+    what ggplot_build() in ggplot2 4.0.3 computes for the same data and spec: layer positions,
+    GeomPoint default aesthetics, trained limits, 5% expansion, extended breaks censored to the
+    panel, and format() labels. The oracle is a committed JSON fixture produced by R; R is never
+    run at test time.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'Talbot, Lin & Hanrahan (2010) An Extension of Wilkinson''s Algorithm for Positioning Tick Labels on Axes'
+  - 'ggplot2 4.0.3: ggplot_build(), default_expansion(), GeomPoint$default_aes'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_point/generate.R'
+entity: {type: ggplot2-row, ref: geom_point}
+equations:
+  continuous_expansion:
+    formula: 'continuous_range = (lo - 0.05 * (hi - lo), hi + 0.05 * (hi - lo)) where (lo, hi) = range(data)'
+    domain: finite data with lo < hi
+    codomain: (f64, f64)
+    invariants:
+    - continuous_range strictly contains the trained limits
+    - each side grows by exactly 5% of the data span (additive expansion 0)
+    preconditions:
+    - at least two distinct finite values
+  extended_breaks:
+    formula: 'breaks = { b ∈ labeling::extended(continuous_range, m = 5) : lo_c <= b <= hi_c }'
+    domain: continuous_range = (lo_c, hi_c), lo_c < hi_c
+    codomain: Vec<f64>
+    invariants:
+    - every break lies inside continuous_range
+    - proposed breaks outside the range are censored and counted, not drawn
+  point_default_aes:
+    formula: 'GeomPoint default_aes = { shape: 19, colour: black, size: 1.5 mm, fill: NA, alpha: NA, stroke: 0.5 mm }'
+    domain: a point layer with no aesthetic set
+    codomain: per-row PointAes
+    invariants:
+    - every unset aesthetic takes ggplot2 4.0.3's default
+proof_obligations:
+- id: GG1-INV-001
+  type: invariant
+  property: Expanded range matches ggplot2
+  formal: '∀ axis: |continuous_range - ggplot2.continuous_range| <= 1e-9 rel + 1e-12 abs'
+  applies_to: continuous_expansion
+- id: GG1-INV-002
+  type: invariant
+  property: Breaks and labels match ggplot2 on the committed fixtures (row 1's oracle; apr plot's labels on the 17 geom_point_edges sets), scales trained on f64
+  formal: '∀ fixture set, axis: breaks ≈ ggplot2.breaks (1e-9 rel) ∧ labels = ggplot2.labels ∧ n_censored = ggplot2.n_censored'
+  applies_to: extended_breaks
+- id: GG1-INV-003
+  type: invariant
+  property: Point defaults match GeomPoint$default_aes
+  formal: '∀ row: (shape, colour_rgba, size, stroke, is_na(fill), is_na(alpha)) = ggplot2 row'
+  applies_to: point_default_aes
+enforcement:
+  expansion_matches:
+    description: 5% continuous expansion equals ggplot2's continuous_range
+    check: grammar::ggplot2_oracle::ggplot2_row1_scale_x_continuous
+    severity: ERROR
+  breaks_match:
+    description: extended breaks, censoring and labels equal ggplot2's
+    check: grammar::ggplot2_oracle::ggplot2_row1_scale_y_continuous
+    severity: ERROR
+  point_defaults_match:
+    description: GeomPoint default aesthetics equal ggplot2's
+    check: grammar::ggplot2_oracle::ggplot2_row1_point_default_aesthetics
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG1-001
+  rule: Expansion is 5%
+  prediction: mutating CONTINUOUS_EXPAND_MULT 0.05 -> 0.04 turns ggplot2_row1_scale_x_continuous and ggplot2_row1_scale_y_continuous RED
+  test: cargo test -p aprender-viz --lib ggplot2_row1 (crates/aprender-viz/src/grammar/ggplot2_oracle.rs)
+  if_fails: The oracle tolerance or fixture cannot see a 1% expansion change; the row proves nothing about expansion
+- id: FALSIFY-GG1-002
+  rule: Five breaks are asked for
+  prediction: mutating DEFAULT_N_BREAKS 5 -> 4 turns ggplot2_row1_scale_y_continuous RED (y breaks become 0, 4; x keeps 5, 10, so only y detects it)
+  test: cargo test -p aprender-viz --lib ggplot2_row1 (crates/aprender-viz/src/grammar/ggplot2_oracle.rs)
+  if_fails: The fixture's breaks are insensitive to the requested count; pick data whose labeling changes with m
+- id: FALSIFY-GG1-003
+  rule: Default point size is 1.5 mm
+  prediction: mutating point_defaults::SIZE_MM 1.5 -> 2.0 turns ggplot2_row1_point_default_aesthetics RED
+  test: cargo test -p aprender-viz --lib ggplot2_row1 (crates/aprender-viz/src/grammar/ggplot2_oracle.rs)
+  if_fails: The aesthetic comparison does not read size from the fixture
+- id: FALSIFY-GG1-004
+  rule: apr plot trains the position scales on the f64 values (B3)
+  prediction: removing .trained_on(domain(xs), domain(ys)) in plot_cli::build_plot, or computing pow10 with libm::pow in breaks.rs, turns edge_labels_match_ggplot2 RED
+  test: cargo test -p aprender-viz --lib plot_cli::tests::edge_labels_match_ggplot2
+  if_fails: The geom_point_edges sets no longer land an expanded edge on a break; regenerate them from generate.R
+- id: FALSIFY-GG1-005
+  rule: apr plot refuses an infinite value by column and line; only empty, NA and NaN cells are dropped (B4)
+  prediction: deleting the is_infinite arm in plot_cli::numeric_xy, or adding null to the missing cells, turns numeric_columns_drop_missing_and_refuse_the_rest_by_line RED
+  test: cargo test -p aprender-viz --lib plot_cli::tests::numeric_columns_drop_missing_and_refuse_the_rest_by_line
+  if_fails: The refusal table no longer carries Inf, -inf, infinity, 1e400 and null
+- id: FALSIFY-GG1-006
+  rule: the contract walk build.rs runs (plot_cli/proven_gen.rs sync) admits a ggplot2_row only with a falsifier and with every expected*.json drawing one layer of the block's geom from an R call naming the block's stat, position, scales, coord, facet and theme, and fails a committed table that differs
+  prediction: deleting the check_oracle call in read_rows, the empty-falsifier arm or the drift check in sync turns the_contract_walk_admits_only_rows_their_oracles_back RED; admitting a second layer, an oracle dir with no expected*.json, an oracle with no spec, or a spec whose stat, position, scale_x, scale_y, coord, facet or theme differs from the block (or is double-quoted or named twice) turns a_row_needs_a_falsifier_and_an_oracle_drawing_its_one_geom RED
+  test: 'cargo test -p aprender-viz --lib plot_cli::generator::'
+  if_fails: A block naming another geom than its R oracle drew would widen what apr plot draws
+- id: FALSIFY-GG1-007
+  rule: apr plot draws a column with one value (constant, or a single row) over the span its scale draws, v +- 0.05 (scales::expand_range zero_width = 1), and refuses a value f32 moves by more than 1e-4 of that span, or of a wider column's own range
+  prediction: measuring a zero-width column against hi - lo instead of the expanded span in plot_cli::check_f32_fidelity turns zero_width_columns_use_the_drawn_span RED (constant 0.1 refused); setting MAX_F32_ERROR_OF_RANGE to 1e-3 or 1e-5 turns values_f32_cannot_hold_are_refused_by_name RED
+  test: 'cargo test -p aprender-viz --lib plot_cli::tests::'
+  if_fails: A one-value column is refused again, or the f32 bound has moved; ggplot2 draws a zero-width range widened by width 1
+qa_gate:
+  id: F-GG1-001
+  name: ggplot2 conformance row 1 (geom_point + continuous scales)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the row-1 fixture
+  checks:
+  - expansion_matches
+  - breaks_match
+  - point_defaults_match
+# The grammar this row proves, as generate.R builds it: ggplot(df, aes(x, y)) + geom_point(),
+# with ggplot2's defaults for everything else. `apr plot` draws only
+# what such a block names: crates/aprender-viz/build.rs derives the verb's supported set from
+# every ggplot2_row block (#6991). Flat scalars only, so the block can become the properties
+# of a pv ontology entity of type ggplot2-row once that entity type is declared in Σ; until then
+# it stays a top-level block, because PV-ONT-001 refuses an undeclared entity type.
+ggplot2_row:
+  ref: geom_point
+  geom: point
+  stat: identity
+  position: identity
+  scale_x: continuous
+  scale_y: continuous
+  coord: cartesian
+  facet: 'null'
+  theme: grey
+  aes: x y
+  oracle: crates/aprender-viz/fixtures/ggplot2/geom_point

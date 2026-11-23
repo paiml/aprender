@@ -1,0 +1,132 @@
+metadata:
+  id: ggplot2-geom-tile-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-16'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row (PLOT-GG-001, paiml/aprender#6909) - geom_tile layer data. A tile is centred on (x, y); xmin/xmax are x -+ width/2 and ymin/ymax are y -+ height/2, with width and height defaulting to resolution(x) and resolution(y) (the smallest gap between distinct values above sqrt(eps), else 1). The built width and height columns hold the parameter, or 1. Defaults: fill #333333FF, linewidth 0.2, linetype 1, colour NA. Scope: continuous numeric x and y, one panel, identity stat, default coordinate system; a facet, group, data-mapped colour, fill, alpha, size, shape or label, a non-identity stat, a non-default coordinate system, text, infinite or non-finite values return a typed Err (Rendering, UnknownColumn, ScaleDomain, UnsupportedCoord or UnsupportedStat), never a panic. The Rust DataFrame has no integer type, so fixtures force doubles. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 under R; R is never run at test time. Every case goes through the public builder and layout(), compared at 1e-9 rel + 1e-12 abs.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_tile'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_tile/generate.R'
+entity: {type: ggplot2-row, ref: geom_tile}
+equations:
+  tile_bounds:
+    formula: "xmin,xmax = x -+ w/2 ; ymin,ymax = y -+ h/2 ; w,h = param or resolution(x),resolution(y)"
+    domain: numeric columns, continuous scales, no facet
+    codomain: BuiltLayer.rects and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; colours and warnings exact
+    preconditions:
+    - trained x and y ranges are non-degenerate, else ScaleDomain
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+    - every layer has the identity stat, else UnsupportedStat
+proof_obligations:
+- id: GGTILE-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact colours, warnings)'
+  applies_to: tile_bounds
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_tile_oracle::default_size_is_the_data_resolution
+    severity: ERROR
+  group_or_style_cases:
+    description: fixed fill, colour and alpha fixtures are reproduced
+    check: grammar::ggplot2_tile_oracle::fixed_fill_colour_and_alpha
+    severity: ERROR
+  edge_cases:
+    description: out-of-scope inputs are refused with a typed Err
+    check: grammar::ggplot2_tile_oracle::data_mapped_aesthetics_a_group_and_a_facet_are_refused
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGTILE-001
+  rule: "A tile is x -+ width/2 and y -+ height/2"
+  prediction: "mutation (half-width: `a + sign * d / 2.0` becomes `a + sign * d` in rects.rs tile_parts) turns default_size_is_the_data_resolution and width_and_height_parameters RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::default_size_is_the_data_resolution grammar::ggplot2_tile_oracle::width_and_height_parameters
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-002
+  rule: "The default size is the smallest gap between distinct values"
+  prediction: "mutation (resolution keeps the largest gap (`m.min(d)` becomes `m.max(d)`)) turns uneven_spacing_takes_the_smallest_gap RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::uneven_spacing_takes_the_smallest_gap
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-003
+  rule: "The built width column is the parameter or 1, never the resolved size"
+  prediction: "mutation (the width column takes the resolved size (`w.unwrap_or(1.0)` becomes `w.unwrap_or(dw)`)) turns quarter_steps_leave_the_width_column_at_one RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::quarter_steps_leave_the_width_column_at_one
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-004
+  rule: "The default tile fill is #333333FF"
+  prediction: "mutation (tile fill red channel 51 becomes 89) turns default_size_is_the_data_resolution RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::default_size_is_the_data_resolution
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-005
+  rule: "The default tile outline is 0.2 mm wide"
+  prediction: "mutation (tile linewidth 0.2 becomes 0.5) turns default_size_is_the_data_resolution RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::default_size_is_the_data_resolution
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-006
+  rule: "A fixed colour is the outline colour"
+  prediction: "mutation (the outline colour is dropped (`colour: if raster { None } else { aes.color_value }` becomes `colour: None`)) turns fixed_fill_colour_and_alpha RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::fixed_fill_colour_and_alpha
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-007
+  rule: "A fixed alpha is the layer alpha"
+  prediction: "mutation (the alpha is dropped (`alpha: aes.alpha_value.map(widen)` becomes `alpha: None`)) turns fixed_fill_colour_and_alpha RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::fixed_fill_colour_and_alpha
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-008
+  rule: "The scales train on the tile bounds"
+  prediction: "mutation (GGPlot::trained_domains drops the f64 bounds (`(f64::from(lo).min(rlo), f64::from(hi).max(rhi))` becomes `(f64::from(lo), f64::from(hi))`)) turns default_size_is_the_data_resolution RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::default_size_is_the_data_resolution
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-009
+  rule: "A geom_point beside a tile trains the same scales"
+  prediction: "mutation (trained_domains drops the point layer's domain (`(f64::from(lo).min(rlo), f64::from(hi).max(rhi))` becomes `(rlo, rhi)`)) turns a_point_layer_shares_the_scales RED. The point (3, 5) lies above the tile envelope, so the y limits change from [-0.25, 2.25] (tiles alone, expected_uneven.json) to [-0.25, 5] (expected_with_point.json), and the y continuous_range from [-0.375, 2.375] to [-0.5125, 5.2625]; x limits [0.5, 8.5] do not change"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::a_point_layer_shares_the_scales
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-010
+  rule: "A stat other than identity is refused"
+  prediction: "mutation (rects.rs require_supported accepts any stat (`if l.geom.stat...is_some() {` becomes `if false {`)) turns a_non_identity_stat_and_a_non_default_coord_are_refused RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::a_non_identity_stat_and_a_non_default_coord_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-011
+  rule: "A non-default coordinate system is refused"
+  prediction: "mutation (GGPlot::layout skips rects::require_supported) turns a_non_identity_stat_and_a_non_default_coord_are_refused RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::a_non_identity_stat_and_a_non_default_coord_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-012
+  rule: "A facet is refused"
+  prediction: "mutation (rects.rs build_layer accepts a facet (`if !matches!(facet, Facet::None) {` becomes `if false {`)) turns data_mapped_aesthetics_a_group_and_a_facet_are_refused RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::data_mapped_aesthetics_a_group_and_a_facet_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-013
+  rule: "A group is refused"
+  prediction: "mutation (require_plain_aes accepts a group (`if aes.group.is_some() {` becomes `if false {`)) turns data_mapped_aesthetics_a_group_and_a_facet_are_refused RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::data_mapped_aesthetics_a_group_and_a_facet_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-014
+  rule: "A non-finite width or height is refused"
+  prediction: "mutation (the finite check on the tile size is skipped (`if w.is_some_and(...) {` becomes `if false {`)) turns a_non_finite_width_or_height_is_refused RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::a_non_finite_width_or_height_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-015
+  rule: "A tile beside an unresolved geom is refused"
+  prediction: "mutation (marks::require_resolved stops refusing geom_area (`MarkKind::Area | MarkKind::Text` becomes `MarkKind::Text`)) turns a_tile_beside_an_unresolved_geom_is_still_refused RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::a_tile_beside_an_unresolved_geom_is_still_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-016
+  rule: "A tile layer is refused by to_svg and to_framebuffer, not returned undrawn"
+  prediction: "mutation (draw_frame no longer refuses rect-family layers (the `rects::is_rect_family` branch removed)) turns a_tile_is_refused_by_both_renderers_not_returned_empty RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::a_tile_is_refused_by_both_renderers_not_returned_empty
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GGTILE-001
+  name: ggplot2 conformance (geom_tile)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the geom_tile fixtures
+  checks:
+  - primary_cases
+  - group_or_style_cases
+  - edge_cases

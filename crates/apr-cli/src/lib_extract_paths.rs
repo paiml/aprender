@@ -359,6 +359,7 @@
             weights: false,
             json: false,
             quality: false,
+            no_weights: false,
         });
         let result = execute_command(&cli);
         assert!(

@@ -1,0 +1,20 @@
+- id: PMAT-6890
+  github_issue: 6890
+  item_type: task
+  title: 'present: Video widget for the browser renderer (pure draw + state, wasm32 element later)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-11T18:23:34Z
+  updated: 2026-11-11T18:23:34Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+  epic: 6728

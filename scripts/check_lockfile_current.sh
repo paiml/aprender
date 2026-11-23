@@ -47,7 +47,7 @@ if [ "${1:-}" = "--self-test" ]; then
     fails=0
     TD="$(mktemp -d)" || exit 1
     case "$TD" in
-        /tmp/*|/var/folders/*) : ;;
+        /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;;
         *) printf 'FAIL: mktemp -d gave %s, refusing to use it\n' "${TD:-<empty>}"; exit 1 ;;
     esac
     trap 'rm -rf "${TD:?}"' EXIT

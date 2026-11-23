@@ -1,0 +1,64 @@
+{
+  "row": "geom_vline",
+  "case": "facet",
+  "spec": "ggplot(df, aes(x, y)) + geom_point() + geom_vline(xintercept = 30) + facet_wrap(~f)",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomPoint",
+      "x": [3, 1, 2, 2, 5, 4, 0.5],
+      "y": [1, 2, 3, 4, 2.5, 6, -1.5],
+      "shape": [19, 19, 19, 19, 19, 19, 19],
+      "fill": [null, null, null, null, null, null, null],
+      "size": [1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5],
+      "alpha": [null, null, null, null, null, null, null],
+      "stroke": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+      "panel": [1, 2, 1, 2, 1, 2, 2],
+      "group": [-1, -1, -1, -1, -1, -1, -1],
+      "colour_rgba": [
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255]
+      ]
+    },
+    {
+      "geom": "GeomVline",
+      "xintercept": [30, 30],
+      "linewidth": [0.5, 0.5],
+      "linetype": [1, 1],
+      "alpha": [null, null],
+      "panel": [1, 2],
+      "group": [-1, -1],
+      "colour_rgba": [
+        [0, 0, 0, 255],
+        [0, 0, 0, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0.5, 30],
+      "continuous_range": [-0.97500000000000009, 31.475000000000001],
+      "breaks": [0, 10, 20, 30],
+      "labels": ["0", "10", "20", "30"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [-1.5, 6],
+      "continuous_range": [-1.875, 6.375],
+      "breaks": [0, 2, 4, 6],
+      "labels": ["0", "2", "4", "6"],
+      "n_breaks_censored": 1
+    }
+  }
+}

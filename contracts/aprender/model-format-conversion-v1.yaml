@@ -264,6 +264,11 @@ falsification_tests:
     that all existing tests depend on) OR non-APR inputs hit APR parse logic (confusing
     errors) OR apr_convert's short-circuit is bypassed so ≥ 4 GiB models OOM on commodity
     hosts even though the streaming implementation exists.
+- id: FALSIFY-CONV-010
+  rule: parse_import_error classifies case-insensitively with fixed precedence NotFound > AuthRequired > RateLimited > DownloadFailed
+  prediction: '"404 ... 429" -> NotFound; "FORBIDDEN" -> AuthRequired; "429 Too Many Requests, retry after 30" -> RateLimited{retry_after: Some(30)}; an unrecognised message -> DownloadFailed with reason equal to the input verbatim'
+  test: cargo test -p aprender-core --lib --features hf-hub-integration test_parse_import_error
+  if_fails: A rate-limit or auth failure is misreported (wrong user remedy), the lowercase fold is lost, or the original error text is dropped from DownloadFailed.
 kani_harnesses:
 - id: KANI-CONV-001
   obligation: Format conversion preserves tensor count
@@ -323,7 +328,7 @@ qa_gate:
   - merge_weight_algebra
   - import_integrity
   - export_fidelity
-  pass_criteria: All 9 falsification tests pass
+  pass_criteria: All 10 falsification tests pass
   falsification: >
     Convert a model, count tensors, verify all preserved.
     Quantize with extreme values, check error bounds.

@@ -289,11 +289,7 @@ fn is_technical_word(word: &str) -> bool {
 
     // Technical suffix
     let lower = word.to_lowercase();
-    if TECH_SUFFIXES.iter().any(|s| lower.ends_with(s)) && word.len() > 6 {
-        return true;
-    }
-
-    false
+    TECH_SUFFIXES.iter().any(|s| lower.ends_with(s)) && word.len() > 6
 }
 
 fn is_known_acronym(word: &str) -> bool {

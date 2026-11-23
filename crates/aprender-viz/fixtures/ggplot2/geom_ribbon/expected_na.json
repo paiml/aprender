@@ -1,0 +1,41 @@
+{
+  "row": "geom_ribbon",
+  "case": "na",
+  "spec": "ggplot(d, aes(x, ymin = lo, ymax = hi)) + geom_ribbon()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomRibbon",
+      "x": [1, 2, 3, 4, null],
+      "y": [1, 1, null, 2, 0.5],
+      "ymin": [1, 1, null, 2, 0.5],
+      "ymax": [2, null, 2.5, 4, 3],
+      "flipped_aes": [0, 0, 0, 0, 0],
+      "panel": [1, 1, 1, 1, 1],
+      "group": [-1, -1, -1, -1, -1]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [1, 4],
+      "continuous_range": [0.84999999999999998, 4.1500000000000004],
+      "breaks": [1, 2, 3, 4],
+      "labels": ["1", "2", "3", "4"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0.5, 4],
+      "continuous_range": [0.32499999999999996, 4.1749999999999998],
+      "breaks": [1, 2, 3, 4],
+      "labels": ["1", "2", "3", "4"],
+      "n_breaks_censored": 1
+    }
+  }
+}

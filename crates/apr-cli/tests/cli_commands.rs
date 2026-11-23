@@ -152,6 +152,8 @@ fn registered_commands() -> Vec<&'static str> {
         "sim",
         "cgp",
         "pv",
+        // #6991: the proven-only plot verb (trueno_viz::plot_cli); not aprender-present plot
+        "plot",
     ]
 }
 
@@ -281,7 +283,7 @@ fn test_no_unregistered_commands() {
     );
 }
 
-/// FALSIFY-CLI-005: Command count matches between contract and --help.
+/// FALSIFY-CLI-004: Command count matches between contract and --help.
 #[test]
 fn test_command_count_matches() {
     let help_commands = get_help_commands();
@@ -294,7 +296,7 @@ fn test_command_count_matches() {
 
     assert_eq!(
         help_count, contract_count,
-        "FALSIFY-CLI-005: Command count mismatch.\n\
+        "FALSIFY-CLI-004: Command count mismatch.\n\
          `apr --help` has {} commands, contract has {}.\n\
          Help commands: {:?}",
         help_count, contract_count, help_commands
@@ -486,7 +488,7 @@ fn report_says_gate_is_ok(stdout: &str, gate: &str) -> bool {
     })
 }
 
-/// FALSIFY-CLI-THRESHOLD-NAN-001: a NaN (or negative) tolerance must never turn
+/// FALSIFY-CLI-005: a NaN (or negative) tolerance must never turn
 /// a failing CRUX lint gate into a reported pass.
 ///
 /// Every one of these gates compares an observation against a threshold —
@@ -588,7 +590,7 @@ fn nan_threshold_never_reports_a_failing_lint_gate_as_ok() {
         let control = apr_binary().args(&base).output().expect("run apr");
         assert!(
             !control.status.success(),
-            "FALSIFY-CLI-THRESHOLD-NAN-001 control: `apr {}` must FAIL at the shipped \
+            "FALSIFY-CLI-005 control: `apr {}` must FAIL at the shipped \
              defaults, otherwise the disarm case below proves nothing.\nstdout:\n{}",
             base.join(" "),
             String::from_utf8_lossy(&control.stdout)
@@ -600,13 +602,13 @@ fn nan_threshold_never_reports_a_failing_lint_gate_as_ok() {
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(
             !out.status.success(),
-            "FALSIFY-CLI-THRESHOLD-NAN-001: `apr {}` exited 0 — a NaN threshold disarmed \
+            "FALSIFY-CLI-005: `apr {}` exited 0 — a NaN threshold disarmed \
              the {gate} gate on a body that fails at the defaults.\nstdout:\n{stdout}",
             args.join(" ")
         );
         assert!(
             !report_says_gate_is_ok(&stdout, gate),
-            "FALSIFY-CLI-THRESHOLD-NAN-001: the report asserted `{gate} : Ok` for an \
+            "FALSIFY-CLI-005: the report asserted `{gate} : Ok` for an \
              observation it never actually checked.\nstdout:\n{stdout}"
         );
     }
@@ -1377,6 +1379,206 @@ fn kind_totality_guard_case_table() {
         assert!(
             bad.iter().any(|b| b.contains(expect)),
             "case `{case}` must be RED with `{expect}`; got {bad:?}"
+        );
+    }
+}
+
+/// The row-1 fixture R generated the ggplot2 oracle from: a copy of
+/// `crates/aprender-viz/fixtures/ggplot2/geom_point/data.csv` kept inside this
+/// crate, because `cargo package -p apr-cli` ships only this crate's files and an
+/// `include_str!` of the sibling path does not compile from the published tarball.
+const ROW1_CSV: &str = include_str!("fixtures/ggplot2/geom_point/data.csv");
+
+/// The copy must stay byte-identical to the fixture the oracle was generated from.
+/// From the published tarball the sibling crate is absent, so there is nothing to
+/// compare; inside the workspace its manifest exists and the files must match.
+#[test]
+fn row1_csv_copy_matches_the_viz_fixture() {
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates dir");
+    if !crates.join("aprender-viz/Cargo.toml").exists() {
+        return;
+    }
+    let original =
+        std::fs::read_to_string(crates.join("aprender-viz/fixtures/ggplot2/geom_point/data.csv"))
+            .expect("the viz fixture exists inside the workspace");
+    assert_eq!(
+        ROW1_CSV, original,
+        "crates/apr-cli/tests/fixtures/ggplot2/geom_point/data.csv drifted from the aprender-viz fixture; copy it again"
+    );
+}
+
+fn row1_csv() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let csv = dir.path().join("row1.csv");
+    std::fs::write(&csv, ROW1_CSV).expect("write csv");
+    (dir, csv)
+}
+
+fn apr_plot(args: &[&str]) -> std::process::Output {
+    apr_binary()
+        .arg("plot")
+        .args(args)
+        .output()
+        .expect("failed to run apr plot")
+}
+
+/// #6991: `apr plot` draws row 1 (geom_point, continuous x/y) on stdout with the x break
+/// labels the R oracle has (`expected.json`: 5, 10), one glyph per data row.
+#[test]
+fn apr_plot_draws_row1_on_stdout_with_the_oracle_breaks() {
+    let (_dir, csv) = row1_csv();
+    let out = apr_plot(&["--data", csv.to_str().expect("utf8"), "--aes", "x=x,y=y"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 24, "{stdout}");
+    assert_eq!(
+        lines[23].split_whitespace().collect::<Vec<_>>(),
+        ["5", "10"]
+    );
+    let rows = ROW1_CSV.lines().filter(|l| !l.starts_with('#')).count() - 1;
+    assert_eq!(stdout.matches('●').count(), rows, "{stdout}");
+}
+
+/// #6991: the SVG target carries every x and y break label of the oracle.
+#[test]
+fn apr_plot_writes_svg_with_the_oracle_break_labels() {
+    let (_dir, csv) = row1_csv();
+    let out = apr_plot(&[
+        "--data",
+        csv.to_str().expect("utf8"),
+        "--aes",
+        "x=x,y=y",
+        "--output",
+        "svg",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let svg = String::from_utf8_lossy(&out.stdout);
+    assert!(svg.starts_with("<svg"), "{svg}");
+    for label in ["5", "10", "-2.5", "0.0", "2.5", "5.0", "7.5"] {
+        assert!(
+            svg.contains(&format!(">{label}</text>")),
+            "missing break label {label}"
+        );
+    }
+}
+
+/// #6991: a geom no conformance row proves is refused by name, with the proven set listed,
+/// and nothing is drawn.
+#[test]
+fn apr_plot_refuses_geom_line_by_name() {
+    let (_dir, csv) = row1_csv();
+    let out = apr_plot(&[
+        "--data",
+        csv.to_str().expect("utf8"),
+        "--aes",
+        "x=x,y=y",
+        "--geom",
+        "line",
+    ]);
+    assert!(!out.status.success(), "geom line must be refused");
+    assert!(out.stdout.is_empty(), "nothing is drawn");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unsupported geom 'line'; supported: point"),
+        "{stderr}"
+    );
+}
+
+/// L3 of the review of #6992: the global `--json` and `--quiet` would change the output, which
+/// `apr plot` does not offer, so they are refused instead of accepted and ignored.
+#[test]
+fn apr_plot_refuses_json_and_quiet() {
+    let (_dir, csv) = row1_csv();
+    for (flag, name) in [("--json", "--json"), ("-q", "--quiet")] {
+        let out = apr_binary()
+            .arg(flag)
+            .arg("plot")
+            .args(["--data", csv.to_str().expect("utf8"), "--aes", "x=x,y=y"])
+            .output()
+            .expect("failed to run apr plot");
+        assert!(!out.status.success(), "{flag} must be refused");
+        assert!(out.stdout.is_empty(), "nothing is drawn with {flag}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains(&format!("plot: {name} is not supported")),
+            "{stderr}"
+        );
+    }
+}
+
+/// L5 of the review of #6992: `apr -v plot --output svg > p.svg` must write a valid SVG; the
+/// verbose lines go to stderr, not into the file.
+#[test]
+fn apr_plot_keeps_verbose_lines_off_stdout() {
+    let (_dir, csv) = row1_csv();
+    let out = apr_binary()
+        .arg("-v")
+        .arg("plot")
+        .args([
+            "--data",
+            csv.to_str().expect("utf8"),
+            "--aes",
+            "x=x,y=y",
+            "--output",
+            "svg",
+        ])
+        .output()
+        .expect("failed to run apr plot");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.starts_with("<svg"), "{stdout:.200}");
+    assert!(!stdout.contains("verbose:"), "{stdout:.200}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("verbose: apr "), "{stderr}");
+}
+
+/// N5 of the review of #6992: a command that does not own stdout keeps its `--verbose`
+/// preamble on stdout (`vprintln!`); only `apr plot` moves it to stderr. The command fails
+/// (no such file) after the preamble is printed, which is all this test needs.
+#[test]
+fn verbose_preamble_stays_on_stdout_for_commands_that_do_not_own_it() {
+    let out = apr_binary()
+        .args(["-v", "lint", "/nonexistent/verbose-preamble-6992.apr"])
+        .output()
+        .expect("failed to run apr lint");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stdout.contains("verbose: apr "),
+        "stdout: {stdout:.300} stderr: {stderr:.300}"
+    );
+    assert!(!stderr.contains("verbose: apr "), "{stderr:.300}");
+}
+
+/// L2 of the review of #6992: the help text is for users, so it carries no ticket number and
+/// no internal module path.
+#[test]
+fn apr_plot_help_has_no_ticket_or_internal_path() {
+    for args in [vec!["plot", "--help"], vec!["--help"]] {
+        let out = apr_binary()
+            .args(&args)
+            .output()
+            .expect("failed to run apr");
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(text.contains("plot"), "plot is listed: {args:?}");
+        assert!(
+            !text.contains("#6991") && !text.contains("plot_cli"),
+            "{args:?}: {text}"
         );
     }
 }

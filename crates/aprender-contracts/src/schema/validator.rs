@@ -63,6 +63,12 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
         crate::schema::kaizen::validate_kaizen(contract, &mut violations);
     }
 
+    // Simulation-only checks (SIM3D, aprender#7245): a `simulation` contract is
+    // exempt from PROVABILITY-001 but must carry a closed shape and a falsifier.
+    if contract.kind() == ContractKind::Simulation {
+        validate_simulation(contract, &mut violations);
+    }
+
     // CRUX competitive-research metadata (aprender#2555): kind-independent —
     // the three fields are carried by 275 `crux-*` contracts of several kinds
     // and by non-crux contracts that reuse the vocabulary.
@@ -354,6 +360,33 @@ fn validate_crux_registry_stories(contract: &Contract, violations: &mut Vec<Viol
             }),
             Some(_) => {}
         }
+    }
+}
+
+/// SIM-001: a `simulation` contract declares a `shape:` or `shapes:` block.
+/// SIM-002: it carries at least one falsification test. A simulation contract
+/// with neither is a label on a document nothing grades.
+fn validate_simulation(contract: &Contract, violations: &mut Vec<Violation>) {
+    let has_shape = contract
+        .unknown_top_level_keys
+        .iter()
+        .any(|k| k == "shape" || k == "shapes");
+    if !has_shape {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: "SIM-001".to_string(),
+            message: "simulation contract must declare a `shape:` or `shapes:` block".to_string(),
+            location: Some("shape".to_string()),
+        });
+    }
+    if contract.falsification_tests.is_empty() {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: "SIM-002".to_string(),
+            message: "simulation contract must carry at least one `falsification_tests` entry"
+                .to_string(),
+            location: Some("falsification_tests".to_string()),
+        });
     }
 }
 

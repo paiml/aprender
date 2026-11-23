@@ -33,3 +33,10 @@ falsification:
     description: "throughput(fp16) ≥ 1.5 × throughput(fp32) for M,N ≥ 512"
     test: "Related tests in crates/aprender-compute/src/backends/gpu/"
     evidence: "cargo test --lib"
+
+falsification_tests:
+  - id: FALSIFY-FP16-GEMM-001
+    description: "fp16-rounded inputs stay within 1e-2 of the fp32 GEMM (CPU reference; the 1.5x cuBLAS throughput claim is GPU-only and NOT CI evidence)"
+    test: "cargo test -p aprender-compute --lib test_fp16_gemm_within_bound_of_fp32"
+    prediction: "Max relative error between fp16-input and fp32 GEMM is below 1e-2"
+    if_fails: "fp16 precision loss exceeds the contract bound"

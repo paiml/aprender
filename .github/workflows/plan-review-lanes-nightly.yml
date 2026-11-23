@@ -1,0 +1,39 @@
+# plan-review-lanes-nightly.yml -- LAB (C324): single-family plan-review lanes must be labeled ADVISORY.
+# Runs nightly off the PR, merge-queue and release paths. Promotion to a GATE needs the operator's yes, three
+# green nights on main and one gate retired (C324 rule 7). aprender#6625 #6626 #6627.
+name: plan-review-lanes LAB nightly
+on:
+  schedule:
+    - cron: '50 3 * * *'
+  workflow_dispatch:
+concurrency:
+  group: plan-review-lanes-nightly
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  plan-review-lanes:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Self-test (planted violation RED) then audit the real specs
+        id: lab
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/plan-review-lanes.log") 2>&1
+          bash scripts/lab/plan_review_lanes_audit.sh --self-test
+          bash scripts/lab/plan_review_lanes_audit.sh
+      - name: A red night opens or updates the one LAB ticket
+        if: failure() && steps.lab.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-plan-review-lanes --title "LAB: single-family plan-review lanes not labeled ADVISORY" \
+            --owner aprender-f20-i5 --log "$RUNNER_TEMP/plan-review-lanes.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"

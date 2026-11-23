@@ -1,5 +1,7 @@
 #![allow(clippy::disallowed_methods)] // unwrap in tests, as the crate's other test files
-use super::{aggregate, fold, id_value, parse_args, parse_id, read_fragments};
+use super::{
+    aggregate, check, fold, id_value, parse_args, parse_cmd, parse_id, read_fragments, Cmd,
+};
 use std::path::{Path, PathBuf};
 
 const BASE: &str = "# header\nroadmap:\n- id: PMAT-100\n  title: a\n- id: PMAT-300\n  title: c\n- id: LEGACY-THING\n  title: l\n";
@@ -209,5 +211,162 @@ fn id_value_undoes_each_quoting_shape() {
         ("'a\"", "'a\""),
     ] {
         assert_eq!(id_value(raw), want, "{raw:?}");
+    }
+}
+
+// ---- T1: a fragment is ONE entry whose id is its filename (YAML validity: the Python guard) ----
+
+#[test]
+fn a_fragment_with_text_above_its_entry_is_refused() {
+    let bad = (
+        "PMAT-200".to_string(),
+        "title: stray\n- id: PMAT-200\n".to_string(),
+    );
+    assert!(aggregate(BASE, &[bad])
+        .unwrap_err()
+        .contains("exactly one entry mapping"));
+    let ok = (
+        "PMAT-200".to_string(),
+        "# a comment\n\n- id: PMAT-200\n".to_string(),
+    );
+    assert!(aggregate(BASE, &[ok]).is_ok());
+}
+
+#[test]
+fn a_crlf_or_quoted_fragment_id_still_matches_its_filename() {
+    for t in [
+        "- id: PMAT-200\r\n  title: a\r\n",
+        "- id: 'PMAT-200'\n",
+        "- id: \"PMAT-200\"\n",
+    ] {
+        assert!(
+            aggregate(BASE, &[("PMAT-200".into(), t.into())]).is_ok(),
+            "{t:?}"
+        );
+    }
+}
+
+#[test]
+fn a_fragment_naming_another_id_is_refused() {
+    let bad = (
+        "PMAT-200".to_string(),
+        "- id: PMAT-201\n  title: misfiled\n".to_string(),
+    );
+    let e = aggregate(BASE, &[bad]).unwrap_err();
+    assert!(e.contains("carries id PMAT-201, not its filename"), "{e}");
+}
+
+#[test]
+fn a_fragment_holding_two_entries_or_a_mapping_is_refused() {
+    let two = (
+        "PMAT-200".to_string(),
+        "- id: PMAT-200\n- id: PMAT-201\n".to_string(),
+    );
+    let map = ("PMAT-200".to_string(), "id: PMAT-200\n".to_string());
+    for bad in [two, map] {
+        assert!(aggregate(BASE, &[bad])
+            .unwrap_err()
+            .contains("must hold exactly one entry mapping"));
+    }
+}
+
+// ---- T2: `check <roadmap> <entries>` == roadmap_fragments.py `aggregate --check` ----------
+
+fn tree(tag: &str, roadmap: &str, base: Option<&str>, frags: &[(String, String)]) -> PathBuf {
+    let d = dir(tag);
+    let entries = d.join("entries");
+    let _ = std::fs::remove_dir_all(&entries);
+    std::fs::create_dir_all(&entries).unwrap();
+    std::fs::write(d.join("roadmap.yaml"), roadmap).unwrap();
+    let _ = std::fs::remove_file(d.join("roadmap-base.yaml"));
+    if let Some(b) = base {
+        std::fs::write(d.join("roadmap-base.yaml"), b).unwrap();
+    }
+    for (id, t) in frags {
+        std::fs::write(entries.join(format!("{id}.yaml")), t).unwrap();
+    }
+    d
+}
+
+#[test]
+fn check_passes_a_regenerated_roadmap_and_names_the_count() {
+    let frag = f("PMAT-200", "b");
+    let out = aggregate(BASE, std::slice::from_ref(&frag)).unwrap();
+    let d = tree("chk-ok", &out, Some(BASE), &[frag]);
+    let msg = check(&d.join("roadmap.yaml"), &d.join("entries")).unwrap();
+    assert!(
+        msg.contains("== aggregate(1 fragment(s)), idempotent"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn check_refuses_a_roadmap_that_was_not_regenerated() {
+    let d = tree("chk-drift", BASE, Some(BASE), &[f("PMAT-200", "b")]);
+    let e = check(&d.join("roadmap.yaml"), &d.join("entries")).unwrap_err();
+    assert!(e.contains("is not what the aggregator produces"), "{e}");
+}
+
+#[test]
+fn check_without_a_frozen_base_uses_the_roadmap_as_its_own_base() {
+    // The scratch-dir shape every guard caller relies on (roadmap_fragments.py base_path).
+    let frag = f("PMAT-100", "a");
+    let out = aggregate(BASE, std::slice::from_ref(&frag)).unwrap();
+    let d = tree("chk-nobase", &out, None, &[frag]);
+    assert!(check(&d.join("roadmap.yaml"), &d.join("entries")).is_ok());
+}
+
+#[test]
+fn check_refuses_a_hand_edited_header_against_the_frozen_base() {
+    let tampered = BASE.replace("# header", "# edited");
+    let d = tree("chk-header", &tampered, Some(BASE), &[]);
+    assert!(check(&d.join("roadmap.yaml"), &d.join("entries")).is_err());
+}
+
+#[test]
+fn check_and_fold_args_parse_and_nothing_else_does() {
+    let a = |v: &[&str]| v.iter().map(ToString::to_string).collect::<Vec<_>>();
+    assert_eq!(
+        parse_cmd(&a(&["check", "r", "e"])).unwrap(),
+        Cmd::Check(PathBuf::from("r"), PathBuf::from("e"))
+    );
+    assert_eq!(
+        parse_cmd(&a(&["fold", "b", "e"])).unwrap(),
+        Cmd::Fold(PathBuf::from("b"), PathBuf::from("e"))
+    );
+    for bad in [&["check", "r"][..], &["chek", "r", "e"], &[]] {
+        assert!(parse_cmd(&a(bad)).is_err(), "{bad:?}");
+    }
+}
+
+// ---- T3: the real tree. Robust to a stale roadmap.yaml: it compares the fold with ITSELF ----
+
+#[test]
+fn every_real_fragment_parses_and_the_real_fold_is_idempotent() {
+    let docs = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/roadmaps");
+    let base_file = if docs.join("roadmap-base.yaml").exists() {
+        docs.join("roadmap-base.yaml")
+    } else {
+        docs.join("roadmap.yaml")
+    };
+    let frags = read_fragments(&docs.join("entries")).unwrap();
+    assert!(
+        frags.len() >= 400,
+        "only {} fragments: wrong dir?",
+        frags.len()
+    );
+    let out = fold(&base_file, &docs.join("entries")).unwrap();
+    assert_eq!(
+        aggregate(&out, &frags).unwrap(),
+        out,
+        "fold(fold(x)) != fold(x)"
+    );
+    let got = ids(&out);
+    for (id, _) in &frags {
+        let n = got
+            .iter()
+            .filter(|g| g.trim_matches(['\'', '"']) == id)
+            .count();
+        assert_eq!(n, 1, "{id} appears {n} times in the fold");
     }
 }

@@ -28,13 +28,8 @@ pub fn should_suppress_finding(finding: &Finding, line_content: &str) -> bool {
     }
 
     // Suppress warnings about code that detects patterns (meta-level)
-    if (line_content.contains("PATTERN_MARKERS") || line_content.contains("pattern"))
+    (line_content.contains("PATTERN_MARKERS") || line_content.contains("pattern"))
         && (finding.title.contains("FIXME") || finding.title.contains("TODO"))
-    {
-        return true;
-    }
-
-    false
 }
 
 /// Determine which lines are inside test code (after #[cfg(test)] or #[test]).

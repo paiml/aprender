@@ -388,7 +388,7 @@ Replaces v1's qualitative `adversarial_cases`.
 | diff shape | mutation requirement | blocking |
 |---|---|---|
 | touches `scripts/check_*.sh`, `dogfood.sh`, `ci.yml` gate logic, or a `contracts/*.yaml` falsifier | 100% kill on the committed mutation set for that guard | **yes** |
-| touches Rust source | `cargo mutants --in-diff <diff> --timeout 120 --jobs 4`, capped at `MUTANT_BUDGET=40` | advisory |
+| touches Rust source | not run on a PR: Rust-source mutation runs only in the scheduled `.github/workflows/mutants-nightly.yml` (infra#3828), which reports it | — |
 | docs / non-code | not triggered | — |
 
 Bash guards are exercised with `bats-core` fixtures (TAP output, `setup`/`teardown` isolation, mockable externals) — see §6.

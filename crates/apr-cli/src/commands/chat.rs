@@ -383,12 +383,22 @@ fn try_load_tokenizer(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
 /// Search HuggingFace cache for Qwen tokenizer.json files.
 fn search_hf_cache_tokenizer(hf_cache: &Path) -> Option<Qwen2BpeTokenizer> {
     let entries = std::fs::read_dir(hf_cache).ok()?;
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        if !name.to_string_lossy().starts_with("models--Qwen") {
+    search_hf_entries(entries.flatten().map(|e| e.path()))
+}
+
+/// Visit cache entries IN THE GIVEN ORDER (#7057: the order is an input, so a
+/// test can place an unreadable entry first on any host).
+fn search_hf_entries<I: IntoIterator<Item = std::path::PathBuf>>(
+    entries: I,
+) -> Option<Qwen2BpeTokenizer> {
+    for entry in entries {
+        let is_qwen = entry
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("models--Qwen"));
+        if !is_qwen {
             continue;
         }
-        let snapshots_dir = entry.path().join("snapshots");
+        let snapshots_dir = entry.join("snapshots");
         // #3881: this was `.ok()?`, which returns None from the WHOLE function —
         // so the FIRST `models--Qwen*` entry with an unreadable `snapshots/`
         // ended the search and every later entry went unvisited. Measured on
@@ -859,14 +869,12 @@ mod pmat3794_chat_cuda_preload_gate {
 // for the model being loaded sat a few entries later. `apr chat` then exited 4
 // reporting the MODEL as invalid.
 //
-// THE ANTI-VACUITY PROBLEM: `read_dir` order is arbitrary, so a fixture that
-// merely CONTAINS a broken entry proves nothing — the good one may be visited
-// first and the test passes on both the broken and the fixed code. This module
-// therefore CONSTRUCTS the ordering and REFUSES to run if it cannot: a fixture
-// that could not be built is reported as a failure, never as a pass.
+// THE ANTI-VACUITY PROBLEM: `read_dir` order is arbitrary, so the search takes
+// its entries as an ordered input (`search_hf_entries`, #7057) and the test
+// passes the broken entry FIRST — constructible on every host.
 #[cfg(test)]
 mod hf_cache_search_survives_an_unreadable_entry_3881 {
-    use super::search_hf_cache_tokenizer;
+    use super::{search_hf_cache_tokenizer, search_hf_entries};
     use std::fs;
     use std::path::Path;
 
@@ -887,54 +895,36 @@ mod hf_cache_search_survives_an_unreadable_entry_3881 {
         fs::write(snap.join("tokenizer.json"), MINIMAL_TOKENIZER).expect("write tokenizer");
     }
 
-    /// Index of the first broken entry and of the good entry in `read_dir` order.
-    fn order(hub: &Path, good: &str) -> (Option<usize>, Option<usize>) {
-        let mut first_broken = None;
-        let mut good_at = None;
-        for (i, e) in fs::read_dir(hub).expect("read hub").flatten().enumerate() {
-            let name = e.file_name().to_string_lossy().to_string();
-            if !name.starts_with("models--Qwen") {
-                continue;
-            }
-            if name.ends_with(good) {
-                good_at.get_or_insert(i);
-            } else if first_broken.is_none() {
-                first_broken = Some(i);
-            }
-        }
-        (first_broken, good_at)
-    }
-
+    /// The order is an INPUT (#7057): the broken entry is placed first by
+    /// construction, so this holds on every host and never depends on `read_dir`.
     #[test]
     fn a_broken_entry_before_a_good_one_does_not_end_the_search() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let hub = tmp.path();
-
+        broken_entry(hub, "Broken-000");
         good_entry(hub, "Good-With-Tokenizer");
-        // Add broken entries until one of them is visited BEFORE the good one.
-        // Bounded, and the bound failing is an ENV failure, not a pass.
-        let mut constructed = false;
-        for n in 0..64 {
-            broken_entry(hub, &format!("Broken-{n:03}"));
-            if let (Some(b), Some(g)) = order(hub, "Good-With-Tokenizer") {
-                if b < g {
-                    constructed = true;
-                    break;
-                }
-            }
-        }
+        let ordered = vec![
+            hub.join("models--Qwen--Broken-000"),
+            hub.join("models--Qwen--Good-With-Tokenizer"),
+        ];
         assert!(
-            constructed,
-            "FIXTURE NOT CONSTRUCTED: could not get a broken entry ahead of the good one \
-             in read_dir order after 64 attempts. This test cannot judge the defect it \
-             exists for, so it fails rather than passing vacuously."
-        );
-
-        assert!(
-            search_hf_cache_tokenizer(hub).is_some(),
+            search_hf_entries(ordered).is_some(),
             "FALSIFIED #3881: the search returned None although a readable tokenizer \
              exists — an unreadable entry visited first ended the whole search"
         );
+    }
+
+    /// Order-independent read_dir-level check: whatever order the host returns,
+    /// the good entry is found.
+    #[test]
+    fn read_dir_wrapper_finds_the_good_entry_in_any_order() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let hub = tmp.path();
+        for n in 0..8 {
+            broken_entry(hub, &format!("Broken-{n:03}"));
+        }
+        good_entry(hub, "Good-With-Tokenizer");
+        assert!(search_hf_cache_tokenizer(hub).is_some());
     }
 
     /// The negative control: with NO good entry the search must still return

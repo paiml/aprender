@@ -7,24 +7,41 @@
 #[cfg(target_arch = "wasm32")]
 pub mod app;
 #[cfg(target_arch = "wasm32")]
+pub mod audio_source;
+#[cfg(target_arch = "wasm32")]
 pub mod canvas2d;
+#[cfg(target_arch = "wasm32")]
+pub mod entry;
 #[cfg(target_arch = "wasm32")]
 pub mod events;
 #[cfg(target_arch = "wasm32")]
 pub mod showcase;
 #[cfg(target_arch = "wasm32")]
+pub mod video_dom;
+#[cfg(target_arch = "wasm32")]
 pub mod websocket;
 
 // Cross-platform modules (work on native for testing)
+pub mod audio_level;
+pub mod frame_loop;
+pub mod mount;
 pub mod notebook;
 pub mod router;
 pub mod shell_autocomplete;
 pub mod storage;
+pub mod video_ops;
 
 #[cfg(target_arch = "wasm32")]
 pub use app::App;
+pub use audio_level::bytes_to_samples;
+#[cfg(target_arch = "wasm32")]
+pub use audio_source::AudioLevelSource;
 #[cfg(target_arch = "wasm32")]
 pub use canvas2d::Canvas2DRenderer;
+#[cfg(target_arch = "wasm32")]
+pub use entry::{mount, MessageHandler, MountHandle};
+pub use frame_loop::{FrameClock, FrameLoop, FrameScheduler};
+pub use mount::{schedule, Frame, FrameAction, Mounted};
 pub use router::{BrowserRouter, RouteMatch, RouteMatcher};
 pub use shell_autocomplete::ShellAutocomplete;
 #[cfg(target_arch = "wasm32")]
@@ -32,6 +49,9 @@ pub use shell_autocomplete::ShellAutocompleteDemo;
 #[cfg(target_arch = "wasm32")]
 pub use showcase::ShowcaseDemo;
 pub use storage::{ScopedStorage, Storage, StorageError, StorageType};
+#[cfg(target_arch = "wasm32")]
+pub use video_dom::VideoLayer;
+pub use video_ops::{reconcile, VideoNode, VideoOp};
 #[cfg(target_arch = "wasm32")]
 pub use websocket::{WebSocketClient, WebSocketError};
 

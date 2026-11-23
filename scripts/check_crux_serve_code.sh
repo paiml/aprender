@@ -49,7 +49,7 @@ _cleanup() {
     for f in ${STUBS:-}; do stub_reap "$f"; done
   fi
   case "${TMP:-}" in
-    /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
+    /tmp/?*|/var/folders/?*|"${TMPDIR:-/tmp}"/?*) rm -rf -- "$TMP" || : ;;
     *) : ;;
   esac
 }

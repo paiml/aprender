@@ -1,1 +1,1 @@
-cargo test -p aprender-present-cli --test cli_surface_gate
+cargo test -p aprender-present-cli --test present_cli_surface_gate

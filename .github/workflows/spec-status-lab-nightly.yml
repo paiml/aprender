@@ -1,0 +1,44 @@
+# spec-status-lab-nightly.yml -- LAB check for the spec-sweep Status-header rule (S1: #6604 #6628 #6629 #6636 #6637 #6638 #6639 #6643).
+# LAB (C324 items 4-5): it never runs in a PR, merge-queue or release job and cannot block a merge. A red
+# opens or updates ONE ticket (owner aprender-cop, via scripts/lab_ticket.sh) and stays silent; red or
+# unmeasured for 7 days, it stops until its owner brings it back. Promotion to GATE needs Noah's yes (C324 rule 7).
+name: spec-status LAB nightly
+
+on:
+  schedule:
+    - cron: '50 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: spec-status-lab-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  spec-status-headers:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Status headers valid (falsifier first, then the real tree)
+        id: lab
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/spec-status.log") 2>&1
+          bash scripts/lab/spec_status_headers.sh --self-test
+          bash scripts/lab/spec_status_headers.sh .
+      - name: A red night opens or updates the one LAB ticket
+        if: failure() && steps.lab.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-spec-status --title "LAB: spec Status headers red (spec-sweep S1)" \
+            --owner aprender-cop --log "$RUNNER_TEMP/spec-status.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"

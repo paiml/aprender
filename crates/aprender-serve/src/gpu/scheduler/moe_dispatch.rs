@@ -42,16 +42,7 @@ pub fn moe_route(
     }
 
     // Step 2: softmax with max subtraction for numerical stability
-    let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let mut exp_sum = 0.0f32;
-    let mut probs = vec![0.0f32; num_experts];
-    for (i, &logit) in logits.iter().enumerate() {
-        probs[i] = (logit - max_logit).exp();
-        exp_sum += probs[i];
-    }
-    for p in &mut probs {
-        *p /= exp_sum;
-    }
+    let probs = router_probs(&logits);
 
     // Step 3: top-k selection
     let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
@@ -69,6 +60,18 @@ pub fn moe_route(
     };
 
     MoeRouteResult { indices, weights }
+}
+
+/// Router softmax with max subtraction (moe-router-v1 `softmax_normalization`:
+/// the returned probabilities sum to 1.0).
+fn router_probs(logits: &[f32]) -> Vec<f32> {
+    let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let mut probs: Vec<f32> = logits.iter().map(|&l| (l - max_logit).exp()).collect();
+    let exp_sum: f32 = probs.iter().sum();
+    for p in &mut probs {
+        *p /= exp_sum;
+    }
+    probs
 }
 
 /// Single expert SwiGLU forward pass.
@@ -223,6 +226,48 @@ pub fn moe_forward_token(
 mod tests {
     use super::*;
 
+    // FALSIFY-MOE-ROUTER-004 (FALSIFY-MOE_ROUTER_V1_001/002/003): router probs sum to 1, exactly k
+    // distinct experts are selected, and their renormalized weights sum to 1.
+    #[test]
+    fn falsify_moe_router_v1_sums_and_topk() {
+        const TOL: f32 = 1e-5;
+        let logit_sets: [&[f32]; 5] = [
+            &[0.0, 0.0, 0.0, 0.0],
+            &[1.0, -2.0, 3.5, 0.25, -7.0, 2.0],
+            &[80.0, 79.0, -80.0, 0.0, 12.0, 3.0, -1.0, 5.0],
+            &[-3.0, -3.0, -1e-3, -50.0],
+            &[0.5; 16],
+        ];
+        for logits in logit_sets {
+            let sum: f32 = router_probs(logits).iter().sum();
+            assert!(
+                (sum - 1.0).abs() < TOL,
+                "V1_001: probs sum {sum} for {logits:?}"
+            );
+        }
+        let hidden_dim = 3;
+        for (num_experts, k) in [(4, 1), (6, 2), (8, 3), (16, 16)] {
+            let hidden: Vec<f32> = (0..hidden_dim).map(|j| 0.3 * j as f32 - 0.2).collect();
+            let gate: Vec<f32> = (0..num_experts * hidden_dim)
+                .map(|i| ((i * 7 % 11) as f32 - 5.0) * 0.4)
+                .collect();
+            let r = moe_route(&hidden, &gate, num_experts, k, hidden_dim);
+            let mut distinct = r.indices.clone();
+            distinct.sort_unstable();
+            distinct.dedup();
+            assert_eq!(
+                (r.indices.len(), distinct.len()),
+                (k, k),
+                "V1_002: k={k} of {num_experts}"
+            );
+            let wsum: f32 = r.weights.iter().sum();
+            assert!(
+                (wsum - 1.0).abs() < TOL,
+                "V1_003: weights sum {wsum} (k={k})"
+            );
+        }
+    }
+
     // FALSIFY-MOE-ROUTER-001: Softmax stability with large logits
     #[test]
     fn test_softmax_stability_large_logits() {
@@ -255,7 +300,7 @@ mod tests {
         assert!((sum - 1.0).abs() < 1e-6, "weights sum = {sum}");
     }
 
-    // FALSIFY-MOE-ROUTER-004: Zero gate weight → uniform routing
+    // FALSIFY-MOE-ROUTER-002: Zero gate weight → uniform routing
     #[test]
     fn test_zero_gate_uniform_routing() {
         let hidden_dim = 4;
@@ -408,5 +453,92 @@ mod tests {
             gated_norm < ungated_norm * 0.1,
             "shared expert gate should suppress output: ungated={ungated_norm}, gated={gated_norm}"
         );
+    }
+
+    // FALSIFY-MOE_EXPERT_DISPATCH_V1_001/002: output = sum_e weight[e] * expert_e(x)
+    // over the routed experts only; weights of unrouted experts cannot change it.
+    #[test]
+    fn falsify_moe_expert_dispatch_isolation_and_weighted_sum() {
+        let (hidden_dim, intermediate, num_experts, k) = (4usize, 2usize, 4usize, 2usize);
+        let gu_len = 2 * intermediate * hidden_dim;
+        let dn_len = hidden_dim * intermediate;
+        let mut expert_gate_up = vec![0.0f32; num_experts * gu_len];
+        let mut expert_down = vec![0.0f32; num_experts * dn_len];
+        for e in 0..num_experts {
+            for i in 0..gu_len {
+                expert_gate_up[e * gu_len + i] = 0.05 * (e as f32 + 1.0) + 0.01 * i as f32;
+            }
+            for i in 0..dn_len {
+                expert_down[e * dn_len + i] = 0.03 * (e as f32 + 1.0) - 0.01 * i as f32;
+            }
+        }
+        // Experts 0 and 1 win the router (strictly higher logits than 2 and 3).
+        let mut gate_weight = vec![0.0f32; num_experts * hidden_dim];
+        for e in 0..num_experts {
+            let logit = [2.0f32, 1.0, -1.0, -2.0][e];
+            for j in 0..hidden_dim {
+                gate_weight[e * hidden_dim + j] = logit;
+            }
+        }
+        let moe = MoeExpertWeights {
+            gate_weight: gate_weight.clone(),
+            expert_gate_up: expert_gate_up.clone(),
+            expert_down: expert_down.clone(),
+            shared_gate: vec![0.0f32; intermediate * hidden_dim],
+            shared_up: vec![0.0f32; intermediate * hidden_dim],
+            shared_down: vec![0.0f32; hidden_dim * intermediate],
+            shared_expert_gate_weight: vec![],
+            num_experts,
+            num_experts_per_tok: k,
+            expert_intermediate: intermediate,
+        };
+        let x = vec![1.0f32, 0.5, -0.5, 2.0];
+        let route = moe_route(&x, &gate_weight, num_experts, k, hidden_dim);
+        let mut routed: Vec<usize> = route.indices.clone();
+        routed.sort_unstable();
+        assert_eq!(routed, vec![0, 1], "router must pick the two top experts");
+
+        // Reference: the weighted sum over routed experts, computed independently.
+        let mut expected = vec![0.0f32; hidden_dim];
+        for (idx, &e) in route.indices.iter().enumerate() {
+            let gu = &expert_gate_up[e * gu_len..(e + 1) * gu_len];
+            let out = expert_swiglu(
+                &x,
+                &gu[..intermediate * hidden_dim],
+                &gu[intermediate * hidden_dim..],
+                &expert_down[e * dn_len..(e + 1) * dn_len],
+                hidden_dim,
+                intermediate,
+            );
+            for i in 0..hidden_dim {
+                expected[i] += route.weights[idx] * out[i];
+            }
+        }
+        let got = moe_forward_token(&x, &moe, hidden_dim);
+        assert!(
+            expected.iter().any(|v| v.abs() > 1e-6),
+            "reference is non-trivial"
+        );
+        for i in 0..hidden_dim {
+            assert!(
+                (got[i] - expected[i]).abs() < 1e-6,
+                "aggregate[{i}]: {} vs {}",
+                got[i],
+                expected[i]
+            );
+        }
+
+        // Isolation: scrambling the unrouted experts leaves the output unchanged.
+        let mut scrambled = moe.clone();
+        for e in 2..num_experts {
+            for v in &mut scrambled.expert_gate_up[e * gu_len..(e + 1) * gu_len] {
+                *v = 100.0;
+            }
+            for v in &mut scrambled.expert_down[e * dn_len..(e + 1) * dn_len] {
+                *v = -100.0;
+            }
+        }
+        let after = moe_forward_token(&x, &scrambled, hidden_dim);
+        assert_eq!(got, after, "unrouted experts must not affect the output");
     }
 }

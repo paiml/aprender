@@ -85,12 +85,15 @@ pub struct Modal {
     /// Modal content bounds
     #[serde(skip)]
     content_bounds: Rect,
-    /// Modal content
+    /// Boxed child widgets (content, footer), listed by `children()` so verification sees them
     #[serde(skip)]
-    content: Option<Box<dyn Widget>>,
-    /// Footer content
+    slots: Vec<Box<dyn Widget>>,
+    /// Index of the content widget in `slots`
     #[serde(skip)]
-    footer: Option<Box<dyn Widget>>,
+    content_idx: Option<usize>,
+    /// Index of the footer widget in `slots`
+    #[serde(skip)]
+    footer_idx: Option<usize>,
     /// Animation progress (0.0 = closed, 1.0 = open)
     #[serde(skip)]
     animation_progress: f32,
@@ -112,8 +115,9 @@ impl Default for Modal {
             test_id_value: None,
             bounds: Rect::default(),
             content_bounds: Rect::default(),
-            content: None,
-            footer: None,
+            slots: Vec::new(),
+            content_idx: None,
+            footer_idx: None,
             animation_progress: 0.0,
         }
     }
@@ -198,14 +202,32 @@ impl Modal {
 
     /// Set the content widget.
     pub fn content(mut self, widget: impl Widget + 'static) -> Self {
-        self.content = Some(Box::new(widget));
+        Self::put(&mut self.slots, &mut self.content_idx, Box::new(widget));
         self
     }
 
     /// Set the footer widget.
     pub fn footer(mut self, widget: impl Widget + 'static) -> Self {
-        self.footer = Some(Box::new(widget));
+        Self::put(&mut self.slots, &mut self.footer_idx, Box::new(widget));
         self
+    }
+
+    /// Store `widget` in the slot `idx` names, replacing what was there.
+    fn put(slots: &mut Vec<Box<dyn Widget>>, idx: &mut Option<usize>, widget: Box<dyn Widget>) {
+        if let Some(i) = *idx {
+            slots[i] = widget;
+        } else {
+            slots.push(widget);
+            *idx = Some(slots.len() - 1);
+        }
+    }
+
+    fn slot(slots: &[Box<dyn Widget>], idx: Option<usize>) -> Option<&dyn Widget> {
+        idx.and_then(|i| slots.get(i)).map(|w| w.as_ref())
+    }
+
+    fn slot_mut(slots: &mut [Box<dyn Widget>], idx: Option<usize>) -> Option<&mut Box<dyn Widget>> {
+        idx.and_then(move |i| slots.get_mut(i))
     }
 
     /// Set the test ID.
@@ -255,7 +277,7 @@ impl Modal {
 
         // Estimate height based on content + header + footer
         let header_height = if self.title.is_some() { 56.0 } else { 0.0 };
-        let footer_height = if self.footer.is_some() { 64.0 } else { 0.0 };
+        let footer_height = if self.footer_idx.is_some() { 64.0 } else { 0.0 };
         let content_height = 200.0; // Placeholder, will be measured properly
         let total_height = self
             .padding
@@ -266,6 +288,52 @@ impl Modal {
         let y = viewport.y + (viewport.height - modal_height) / 2.0;
 
         Rect::new(x, y, modal_width, modal_height)
+    }
+
+    /// Close the modal and build the `ModalClosed` message.
+    fn close_with(&mut self, reason: CloseReason) -> Option<Box<dyn Any + Send>> {
+        self.hide();
+        Some(Box::new(ModalClosed { reason }))
+    }
+
+    /// Whether a click at `position` lands on the close button.
+    fn hits_close_button(&self, position: &Point) -> bool {
+        let close_x = self.content_bounds.x + self.content_bounds.width - 40.0 - self.padding;
+        let close_y = self.content_bounds.y + self.padding;
+        position.x >= close_x
+            && position.x <= close_x + 24.0
+            && position.y >= close_y
+            && position.y <= close_y + 24.0
+    }
+
+    /// Whether a click at `position` lands inside the modal content.
+    fn hits_content(&self, position: &Point) -> bool {
+        position.x >= self.content_bounds.x
+            && position.x <= self.content_bounds.x + self.content_bounds.width
+            && position.y >= self.content_bounds.y
+            && position.y <= self.content_bounds.y + self.content_bounds.height
+    }
+
+    /// Handle backdrop and close-button clicks; `None` means not consumed.
+    fn on_mouse_down(&mut self, position: &Point) -> Option<Box<dyn Any + Send>> {
+        if self.backdrop == BackdropBehavior::CloseOnClick && !self.hits_content(position) {
+            return self.close_with(CloseReason::Backdrop);
+        }
+        if self.show_close_button && self.hits_close_button(position) {
+            return self.close_with(CloseReason::CloseButton);
+        }
+        None
+    }
+
+    /// Forward an event to the content slot, then the footer slot.
+    fn forward_event(&mut self, event: &Event) -> Option<Box<dyn Any + Send>> {
+        if let Some(content) = Self::slot_mut(&mut self.slots, self.content_idx) {
+            if let Some(msg) = content.event(event) {
+                return Some(msg);
+            }
+        }
+        let footer = Self::slot_mut(&mut self.slots, self.footer_idx)?;
+        footer.event(event)
     }
 }
 
@@ -286,9 +354,9 @@ impl Widget for Modal {
             self.content_bounds = self.calculate_modal_bounds(bounds);
 
             // Layout content
-            if let Some(ref mut content) = self.content {
+            if let Some(content) = Self::slot_mut(&mut self.slots, self.content_idx) {
                 let header_height = if self.title.is_some() { 56.0 } else { 0.0 };
-                let footer_height = if self.footer.is_some() { 64.0 } else { 0.0 };
+                let footer_height = if self.footer_idx.is_some() { 64.0 } else { 0.0 };
 
                 let content_rect = Rect::new(
                     self.content_bounds.x + self.padding,
@@ -303,7 +371,7 @@ impl Widget for Modal {
             }
 
             // Layout footer
-            if let Some(ref mut footer) = self.footer {
+            if let Some(footer) = Self::slot_mut(&mut self.slots, self.footer_idx) {
                 let footer_rect = Rect::new(
                     self.content_bounds.x + self.padding,
                     self.content_bounds.y + self.content_bounds.height - 64.0 - self.padding,
@@ -392,12 +460,12 @@ impl Widget for Modal {
         }
 
         // Draw content
-        if let Some(ref content) = self.content {
+        if let Some(content) = Self::slot(&self.slots, self.content_idx) {
             content.paint(canvas);
         }
 
         // Draw footer
-        if let Some(ref footer) = self.footer {
+        if let Some(footer) = Self::slot(&self.slots, self.footer_idx) {
             footer.paint(canvas);
         }
     }
@@ -407,88 +475,26 @@ impl Widget for Modal {
             return None;
         }
 
-        match event {
+        let consumed = match event {
             Event::KeyDown {
                 key: Key::Escape, ..
-            } if self.close_on_escape => {
-                self.hide();
-                return Some(Box::new(ModalClosed {
-                    reason: CloseReason::Escape,
-                }));
-            }
-            Event::MouseDown { position, .. } => {
-                // Check if click is on backdrop
-                if self.backdrop == BackdropBehavior::CloseOnClick {
-                    let in_modal = position.x >= self.content_bounds.x
-                        && position.x <= self.content_bounds.x + self.content_bounds.width
-                        && position.y >= self.content_bounds.y
-                        && position.y <= self.content_bounds.y + self.content_bounds.height;
-
-                    if !in_modal {
-                        self.hide();
-                        return Some(Box::new(ModalClosed {
-                            reason: CloseReason::Backdrop,
-                        }));
-                    }
-                }
-
-                // Check if click is on close button
-                if self.show_close_button {
-                    let close_x =
-                        self.content_bounds.x + self.content_bounds.width - 40.0 - self.padding;
-                    let close_y = self.content_bounds.y + self.padding;
-                    let on_close_btn = position.x >= close_x
-                        && position.x <= close_x + 24.0
-                        && position.y >= close_y
-                        && position.y <= close_y + 24.0;
-
-                    if on_close_btn {
-                        self.hide();
-                        return Some(Box::new(ModalClosed {
-                            reason: CloseReason::CloseButton,
-                        }));
-                    }
-                }
-
-                // Forward to content
-                if let Some(ref mut content) = self.content {
-                    if let Some(msg) = content.event(event) {
-                        return Some(msg);
-                    }
-                }
-
-                // Forward to footer
-                if let Some(ref mut footer) = self.footer {
-                    if let Some(msg) = footer.event(event) {
-                        return Some(msg);
-                    }
-                }
-            }
-            _ => {
-                // Forward other events to content
-                if let Some(ref mut content) = self.content {
-                    if let Some(msg) = content.event(event) {
-                        return Some(msg);
-                    }
-                }
-
-                if let Some(ref mut footer) = self.footer {
-                    if let Some(msg) = footer.event(event) {
-                        return Some(msg);
-                    }
-                }
-            }
+            } if self.close_on_escape => self.close_with(CloseReason::Escape),
+            Event::MouseDown { position, .. } => self.on_mouse_down(position),
+            _ => None,
+        };
+        if consumed.is_some() {
+            return consumed;
         }
 
-        None
+        self.forward_event(event)
     }
 
     fn children(&self) -> &[Box<dyn Widget>] {
-        &[]
+        &self.slots
     }
 
     fn children_mut(&mut self) -> &mut [Box<dyn Widget>] {
-        &mut []
+        &mut self.slots
     }
 
     fn is_focusable(&self) -> bool {

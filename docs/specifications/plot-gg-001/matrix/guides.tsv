@@ -1,0 +1,36 @@
+family	ggplot2_name	status	aprender_symbol	proving_test	notes
+guides	draw_key_abline	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_blank	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_boxplot	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_crossbar	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_dotplot	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_label	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_linerange	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_path	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_point	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_pointrange	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_polygon	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_rect	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_smooth	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_text	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_timeseries	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_vline	absent	-	-	no legend keys; no legend rendering
+guides	draw_key_vpath	absent	-	-	no legend keys; no legend rendering
+guides	guide_axis	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text; crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	bottom/left axes drawn (SVG, terminal); no guide_axis() value or arguments (angle, n.dodge, ...)
+guides	guide_axis_logticks	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_axis_stack	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_axis_theta	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_bins	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_colorbar	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_colorsteps	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_colourbar	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_coloursteps	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_custom	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_gengrob	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_geom	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_legend	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_merge	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_none	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_train	absent	-	-	no guides implemented; no legend or colourbar
+guides	guide_transform	absent	-	-	no guides implemented; no legend or colourbar
+guides	guides	absent	-	-	no guides() specification; no legends; axes are drawn without a guide object (see guide_axis)

@@ -44,6 +44,7 @@ pub mod cuda_optim;
 pub mod cuda_tensor;
 pub mod cuda_training;
 pub mod graph_opt;
+pub mod kernel_module_cache;
 pub(crate) mod ops;
 pub mod precision;
 mod tensor;

@@ -1,0 +1,13 @@
+  ok    spec   R-c is LAB, never in a PR
+  ok    scope  0 workflow(s) run check_reconcile.sh; none on a PR/merge-queue/push/release trigger
+GREEN reconcile LAB scope
+rc=0
+  pass  real spec + no reconcile workflow is GREEN (rc=0)
+  pass  nightly-only workflow is GREEN (rc=0)
+  pass  reconcile on pull_request is RED (rc=1)
+  pass  reconcile on merge_group is RED (rc=1)
+  pass  reconcile on release push is RED (rc=1)
+  pass  spec dropped LAB is RED (rc=1)
+  pass  empty spec is RED (no LAB statement) (rc=1)
+  pass  missing script is NO-MEASURE (rc=2)
+rc=0

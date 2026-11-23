@@ -69,7 +69,7 @@
       ],
       "derived_from": [],
       "discharged": false,
-      "expires": "2026-11-06",
+      "expires": "2026-11-27",
       "root": false
     },
     "14": {
@@ -90,7 +90,7 @@
       ],
       "derived_from": [],
       "discharged": false,
-      "expires": "2026-11-06",
+      "expires": "2026-11-27",
       "root": false
     },
     "16": {
@@ -99,7 +99,7 @@
       ],
       "derived_from": [],
       "discharged": false,
-      "expires": "2026-11-06",
+      "expires": "2026-11-27",
       "root": false
     },
     "17": {
@@ -108,7 +108,7 @@
       ],
       "derived_from": [],
       "discharged": false,
-      "expires": "2026-11-06",
+      "expires": "2026-11-27",
       "root": false
     },
     "18": {
@@ -119,7 +119,7 @@
         "15"
       ],
       "discharged": false,
-      "expires": "2026-11-06",
+      "expires": "2026-11-27",
       "root": false
     },
     "19": {
@@ -129,7 +129,7 @@
       ],
       "derived_from": [],
       "discharged": false,
-      "expires": "2026-11-06",
+      "expires": "2026-11-27",
       "root": false
     },
     "2": {
@@ -143,7 +143,7 @@
       "blocked_by": [],
       "derived_from": [],
       "discharged": false,
-      "expires": "2026-11-06",
+      "expires": "2026-11-27",
       "root": true
     },
     "21": {
@@ -152,7 +152,7 @@
       ],
       "derived_from": [],
       "discharged": false,
-      "expires": "2026-11-06",
+      "expires": "2026-11-27",
       "root": false
     },
     "22": {

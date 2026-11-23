@@ -12,6 +12,7 @@ pub mod container;
 pub mod data_card;
 pub mod data_table;
 pub mod formats;
+pub mod grid;
 pub mod image;
 pub mod list;
 pub mod menu;
@@ -20,6 +21,7 @@ pub mod model_card;
 pub mod progress_bar;
 pub mod radio_group;
 pub mod row;
+pub mod sample_window;
 pub mod select;
 pub mod slider;
 pub mod stack;
@@ -28,6 +30,8 @@ pub mod text;
 pub mod text_input;
 pub mod toggle;
 pub mod tooltip;
+pub mod video;
+pub mod waveform;
 
 pub use button::Button;
 pub use chart::{Axis, Chart, ChartType, DataSeries, LegendPosition};
@@ -39,6 +43,7 @@ pub use data_table::{
     CellValue, DataTable, SortDirection, TableColumn, TableRow, TableRowSelected, TableSortChanged,
     TextAlign,
 };
+pub use grid::Grid;
 pub use image::{Image, ImageFit};
 pub use list::{
     List, ListDirection, ListItem, ListItemClicked, ListItemSelected, ListScrolled, SelectionMode,
@@ -51,6 +56,7 @@ pub use model_card::{ModelCard, ModelMetric, ModelStatus};
 pub use progress_bar::{ProgressBar, ProgressMode};
 pub use radio_group::{RadioChanged, RadioGroup, RadioOption, RadioOrientation};
 pub use row::Row;
+pub use sample_window::SampleWindow;
 pub use select::{Select, SelectOption, SelectionChanged};
 pub use slider::{Slider, SliderChanged};
 pub use stack::{Stack, StackAlignment, StackFit};
@@ -59,6 +65,8 @@ pub use text::Text;
 pub use text_input::{TextChanged, TextInput, TextSubmitted};
 pub use toggle::{Toggle, ToggleChanged};
 pub use tooltip::{Tooltip, TooltipPlacement};
+pub use video::{Video, VideoState, VideoToggled};
+pub use waveform::{waveform_points, Waveform};
 
 // File format conversions
 pub use formats::{load_ald_as_card, load_apr_as_card, AldDatasetExt, AprModelExt};

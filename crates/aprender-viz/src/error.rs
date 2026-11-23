@@ -79,6 +79,18 @@ pub enum Error {
     #[error("Unsupported coordinate system: {0}")]
     UnsupportedCoord(&'static str),
 
+    /// A statistical transformation was requested that the operation does not compute.
+    ///
+    /// Returned rather than answering with the untransformed data: a `Stat` that is silently
+    /// skipped gives numbers that look valid and differ from the ones ggplot2 computes.
+    #[error("Unsupported stat: {0}")]
+    UnsupportedStat(&'static str),
+
+    /// A layer was combined with others in a way the operation does not resolve (for example a
+    /// layer whose ggplot2 stat or geometry setup would change the shared position scales).
+    #[error("Unsupported layer: {0}")]
+    UnsupportedLayer(&'static str),
+
     /// A raster's pre-scan found an SVG element it will never pass to `usvg` (APEX-001 EV-2d).
     ///
     /// See [`crate::raster::svg_to_png`]: text/font elements are refused because a font-free

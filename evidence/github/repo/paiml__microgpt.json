@@ -1,0 +1,11 @@
+{
+  "ref": "paiml/microgpt@66d8f79a2343aac0cf4d29a2c616b247f9232133",
+  "nameWithOwner": "paiml/microgpt",
+  "defaultBranch": "main",
+  "sha": "66d8f79a2343aac0cf4d29a2c616b247f9232133",
+  "url": "https://github.com/paiml/microgpt",
+  "archived": false,
+  "has_readme": true,
+  "has_ci_workflows": true,
+  "captured_at": "2026-11-18T20:13:38Z"
+}

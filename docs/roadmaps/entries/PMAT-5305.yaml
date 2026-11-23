@@ -1,0 +1,20 @@
+- id: PMAT-5305
+  github_issue: 5305
+  item_type: task
+  title: 'PP-LLAMA-001 D6 unjam: time-boxed re-date of expired section-12 rows 13,15-17,19-21 + dated re-measure ticket'
+  status: planned
+  priority: critical
+  assigned_to: aprender-w5018
+  created: 2026-11-07T08:25:11Z
+  updated: 2026-11-07T08:25:11Z
+  spec: null
+  acceptance_criteria:
+  - main RED since 2026-11-06 expiry; rows need hardware cells; re-date to 2026-11-27 under quorum, first measurement cells due 2026-11-20
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  epic: 6570
+  notes: >-
+    Owner aprender-w5018, first measurement cells due 2026-11-20 (hard stop; no evidence file by then goes to a retire/re-scope/LAB quorum, never re-dated; quorum 2026-11-07, docs/audits/quorum-PMAT-5305.ruling.json). Per-row plan, all non-lambda (lambda builds banned). Row 13 cargo bench batched Q4_K GEMV on intel. Row 15 gx10 shakedown W1 n>=5 interleaved, new LEDGER row (row 18 derives from it). Rows 16 and 17 (W3 open-loop, W4 token sweep) re-scoped from lambda to gx10. Rows 19, 20, 21 gx10 CUDA profile (per-token host work, prefill sync copies, KV-scatter on Blackwell). Row 18 (reference cell, derived from 15) runs after 15 is clean; its host is chosen at the 2026-11-20 checkpoint and is never a lambda build (prebuilt binary, measurement only).

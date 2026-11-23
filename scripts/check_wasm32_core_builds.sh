@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_wasm32_core_builds.sh - aprender-core must compile for a 32-bit target.
+# check_wasm32_core_builds.sh - aprender-core and aprender-present-lib must compile for wasm32.
 #
 # THE CLASS (aprender#2310). Code written and only ever compiled on x86_64 picks
 # up 64-bit assumptions silently. The SGD epoch shuffle in
@@ -33,6 +33,14 @@ set -euo pipefail
 
 TARGET="wasm32-unknown-unknown"
 PKG="aprender-core"
+# Checked after aprender-core, by the same function. aprender-present-lib is the crate a
+# presentar page is built from; it did not build for wasm32 from the monorepo merge until
+# aprender#6888 and nothing noticed, because this guard only named aprender-core.
+BROWSER_PKG="aprender-present-lib"
+# aprender-viz needs its `wasm` feature for the wasm-bindgen deps. It did not build for wasm32
+# until aprender#6911 (the deps sat under a linux-only target table). Checked with --features wasm.
+VIZ_PKG="aprender-viz"
+PKG_FEATURES=""
 # One of the two MMIX constants from #2310. Kept as data so the self-test and
 # the comment above cannot drift apart.
 DEFECT_LITERAL="6364136223846793005"
@@ -104,14 +112,18 @@ main_check() {
     local rc
     CHECK_LOG="$(mktemp)"
 
-    echo "Type-checking ${PKG} for ${TARGET} (aprender#2310)..."
+    echo "Type-checking ${PKG} for ${TARGET} (aprender#2310, aprender#6888)..."
     # Append rather than overwrite: CI images bake their own RUSTFLAGS, and
     # clobbering them would silently change what is being compiled.
-    export RUSTFLAGS="${RUSTFLAGS:-} --cfg getrandom_backend=\"custom\""
+    # Appended once: a second append would change RUSTFLAGS and rebuild every shared crate.
+    case "${RUSTFLAGS:-}" in
+        *getrandom_backend*) ;;
+        *) export RUSTFLAGS="${RUSTFLAGS:-} --cfg getrandom_backend=\"custom\"" ;;
+    esac
 
     # Never read the status through a pipe - redirect, then read rc.
     set +e
-    cargo check --locked -p "${PKG}" --no-default-features --target "${TARGET}" \
+    cargo check --locked -p "${PKG}" --no-default-features ${PKG_FEATURES:+--features "${PKG_FEATURES}"} --target "${TARGET}" \
         > "${CHECK_LOG}" 2>&1
     rc=$?
     set -e
@@ -141,7 +153,7 @@ main_check() {
 
 usage() {
     echo "usage: $0 [--self-test]"
-    echo "  (no args)    self-test, then type-check ${PKG} for ${TARGET}"
+    echo "  (no args)    self-test, then type-check ${PKG}, ${BROWSER_PKG} and ${VIZ_PKG} (wasm) for ${TARGET}"
     echo "  --self-test  only prove the toolchain still rejects the #2310 literal"
 }
 
@@ -169,6 +181,11 @@ case "${1:-}" in
         cargo_classify_selftest --quiet || exit 1
         ensure_target || exit 1
         self_test || exit 1
+        main_check || exit 1
+        PKG="${BROWSER_PKG}"
+        main_check || exit 1
+        PKG="${VIZ_PKG}"
+        PKG_FEATURES="wasm"
         main_check || exit 1
         ;;
     *)

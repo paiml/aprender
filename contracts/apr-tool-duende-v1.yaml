@@ -8,19 +8,20 @@ metadata:
   description: >
     apr-tool-duende: Daemon tooling for Sovereign AI
   contract: apr-tool-duende
-  status: enforced
+  status: archived
   repo: "paiml/duende"
-  purpose: "Daemon tooling for Sovereign AI"
+  purpose: "Daemon tooling for Sovereign AI (ARCHIVED: reclassified per the archived=true falsification action; archived as of the 2026-11-18 snapshot)"
   language: "Rust"
-  category: active-tool
+  category: archived-tool
   topic: paiml-active-tool
+  expected: {archived: true, has_readme: true, has_ci_workflows: true}
 
 inputs:
   - "Service definitions"
 outputs:
   - "Running daemon processes"
 preconditions:
-  - "Repository paiml/duende exists and is not archived"
+  - "Repository paiml/duende exists and is archived as of the 2026-11-18 snapshot (reclassified from active-tool)"
   - "README.md documents purpose and usage"
   - "CI pipeline passes on main branch"
 postconditions:
@@ -45,3 +46,12 @@ falsification:
 
 entity:
   type: repo
+  ref: paiml/duende@075ed562f23404ef9bfe52468ca896f04b5f3a4f
+
+# #7235: bound to a CI-run test. The snapshot is dated evidence captured from the GitHub API (see captured_at in
+# evidence/github/repo/), not a live check of the repo.
+falsification_tests:
+  - id: FALSIFY-APR_TOOL_DUENDE_V1-BIND-001
+    rule: "the snapshot of paiml/duende (evidence/github/repo/, dated evidence captured at 2026-11-18T20:13:38Z, not a live check) equals the state this row declares (metadata.expected, default archived=false, has_readme=true, has_ci_workflows=true), and its ref and nameWithOwner match this row"
+    prediction: "apr_tool_rows_hold_against_repo_snapshots fails when the snapshot is missing, disagrees with the row, or records the repo archived, without a README or without a CI workflow"
+    test: "cargo test -p aprender-contracts --lib apr_tool_rows_hold_against_repo_snapshots"

@@ -13,6 +13,7 @@
 - [Aprender Readme Book Rewrite](aprender-readme-book-rewrite.md)
 - [Aprender Spec](aprender-spec.md)
 - [CRUX Competitive Research UX Workflows](crux-competitive-research-ux-workflows.md) — 250 user stories across 7 competitors, contract-backed, pmat-work tracked
+- [PLOT-GG-001 ggplot2 parity for plot](PLOT-GG-001.md) — grammar of graphics in pure Rust on aprender-viz, numeric oracle against ggplot2 4.0.3, 525-row conformance matrix (aprender#6909)
 
 ## Compute (was trueno)
 

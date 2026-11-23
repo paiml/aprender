@@ -36,6 +36,9 @@ mod tests_route_index_3979;
 // #4971: the chat routes outside realizar's router refuse logprobs (ASOC-INV-021).
 #[cfg(all(test, feature = "inference"))]
 mod tests_logprobs_4971;
+// #5478: every realizar router a serve starter builds sits behind auth::layer.
+#[cfg(test)]
+mod tests_router_auth_5478;
 // PP-LLAMA-001 PP-14/PP-15/§9 #8: the offload report the served process
 // publishes. `inference`-gated because the report type comes from realizar.
 #[cfg(test)]

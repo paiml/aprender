@@ -1,5 +1,5 @@
-# VENDORED (#4433): paiml/.github .github/workflows/sovereign-ci.yml @ dbd0488efe2463161b34b2f75002baee5e308d2a
-# sha256 of the upstream file: 40ab5f65bfe48630b475d124b1a492a7fcbaa4a9181b4af151889579ceb19c30
+# VENDORED (#4433): paiml/.github .github/workflows/sovereign-ci.yml @ fbee3788a0ed92d09974ac21ea9bc97d373af6f0
+# sha256 of the upstream file: 47db314ed5450d9c3d5ef1da52b6331f456ea943894625e0fe8e741dda576694
 # Not a workflow here: scripts/ci/fat_driver.py runs its jobs as sections sov.<job> of
 # the x86-main fat job. Do not edit by hand -- re-vendor from a new pin, and move the
 # pin in ci/sections.yml (sovereign-ci.uses) in the same commit.
@@ -75,14 +75,41 @@ on:
         required: false
         default: 'always'
         type: string
+      heavy_on:
+        description: >-
+          When the HEAVY jobs (test, coverage) run. 'always' (default, unchanged): every event.
+          'train': on a pull_request they run only for a merge-train or batch head (train/*, batch/*)
+          or a PR labelled full-ci; on any other PR they are SKIPPED and `gate` prints NOT MEASURED
+          (never a pass). Every non-PR event (push, merge_group, schedule, dispatch, tags) still runs
+          them, and there a skipped heavy job is RED. Why: each PR push ran the heavy suite and the
+          merge train then ran it again on the batch; on 2026-11-10 229 runs were queued org-wide.
+          OPT-IN REQUIRES the caller's repo to merge through the train only: a PR merged directly
+          under heavy_on=train has had lint and security but NOT its tests.
+        required: false
+        default: 'always'
+        type: string
       advisories_diff_only:
         description: >-
-          true: the caller judges advisories itself, as a diff against its base (aprender
-          PMAT-5792), so the plain `cargo deny check advisories` in `lint` and `cargo audit`
-          in `security` are skipped; licenses and sources still run. Default false: unchanged.
+          Default true (ADV-001, paiml/infra#3648): advisories are judged as a DIFF. The
+          `security` job's built-in advisory gate fails a PR / merge_group only on advisories
+          its own Cargo.lock change introduces, against ONE pinned advisory-db (no live fetch
+          at gate time); an advisory already on the base, or on a pushed commit, is a warning
+          and an andon (advisory-andon.yml), never a red build. The live-DB `cargo deny check
+          advisories` in `lint` and `cargo audit` in `security` are skipped; licenses and
+          sources still run. false restores the old live-DB full scan, which turns every PR
+          red the day an advisory is published.
         required: false
-        default: false
+        default: true
         type: boolean
+      advisory_db_rev:
+        description: >-
+          The rustsec/advisory-db commit (40 hex) the advisory gate reads, with fetch disabled.
+          A caller that commits `.advisory-db-rev` overrides it. Bumping the pin is a normal PR
+          here (or in the caller's .advisory-db-rev); it is where new advisories enter the
+          gate, once, instead of on every open PR at once.
+        required: false
+        default: '899077d9d471b9fd3dbf4b2faea8ef26e83692e8'
+        type: string
       run_benchmarks:
         description: 'Run criterion benchmarks (slow, use for nightly only)'
         required: false
@@ -147,7 +174,35 @@ env:
   OTEL_EXPORTER_OTLP_TIMEOUT: "5000"
 
 jobs:
+  # NO-FORK-1 (operator ruling 2026-10-23 07:20Z): paiml accepts no fork contributions.
+  # This job exists ONLY for a fork-head PR. It runs on a GitHub-hosted runner (no
+  # self-hosted capacity is ever spent on fork code, and no PR code is checked out),
+  # and it FAILS. A SKIPPED required check counts as passing, so the fork case is made
+  # red explicitly here and again in `gate`. Same-repo PRs, push, merge_group,
+  # schedule and workflow_dispatch skip this job and are otherwise unaffected.
+  # SINGLE PERMITTED GITHUB-HOSTED JOB IN A GATE (NO-FORK-1 ruling 2026-10-23 07:15Z b).
+  # It exists only because a fork job must never touch our self-hosted machines.
+  # It runs no PR code, no checkout, no secrets (permissions: {}, no secrets.* here).
+  # Any other GitHub-hosted job in a gate is a defect (scripts/test-no-fork-guard.sh).
+  fork-guard:
+    name: fork-guard
+    if: ${{ startsWith(github.event_name, 'pull_request') && github.event.pull_request.head.repo.full_name != github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Refuse fork-head pull request
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          echo "::error::NO-FORK-1: head repo '${HEAD_REPO}' is not '${BASE_REPO}'. paiml does not accept fork contributions; see CONTRIBUTING.md in paiml/.github (request collaborator access, then push a branch in the repo)."
+          exit 1
+
   test:
+    # NO-FORK-1: inert for a fork-head PR (see fork-guard); other events unchanged.
+    # heavy_on == 'train': on a PR, runs only for train/*, batch/* or label full-ci (see the input).
+    if: ${{ (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && (inputs.heavy_on != 'train' || !startsWith(github.event_name, 'pull_request') || startsWith(github.head_ref, 'train/') || startsWith(github.head_ref, 'batch/') || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     name: test
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     container:
@@ -226,7 +281,35 @@ jobs:
           fi
           # Container steps run as root, so a plain chown is enough. Numeric
           # uid:gid because the runner user has no entry in the image's passwd.
-          chown -R 1000:1000 "$WORK_ROOT" 2>/dev/null || true
+          # uid-agnostic (infra#2349): own the tree as the runner user's uid:gid. This step runs
+          # INSIDE the job container as uid 0 (the image sets no USER and the job passes no `user:`
+          # option), so `id -u` is 0 and cannot name the runner user. The owner is therefore read from a
+          # source OUTSIDE the tree being repaired: /__e, the runner's externals dir, bind-mounted from
+          # beside _work and created by the runner install as the runner user. Never a path inside the
+          # chowned tree ($RUNNER_TEMP, $WORK_ROOT, $GITHUB_WORKSPACE, $HOME): a wrong-owned leftover
+          # there would be copied back as the owner. No literal uid and no fallback: unreadable or
+          # uid 0 = fail, so this step never chowns anything to root.
+          OWNER_UG="$(stat -c '%u:%g' /__e)" || OWNER_UG=""
+          if [ -z "$OWNER_UG" ]; then
+            echo "::error::cannot read the runner owner: /__e is unreadable"
+            exit 1
+          fi
+          if [ "${OWNER_UG%%:*}" = "0" ]; then
+            echo "::error::runner user mismatch: the owner source /__e is uid 0, refusing to chown the tree to root"
+            exit 1
+          fi
+          echo "runner owner (stat of /__e): $OWNER_UG"
+          export OWNER_UG
+          CHOWN_FAILED="$(mktemp)" || { echo "::error::mktemp failed"; exit 1; }
+          find "$WORK_ROOT" \( ! -user "${OWNER_UG%%:*}" -o ! -group "${OWNER_UG##*:}" \) -exec sh -c 'for p; do chown -h "$OWNER_UG" "$p" || printf "%s\n" "$p"; done' sh {} + > "$CHOWN_FAILED" \
+            || { echo "::error::find under $WORK_ROOT failed"; rm -f "${CHOWN_FAILED:?}"; exit 1; }
+          CHOWN_N="$(wc -l < "$CHOWN_FAILED" | tr -d ' ')"
+          if [ "$CHOWN_N" -gt 0 ]; then
+            echo "::error::chown to $OWNER_UG failed on $CHOWN_N path(s) under $WORK_ROOT; first: $(head -n 5 "$CHOWN_FAILED" | tr '\n' ' ')"
+            rm -f "${CHOWN_FAILED:?}"
+            exit 1
+          fi
+          rm -f "${CHOWN_FAILED:?}"
           echo "pre-checkout ownership restored under $WORK_ROOT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -433,9 +516,39 @@ jobs:
             echo "::warning::could not resolve the runner _work root ('$WORK_ROOT') — narrowing to the repo workspace"
             WORK_ROOT="$(dirname "$GITHUB_WORKSPACE")"
           fi
-          chown -R 1000:1000 "$WORK_ROOT" 2>/dev/null || true
+          # uid-agnostic (infra#2349): own the tree as the runner user's uid:gid. This step runs
+          # INSIDE the job container as uid 0 (the image sets no USER and the job passes no `user:`
+          # option), so `id -u` is 0 and cannot name the runner user. The owner is therefore read from a
+          # source OUTSIDE the tree being repaired: /__e, the runner's externals dir, bind-mounted from
+          # beside _work and created by the runner install as the runner user. Never a path inside the
+          # chowned tree ($RUNNER_TEMP, $WORK_ROOT, $GITHUB_WORKSPACE, $HOME): a wrong-owned leftover
+          # there would be copied back as the owner. No literal uid and no fallback: unreadable or
+          # uid 0 = fail, so this step never chowns anything to root.
+          OWNER_UG="$(stat -c '%u:%g' /__e)" || OWNER_UG=""
+          if [ -z "$OWNER_UG" ]; then
+            echo "::error::cannot read the runner owner: /__e is unreadable"
+            exit 1
+          fi
+          if [ "${OWNER_UG%%:*}" = "0" ]; then
+            echo "::error::runner user mismatch: the owner source /__e is uid 0, refusing to chown the tree to root"
+            exit 1
+          fi
+          echo "runner owner (stat of /__e): $OWNER_UG"
+          export OWNER_UG
+          CHOWN_FAILED="$(mktemp)" || { echo "::error::mktemp failed"; exit 1; }
+          find "$WORK_ROOT" \( ! -user "${OWNER_UG%%:*}" -o ! -group "${OWNER_UG##*:}" \) -exec sh -c 'for p; do chown -h "$OWNER_UG" "$p" || printf "%s\n" "$p"; done' sh {} + > "$CHOWN_FAILED" \
+            || { echo "::error::find under $WORK_ROOT failed"; rm -f "${CHOWN_FAILED:?}"; exit 1; }
+          CHOWN_N="$(wc -l < "$CHOWN_FAILED" | tr -d ' ')"
+          if [ "$CHOWN_N" -gt 0 ]; then
+            echo "::error::chown to $OWNER_UG failed on $CHOWN_N path(s) under $WORK_ROOT; first: $(head -n 5 "$CHOWN_FAILED" | tr '\n' ' ')"
+            rm -f "${CHOWN_FAILED:?}"
+            exit 1
+          fi
+          rm -f "${CHOWN_FAILED:?}"
 
   lint:
+    # NO-FORK-1: inert for a fork-head PR (see fork-guard); other events unchanged.
+    if: ${{ (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) }}
     name: lint
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     container:
@@ -486,7 +599,35 @@ jobs:
           fi
           # Container steps run as root, so a plain chown is enough. Numeric
           # uid:gid because the runner user has no entry in the image's passwd.
-          chown -R 1000:1000 "$WORK_ROOT" 2>/dev/null || true
+          # uid-agnostic (infra#2349): own the tree as the runner user's uid:gid. This step runs
+          # INSIDE the job container as uid 0 (the image sets no USER and the job passes no `user:`
+          # option), so `id -u` is 0 and cannot name the runner user. The owner is therefore read from a
+          # source OUTSIDE the tree being repaired: /__e, the runner's externals dir, bind-mounted from
+          # beside _work and created by the runner install as the runner user. Never a path inside the
+          # chowned tree ($RUNNER_TEMP, $WORK_ROOT, $GITHUB_WORKSPACE, $HOME): a wrong-owned leftover
+          # there would be copied back as the owner. No literal uid and no fallback: unreadable or
+          # uid 0 = fail, so this step never chowns anything to root.
+          OWNER_UG="$(stat -c '%u:%g' /__e)" || OWNER_UG=""
+          if [ -z "$OWNER_UG" ]; then
+            echo "::error::cannot read the runner owner: /__e is unreadable"
+            exit 1
+          fi
+          if [ "${OWNER_UG%%:*}" = "0" ]; then
+            echo "::error::runner user mismatch: the owner source /__e is uid 0, refusing to chown the tree to root"
+            exit 1
+          fi
+          echo "runner owner (stat of /__e): $OWNER_UG"
+          export OWNER_UG
+          CHOWN_FAILED="$(mktemp)" || { echo "::error::mktemp failed"; exit 1; }
+          find "$WORK_ROOT" \( ! -user "${OWNER_UG%%:*}" -o ! -group "${OWNER_UG##*:}" \) -exec sh -c 'for p; do chown -h "$OWNER_UG" "$p" || printf "%s\n" "$p"; done' sh {} + > "$CHOWN_FAILED" \
+            || { echo "::error::find under $WORK_ROOT failed"; rm -f "${CHOWN_FAILED:?}"; exit 1; }
+          CHOWN_N="$(wc -l < "$CHOWN_FAILED" | tr -d ' ')"
+          if [ "$CHOWN_N" -gt 0 ]; then
+            echo "::error::chown to $OWNER_UG failed on $CHOWN_N path(s) under $WORK_ROOT; first: $(head -n 5 "$CHOWN_FAILED" | tr '\n' ' ')"
+            rm -f "${CHOWN_FAILED:?}"
+            exit 1
+          fi
+          rm -f "${CHOWN_FAILED:?}"
           echo "pre-checkout ownership restored under $WORK_ROOT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -687,7 +828,35 @@ jobs:
             echo "::warning::could not resolve the runner _work root ('$WORK_ROOT') — narrowing to the repo workspace"
             WORK_ROOT="$(dirname "$GITHUB_WORKSPACE")"
           fi
-          chown -R 1000:1000 "$WORK_ROOT" 2>/dev/null || true
+          # uid-agnostic (infra#2349): own the tree as the runner user's uid:gid. This step runs
+          # INSIDE the job container as uid 0 (the image sets no USER and the job passes no `user:`
+          # option), so `id -u` is 0 and cannot name the runner user. The owner is therefore read from a
+          # source OUTSIDE the tree being repaired: /__e, the runner's externals dir, bind-mounted from
+          # beside _work and created by the runner install as the runner user. Never a path inside the
+          # chowned tree ($RUNNER_TEMP, $WORK_ROOT, $GITHUB_WORKSPACE, $HOME): a wrong-owned leftover
+          # there would be copied back as the owner. No literal uid and no fallback: unreadable or
+          # uid 0 = fail, so this step never chowns anything to root.
+          OWNER_UG="$(stat -c '%u:%g' /__e)" || OWNER_UG=""
+          if [ -z "$OWNER_UG" ]; then
+            echo "::error::cannot read the runner owner: /__e is unreadable"
+            exit 1
+          fi
+          if [ "${OWNER_UG%%:*}" = "0" ]; then
+            echo "::error::runner user mismatch: the owner source /__e is uid 0, refusing to chown the tree to root"
+            exit 1
+          fi
+          echo "runner owner (stat of /__e): $OWNER_UG"
+          export OWNER_UG
+          CHOWN_FAILED="$(mktemp)" || { echo "::error::mktemp failed"; exit 1; }
+          find "$WORK_ROOT" \( ! -user "${OWNER_UG%%:*}" -o ! -group "${OWNER_UG##*:}" \) -exec sh -c 'for p; do chown -h "$OWNER_UG" "$p" || printf "%s\n" "$p"; done' sh {} + > "$CHOWN_FAILED" \
+            || { echo "::error::find under $WORK_ROOT failed"; rm -f "${CHOWN_FAILED:?}"; exit 1; }
+          CHOWN_N="$(wc -l < "$CHOWN_FAILED" | tr -d ' ')"
+          if [ "$CHOWN_N" -gt 0 ]; then
+            echo "::error::chown to $OWNER_UG failed on $CHOWN_N path(s) under $WORK_ROOT; first: $(head -n 5 "$CHOWN_FAILED" | tr '\n' ' ')"
+            rm -f "${CHOWN_FAILED:?}"
+            exit 1
+          fi
+          rm -f "${CHOWN_FAILED:?}"
 
   coverage:
     name: coverage
@@ -696,7 +865,7 @@ jobs:
     # not measured, and `gate` below accepts that skip only under this input and never
     # on a tag push or a dispatch.
     if: >-
-      ${{ !inputs.skip_coverage && (inputs.coverage_on != 'tag'
+      ${{ (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && !inputs.skip_coverage && (inputs.heavy_on != 'train' || !startsWith(github.event_name, 'pull_request') || startsWith(github.head_ref, 'train/') || startsWith(github.head_ref, 'batch/') || contains(github.event.pull_request.labels.*.name, 'full-ci')) && (inputs.coverage_on != 'tag'
         || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
         || github.event_name == 'workflow_dispatch') }}
     runs-on: ${{ fromJSON(inputs.runs_on) }}
@@ -748,7 +917,35 @@ jobs:
           fi
           # Container steps run as root, so a plain chown is enough. Numeric
           # uid:gid because the runner user has no entry in the image's passwd.
-          chown -R 1000:1000 "$WORK_ROOT" 2>/dev/null || true
+          # uid-agnostic (infra#2349): own the tree as the runner user's uid:gid. This step runs
+          # INSIDE the job container as uid 0 (the image sets no USER and the job passes no `user:`
+          # option), so `id -u` is 0 and cannot name the runner user. The owner is therefore read from a
+          # source OUTSIDE the tree being repaired: /__e, the runner's externals dir, bind-mounted from
+          # beside _work and created by the runner install as the runner user. Never a path inside the
+          # chowned tree ($RUNNER_TEMP, $WORK_ROOT, $GITHUB_WORKSPACE, $HOME): a wrong-owned leftover
+          # there would be copied back as the owner. No literal uid and no fallback: unreadable or
+          # uid 0 = fail, so this step never chowns anything to root.
+          OWNER_UG="$(stat -c '%u:%g' /__e)" || OWNER_UG=""
+          if [ -z "$OWNER_UG" ]; then
+            echo "::error::cannot read the runner owner: /__e is unreadable"
+            exit 1
+          fi
+          if [ "${OWNER_UG%%:*}" = "0" ]; then
+            echo "::error::runner user mismatch: the owner source /__e is uid 0, refusing to chown the tree to root"
+            exit 1
+          fi
+          echo "runner owner (stat of /__e): $OWNER_UG"
+          export OWNER_UG
+          CHOWN_FAILED="$(mktemp)" || { echo "::error::mktemp failed"; exit 1; }
+          find "$WORK_ROOT" \( ! -user "${OWNER_UG%%:*}" -o ! -group "${OWNER_UG##*:}" \) -exec sh -c 'for p; do chown -h "$OWNER_UG" "$p" || printf "%s\n" "$p"; done' sh {} + > "$CHOWN_FAILED" \
+            || { echo "::error::find under $WORK_ROOT failed"; rm -f "${CHOWN_FAILED:?}"; exit 1; }
+          CHOWN_N="$(wc -l < "$CHOWN_FAILED" | tr -d ' ')"
+          if [ "$CHOWN_N" -gt 0 ]; then
+            echo "::error::chown to $OWNER_UG failed on $CHOWN_N path(s) under $WORK_ROOT; first: $(head -n 5 "$CHOWN_FAILED" | tr '\n' ' ')"
+            rm -f "${CHOWN_FAILED:?}"
+            exit 1
+          fi
+          rm -f "${CHOWN_FAILED:?}"
           echo "pre-checkout ownership restored under $WORK_ROOT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1010,11 +1207,39 @@ jobs:
             echo "::warning::could not resolve the runner _work root ('$WORK_ROOT') — narrowing to the repo workspace"
             WORK_ROOT="$(dirname "$GITHUB_WORKSPACE")"
           fi
-          chown -R 1000:1000 "$WORK_ROOT" 2>/dev/null || true
+          # uid-agnostic (infra#2349): own the tree as the runner user's uid:gid. This step runs
+          # INSIDE the job container as uid 0 (the image sets no USER and the job passes no `user:`
+          # option), so `id -u` is 0 and cannot name the runner user. The owner is therefore read from a
+          # source OUTSIDE the tree being repaired: /__e, the runner's externals dir, bind-mounted from
+          # beside _work and created by the runner install as the runner user. Never a path inside the
+          # chowned tree ($RUNNER_TEMP, $WORK_ROOT, $GITHUB_WORKSPACE, $HOME): a wrong-owned leftover
+          # there would be copied back as the owner. No literal uid and no fallback: unreadable or
+          # uid 0 = fail, so this step never chowns anything to root.
+          OWNER_UG="$(stat -c '%u:%g' /__e)" || OWNER_UG=""
+          if [ -z "$OWNER_UG" ]; then
+            echo "::error::cannot read the runner owner: /__e is unreadable"
+            exit 1
+          fi
+          if [ "${OWNER_UG%%:*}" = "0" ]; then
+            echo "::error::runner user mismatch: the owner source /__e is uid 0, refusing to chown the tree to root"
+            exit 1
+          fi
+          echo "runner owner (stat of /__e): $OWNER_UG"
+          export OWNER_UG
+          CHOWN_FAILED="$(mktemp)" || { echo "::error::mktemp failed"; exit 1; }
+          find "$WORK_ROOT" \( ! -user "${OWNER_UG%%:*}" -o ! -group "${OWNER_UG##*:}" \) -exec sh -c 'for p; do chown -h "$OWNER_UG" "$p" || printf "%s\n" "$p"; done' sh {} + > "$CHOWN_FAILED" \
+            || { echo "::error::find under $WORK_ROOT failed"; rm -f "${CHOWN_FAILED:?}"; exit 1; }
+          CHOWN_N="$(wc -l < "$CHOWN_FAILED" | tr -d ' ')"
+          if [ "$CHOWN_N" -gt 0 ]; then
+            echo "::error::chown to $OWNER_UG failed on $CHOWN_N path(s) under $WORK_ROOT; first: $(head -n 5 "$CHOWN_FAILED" | tr '\n' ' ')"
+            rm -f "${CHOWN_FAILED:?}"
+            exit 1
+          fi
+          rm -f "${CHOWN_FAILED:?}"
 
   bench:
     name: bench
-    if: ${{ inputs.run_benchmarks }}
+    if: ${{ (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) && inputs.run_benchmarks }}
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     container:
       image: localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36
@@ -1051,7 +1276,35 @@ jobs:
           fi
           # Container steps run as root, so a plain chown is enough. Numeric
           # uid:gid because the runner user has no entry in the image's passwd.
-          chown -R 1000:1000 "$WORK_ROOT" 2>/dev/null || true
+          # uid-agnostic (infra#2349): own the tree as the runner user's uid:gid. This step runs
+          # INSIDE the job container as uid 0 (the image sets no USER and the job passes no `user:`
+          # option), so `id -u` is 0 and cannot name the runner user. The owner is therefore read from a
+          # source OUTSIDE the tree being repaired: /__e, the runner's externals dir, bind-mounted from
+          # beside _work and created by the runner install as the runner user. Never a path inside the
+          # chowned tree ($RUNNER_TEMP, $WORK_ROOT, $GITHUB_WORKSPACE, $HOME): a wrong-owned leftover
+          # there would be copied back as the owner. No literal uid and no fallback: unreadable or
+          # uid 0 = fail, so this step never chowns anything to root.
+          OWNER_UG="$(stat -c '%u:%g' /__e)" || OWNER_UG=""
+          if [ -z "$OWNER_UG" ]; then
+            echo "::error::cannot read the runner owner: /__e is unreadable"
+            exit 1
+          fi
+          if [ "${OWNER_UG%%:*}" = "0" ]; then
+            echo "::error::runner user mismatch: the owner source /__e is uid 0, refusing to chown the tree to root"
+            exit 1
+          fi
+          echo "runner owner (stat of /__e): $OWNER_UG"
+          export OWNER_UG
+          CHOWN_FAILED="$(mktemp)" || { echo "::error::mktemp failed"; exit 1; }
+          find "$WORK_ROOT" \( ! -user "${OWNER_UG%%:*}" -o ! -group "${OWNER_UG##*:}" \) -exec sh -c 'for p; do chown -h "$OWNER_UG" "$p" || printf "%s\n" "$p"; done' sh {} + > "$CHOWN_FAILED" \
+            || { echo "::error::find under $WORK_ROOT failed"; rm -f "${CHOWN_FAILED:?}"; exit 1; }
+          CHOWN_N="$(wc -l < "$CHOWN_FAILED" | tr -d ' ')"
+          if [ "$CHOWN_N" -gt 0 ]; then
+            echo "::error::chown to $OWNER_UG failed on $CHOWN_N path(s) under $WORK_ROOT; first: $(head -n 5 "$CHOWN_FAILED" | tr '\n' ' ')"
+            rm -f "${CHOWN_FAILED:?}"
+            exit 1
+          fi
+          rm -f "${CHOWN_FAILED:?}"
           echo "pre-checkout ownership restored under $WORK_ROOT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1230,9 +1483,39 @@ jobs:
             echo "::warning::could not resolve the runner _work root ('$WORK_ROOT') — narrowing to the repo workspace"
             WORK_ROOT="$(dirname "$GITHUB_WORKSPACE")"
           fi
-          chown -R 1000:1000 "$WORK_ROOT" 2>/dev/null || true
+          # uid-agnostic (infra#2349): own the tree as the runner user's uid:gid. This step runs
+          # INSIDE the job container as uid 0 (the image sets no USER and the job passes no `user:`
+          # option), so `id -u` is 0 and cannot name the runner user. The owner is therefore read from a
+          # source OUTSIDE the tree being repaired: /__e, the runner's externals dir, bind-mounted from
+          # beside _work and created by the runner install as the runner user. Never a path inside the
+          # chowned tree ($RUNNER_TEMP, $WORK_ROOT, $GITHUB_WORKSPACE, $HOME): a wrong-owned leftover
+          # there would be copied back as the owner. No literal uid and no fallback: unreadable or
+          # uid 0 = fail, so this step never chowns anything to root.
+          OWNER_UG="$(stat -c '%u:%g' /__e)" || OWNER_UG=""
+          if [ -z "$OWNER_UG" ]; then
+            echo "::error::cannot read the runner owner: /__e is unreadable"
+            exit 1
+          fi
+          if [ "${OWNER_UG%%:*}" = "0" ]; then
+            echo "::error::runner user mismatch: the owner source /__e is uid 0, refusing to chown the tree to root"
+            exit 1
+          fi
+          echo "runner owner (stat of /__e): $OWNER_UG"
+          export OWNER_UG
+          CHOWN_FAILED="$(mktemp)" || { echo "::error::mktemp failed"; exit 1; }
+          find "$WORK_ROOT" \( ! -user "${OWNER_UG%%:*}" -o ! -group "${OWNER_UG##*:}" \) -exec sh -c 'for p; do chown -h "$OWNER_UG" "$p" || printf "%s\n" "$p"; done' sh {} + > "$CHOWN_FAILED" \
+            || { echo "::error::find under $WORK_ROOT failed"; rm -f "${CHOWN_FAILED:?}"; exit 1; }
+          CHOWN_N="$(wc -l < "$CHOWN_FAILED" | tr -d ' ')"
+          if [ "$CHOWN_N" -gt 0 ]; then
+            echo "::error::chown to $OWNER_UG failed on $CHOWN_N path(s) under $WORK_ROOT; first: $(head -n 5 "$CHOWN_FAILED" | tr '\n' ' ')"
+            rm -f "${CHOWN_FAILED:?}"
+            exit 1
+          fi
+          rm -f "${CHOWN_FAILED:?}"
 
   security:
+    # NO-FORK-1: inert for a fork-head PR (see fork-guard); other events unchanged.
+    if: ${{ (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) }}
     name: security
     runs-on: ${{ fromJSON(inputs.runs_on) }}
     timeout-minutes: 10
@@ -1265,24 +1548,34 @@ jobs:
           # privilege. `sudo -n` never prompts, and `$(id -un):$(id -gn)` keeps
           # the invocation inside the narrow /etc/sudoers.d/runner-chown grant
           # (`chown -R noah:noah *`) instead of relying on a blanket rule.
-          # Never fails the job: an unprivileged chown fixes whatever we own.
+          # Fail-hard by design (fail-closed rule; a third state on a PR path is banned, C324 s6):
+          # when neither sudo -n nor a plain chown can repair the tree the step exits 1 with an
+          # ::error::, and the post-condition find below re-checks the result. A bare-metal runner
+          # without the sudoers grant fails here on purpose, never silently.
           OWNER="$(id -un):$(id -gn)"
-          sudo -n chown -R "$OWNER" "$WORK_ROOT" 2>/dev/null \
-            || chown -R "$OWNER" "$WORK_ROOT" 2>/dev/null \
-            || true
+          if ! sudo -n chown -R "$OWNER" "$WORK_ROOT"; then
+            chown -R "$OWNER" "$WORK_ROOT" || { echo "::error::chown -R $OWNER failed under $WORK_ROOT (is /etc/sudoers.d/runner-chown deployed?)"; exit 1; }
+          fi
           # Post-condition, not just an exit code: the sudoers drop-ins on intel
           # are machine-level config and NOT tracked in paiml/infra, so a reimage
           # can silently turn this step into a no-op. Assert the tree is actually
           # clean so that failure mode surfaces here instead of as a mystery
           # EACCES in the next job's checkout.
-          if find "$WORK_ROOT" ! -user "$(id -un)" -print -quit 2>/dev/null | grep -q .; then
-            echo "::warning::root-owned leftovers remain under $WORK_ROOT — checkout may fail with EACCES (is /etc/sudoers.d/runner-chown deployed?)"
-          else
-            echo "pre-checkout ownership restored under $WORK_ROOT"
+          LEFT="$(find "$WORK_ROOT" ! \( -user "$(id -un)" -group "$(id -gn)" \) -print -quit)" || { echo "::error::find under $WORK_ROOT failed"; exit 1; }
+          if [ -n "$LEFT" ]; then
+            echo "::error::root-owned leftovers remain under $WORK_ROOT (first: $LEFT) — checkout may fail with EACCES (is /etc/sudoers.d/runner-chown deployed?)"
+            exit 1
           fi
+          echo "pre-checkout ownership restored under $WORK_ROOT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # ADV-001 (paiml/infra#3648): full history, fetched by checkout WITH its token.
+          # persist-credentials: false leaves no credential behind, so every later
+          # in-job fetch of the PR base / head on a private repo fails (exit 128,
+          # "could not read Username"). The advisory gate and roadmap-fragment-parity
+          # both read the base sha; with fetch-depth: 0 it is already here.
+          fetch-depth: 0
       - name: roadmap-valid
         # BSE-09c (BSE-001 v1.2, infra PMAT-239): every repo's docs/roadmaps/roadmap.yaml
         # must parse AND validate before ci / gate — infra carried an unparseable roadmap
@@ -1354,9 +1647,10 @@ jobs:
             echo "roadmap-fragment-parity: NOT-RUN — no $entries/ in this repo (not migrated)"
             exit 0
           fi
-          if ! git cat-file -e "$BASE_SHA" 2>/dev/null; then
-            git fetch -q --no-tags origin "$BASE_SHA" 2>/dev/null || true
-          fi
+          # GATE-JUNK-001 (infra#3711): a PR gate makes 0 network fetches. The security job
+          # checks out with fetch-depth: 0, so BASE_SHA and HEAD_SHA (parents of the merge
+          # ref) are already local. Never fetch here: checkout strips credentials, so a
+          # fetch fails with "could not read Username" (rmedia#2517 run 42761731846).
           if ! git cat-file -e "$BASE_SHA" 2>/dev/null; then
             echo "::error::roadmap-fragment-parity: base $BASE_SHA is unreachable — a check that cannot read its input does not pass"
             exit 1
@@ -1508,6 +1802,201 @@ jobs:
           echo "CARGO_HOME=$CARGO_HOME" >> "$GITHUB_ENV"
           cargo install cargo-audit --locked --root "$CARGO_HOME" || true
           echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+      # ADV-001 (paiml/infra#3648, Noah 2026-11-09 16:30): "a security alert cannot take our
+      # entire build system for ALL REPOS down the day". RUSTSEC-2026-0459 turned every PR red
+      # in rmedia, pmat, bashrs and ruchy at once, because this job fetched the LIVE advisory
+      # DB at gate time and failed on advisories no PR had introduced. Ported from aprender's
+      # diff gate (PMAT-5792, scripts/ci/advisory_diff.sh):
+      #   * pull_request / merge_group: fail ONLY on advisories the PR's own Cargo.lock change
+      #     introduces (key = advisory id | crate@version, base lock vs PR lock). An advisory
+      #     already on the base is printed as an andon line, never a block.
+      #   * push / schedule / dispatch: a full scan of the commit; findings are ::warning::
+      #     (the scheduled advisory-andon.yml opens the ticket), never a red build.
+      #   * ONE pinned advisory-db for both sides, no live fetch: the caller's
+      #     .advisory-db-rev (40-hex) when it commits one, else input advisory_db_rev. It is
+      #     materialised once per runner from /opt/ci-mirror/advisory-db when that mirror has
+      #     the commit, else by fetching exactly that commit; cargo audit runs --no-fetch.
+      #     Same commit + same pin = same verdict, whatever upstream publishes.
+      #   * Both sides are scanned with the BASE's .cargo/audit.toml ignores, so a PR cannot
+      #     waive the advisory it introduces.
+      #   * Positive control on every run: a synthetic PR adding smallvec 0.6.9 must come out
+      #     RED naming RUSTSEC-2019-0009, and the same lock on both sides must come out green.
+      #     A scanner or DB that cannot see a known advisory fails the job, never passes it.
+      #   * Fails closed: anything that cannot be checked (no cargo-audit, bad pin, unreachable
+      #     base, unparsable or inconsistent scanner output) exits 75 = red, never a pass.
+      # scripts/test-advisory-gate.sh sources this block (SOV_ADV_LIB=1), runs the case table,
+      # and proves it discriminates by mutating the marked verdict line and watching it fail.
+      - name: Advisory gate (diff-only, pinned advisory-db)
+        if: ${{ inputs.advisories_diff_only }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SOV_ADV_EVENT: ${{ github.event_name }}
+          SOV_ADV_PR_BASE: ${{ github.event.pull_request.base.sha }}
+          SOV_ADV_MG_BASE: ${{ github.event.merge_group.base_sha }}
+          SOV_ADV_DB_REV_INPUT: ${{ inputs.advisory_db_rev }}
+        run: |
+          set -euo pipefail
+          CANT=75
+          SOV_ADV_DB_URL="${SOV_ADV_DB_URL:-https://github.com/rustsec/advisory-db.git}"
+          SOV_ADV_MIRROR="${SOV_ADV_MIRROR:-/opt/ci-mirror/advisory-db}"
+
+          # cargo-audit JSON -> sorted finding keys "RUSTSEC-id|crate@version"
+          adv_keys() {
+            jq -r '.vulnerabilities.list[]? | "\(.advisory.id // "?")|\(.package.name // "?")@\(.package.version // "?")"' "$1" | LC_ALL=C sort -u
+          }
+          # FILE RC -> keys on stdout; 75 when the side cannot be trusted
+          adv_side() {
+            local f=$1 rc=$2 found n len
+            [ -f "$f" ] || { echo "COULD-NOT-CHECK: $f missing" >&2; return "$CANT"; }
+            case "$rc" in 0 | 1) ;; *) echo "COULD-NOT-CHECK: cargo audit rc=$rc" >&2; return "$CANT" ;; esac
+            found=$(jq -r '.vulnerabilities.found | if type == "boolean" then tostring else error("no found") end' "$f" 2>/dev/null) \
+              || { echo "COULD-NOT-CHECK: $f is not a cargo-audit JSON report (rc=$rc)" >&2; return "$CANT"; }
+            n=$(jq -r '.vulnerabilities.count' "$f"); len=$(jq -r '.vulnerabilities.list | length' "$f")
+            [ "$n" = "$len" ] || { echo "COULD-NOT-CHECK: count $n != list length $len" >&2; return "$CANT"; }
+            if [ "$rc" = 1 ] && [ "$found" != true ]; then echo "COULD-NOT-CHECK: rc=1 with no vulnerability reported" >&2; return "$CANT"; fi
+            if [ "$rc" = 0 ] && [ "$found" = true ]; then echo "COULD-NOT-CHECK: rc=0 with vulnerabilities reported" >&2; return "$CANT"; fi
+            adv_keys "$f"
+          }
+          # PR_JSON PR_RC BASE_JSON BASE_RC -> 0 nothing new; 1 the PR introduces findings; 75 cannot check
+          adv_verdict() {
+            local pr base new
+            pr=$(adv_side "$1" "$2") || return "$CANT"
+            base=$(adv_side "$3" "$4") || return "$CANT"
+            new=$(LC_ALL=C comm -23 <(printf '%s\n' "$pr" | sed '/^$/d') <(printf '%s\n' "$base" | sed '/^$/d')) # adv-verdict-diff
+            if [ -n "$new" ]; then
+              echo "PR introduces advisories (its Cargo.lock change adds them):" >&2
+              printf '%s\n' "$new" | sed 's/^/::error::advisory introduced by this PR: /' >&2
+              return 1
+            fi
+            if [ -n "$(printf '%s' "$base" | tr -d '\n')" ]; then
+              printf '%s\n' "$base" | sed 's/^/::warning::ADVISORY ANDON (already on the base, not blocking this PR): /' >&2
+            fi
+            return 0
+          }
+          # .cargo/audit.toml content on stdin -> "--ignore ID" flags
+          adv_ignore_flags() {
+            sed -n 's/.*\(RUSTSEC-[0-9]*-[0-9]*\).*/\1/p' | LC_ALL=C sort -u | sed 's/^/--ignore /' | tr '\n' ' '
+          }
+          # DB LOCK OUT [flags...] -> prints cargo audit's rc; the report goes to OUT
+          adv_scan() {
+            local db=$1 lock=$2 out=$3 rc=0
+            shift 3
+            cargo audit --db "$db" --no-fetch --stale --json --file "$lock" "$@" >"$out" 2>"$out.err" || rc=$?
+            [ ! -s "$out.err" ] || sed 's/^/cargo-audit: /' "$out.err" | head -n 20 >&2
+            echo "$rc"
+          }
+          # REV -> path of a checkout of advisory-db at exactly REV (cached per runner)
+          adv_db() {
+            local rev=$1 root dst tmp src
+            [[ "$rev" =~ ^[0-9a-f]{40}$ ]] || { echo "COULD-NOT-CHECK: advisory-db pin '$rev' is not a 40-hex commit" >&2; return "$CANT"; }
+            root="${SOV_ADV_CACHE:-${RUNNER_TOOL_CACHE:?RUNNER_TOOL_CACHE is unset}/advisory-db-pinned}"
+            dst="$root/$rev"
+            if [ "$(git -C "$dst" rev-parse HEAD 2>/dev/null)" = "$rev" ] && [ -d "$dst/crates" ] && [ -z "$(git -C "$dst" status --porcelain 2>/dev/null)" ]; then
+              echo "$dst"; return 0
+            fi
+            mkdir -p "$root"
+            tmp=$(mktemp -d "$root/.tmp.XXXXXX")
+            src="$SOV_ADV_DB_URL"
+            if git -C "$SOV_ADV_MIRROR" cat-file -e "$rev^{commit}" 2>/dev/null; then src="$SOV_ADV_MIRROR"; fi
+            if ! { git init -q "$tmp" && git -C "$tmp" fetch -q --depth 1 "$src" "$rev" && git -C "$tmp" -c advice.detachedHead=false checkout -q --detach FETCH_HEAD; }; then
+              rm -rf -- "${tmp:?}"
+              echo "COULD-NOT-CHECK: advisory-db commit $rev could not be fetched from $src" >&2
+              return "$CANT"
+            fi
+            [ "$(git -C "$tmp" rev-parse HEAD)" = "$rev" ] || { rm -rf -- "${tmp:?}"; echo "COULD-NOT-CHECK: fetched advisory-db is not $rev" >&2; return "$CANT"; }
+            rm -rf -- "${dst:?}"
+            mv -T "$tmp" "$dst" 2>/dev/null || rm -rf -- "${tmp:?}"
+            [ "$(git -C "$dst" rev-parse HEAD 2>/dev/null)" = "$rev" ] || { echo "COULD-NOT-CHECK: advisory-db cache $dst is not $rev" >&2; return "$CANT"; }
+            echo "$dst"
+          }
+          # REF OUT -> the Cargo.lock of REF (resolved the same way on both sides when not committed)
+          adv_lock_at() {
+            local ref=$1 out=$2 w
+            if git cat-file -e "$ref:Cargo.lock" 2>/dev/null; then git show "$ref:Cargo.lock" >"$out"; return 0; fi
+            if ! git cat-file -e "$ref:Cargo.toml" 2>/dev/null; then printf 'version = 3\n' >"$out"; return 0; fi
+            w="$(dirname "$PWD")/.advgate-$$-$(git rev-parse --short=12 "$ref")"
+            git worktree add -q --detach "$w" "$ref" 2>/dev/null || { echo "COULD-NOT-CHECK: no worktree for $ref" >&2; return "$CANT"; }
+            if ! (cd "$w" && cargo generate-lockfile -q); then
+              git worktree remove --force "$w" >/dev/null 2>&1 || true
+              echo "COULD-NOT-CHECK: cargo generate-lockfile failed at $ref (no Cargo.lock committed)" >&2
+              return "$CANT"
+            fi
+            cp "$w/Cargo.lock" "$out"
+            git worktree remove --force "$w" >/dev/null 2>&1 || true
+          }
+          # DB -> 0 when the scanner + DB + verdict can all see a known advisory
+          adv_positive_control() {
+            local db=$1 d prc brc rc=0
+            d=$(mktemp -d)
+            printf 'version = 3\n' >"$d/base.lock"
+            printf 'version = 3\n\n[[package]]\nname = "smallvec"\nversion = "0.6.9"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\n' >"$d/pr.lock"
+            prc=$(adv_scan "$db" "$d/pr.lock" "$d/pr.json")
+            brc=$(adv_scan "$db" "$d/base.lock" "$d/base.json")
+            adv_verdict "$d/pr.json" "$prc" "$d/base.json" "$brc" >/dev/null 2>"$d/v.err" || rc=$?
+            if [ "$rc" != 1 ] || ! grep -q 'RUSTSEC-2019-0009|smallvec@0.6.9' "$d/v.err"; then
+              echo "::error::advisory positive control FAILED: a PR adding smallvec 0.6.9 must be RED naming RUSTSEC-2019-0009 (verdict rc=$rc) -- this gate cannot fail, so it cannot pass" >&2
+              sed 's/^/  /' "$d/v.err" >&2; rm -rf -- "${d:?}"; return 1
+            fi
+            rc=0
+            adv_verdict "$d/pr.json" "$prc" "$d/pr.json" "$prc" >/dev/null 2>&1 || rc=$?
+            rm -rf -- "${d:?}"
+            [ "$rc" = 0 ] || { echo "::error::advisory positive control FAILED: the same lock on both sides must be green (rc=$rc)" >&2; return 1; }
+            echo "advisory positive control: ok (smallvec 0.6.9 added -> RED RUSTSEC-2019-0009; unchanged -> green)"
+          }
+
+          # test hook: scripts/test-advisory-gate.sh sources this block for its functions only
+          if [ "${SOV_ADV_LIB:-}" = 1 ]; then return 0; fi
+
+          GIT_CONFIG_COUNT=1
+          GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_TERMINAL_PROMPT=0
+          cd "$GITHUB_WORKSPACE"
+          command -v cargo-audit >/dev/null || { echo "::error::COULD-NOT-CHECK: cargo-audit is not installed -- an absent scanner is red, never a pass"; exit "$CANT"; }
+          cargo audit --version
+          REV="$SOV_ADV_DB_REV_INPUT"
+          if [ -f .advisory-db-rev ]; then REV=$(tr -d ' \n\r\t' < .advisory-db-rev); echo "advisory-db pin from .advisory-db-rev"; fi
+          DB=$(adv_db "$REV") || { echo "::error::COULD-NOT-CHECK: no advisory-db at pin '$REV'"; exit "$CANT"; }
+          echo "advisory-db pinned at $REV ($(git -C "$DB" log -1 --format=%cI)), fetch disabled"
+          adv_positive_control "$DB"
+          T=$(mktemp -d)
+          case "$SOV_ADV_EVENT" in
+            pull_request | pull_request_target | merge_group)
+              BASE="$SOV_ADV_PR_BASE"; [ "$SOV_ADV_EVENT" != merge_group ] || BASE="$SOV_ADV_MG_BASE"
+              [[ "$BASE" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::COULD-NOT-CHECK: $SOV_ADV_EVENT has no base sha ('$BASE')"; exit "$CANT"; }
+              git cat-file -e "$BASE^{commit}" 2>/dev/null || { echo "::error::COULD-NOT-CHECK: base $BASE is not in the checkout (fetch-depth: 0 missing?)"; exit "$CANT"; }
+              adv_lock_at "$BASE" "$T/base.lock" || exit "$CANT"
+              adv_lock_at HEAD "$T/pr.lock" || exit "$CANT"
+              IGN=$(git show "$BASE:.cargo/audit.toml" 2>/dev/null | adv_ignore_flags || true)
+              echo "base ${BASE:0:12} vs HEAD $(git rev-parse --short=12 HEAD); base ignores: ${IGN:-none}"
+              # shellcheck disable=SC2086
+              PRRC=$(adv_scan "$DB" "$T/pr.lock" "$T/pr.json" $IGN)
+              # shellcheck disable=SC2086
+              BASERC=$(adv_scan "$DB" "$T/base.lock" "$T/base.json" $IGN)
+              rc=0
+              adv_verdict "$T/pr.json" "$PRRC" "$T/base.json" "$BASERC" || rc=$?
+              case "$rc" in
+                0) echo "advisory gate: PASS -- this PR introduces no advisory" ;;
+                1) echo "::error::advisory gate: this PR's dependency change introduces the advisories above" ;;
+                *) echo "::error::advisory gate: COULD-NOT-CHECK (fails closed)" ;;
+              esac
+              exit "$rc"
+              ;;
+            *)
+              # push / schedule / dispatch: report, never block (the andon workflow owns the ticket)
+              adv_lock_at HEAD "$T/head.lock" || exit "$CANT"
+              IGN=$( (cat .cargo/audit.toml 2>/dev/null || true) | adv_ignore_flags)
+              # shellcheck disable=SC2086
+              HRC=$(adv_scan "$DB" "$T/head.lock" "$T/head.json" $IGN)
+              K=$(adv_side "$T/head.json" "$HRC") || { echo "::error::advisory scan: COULD-NOT-CHECK (fails closed)"; exit "$CANT"; }
+              if [ -n "$K" ]; then
+                printf '%s\n' "$K" | sed 's/^/::warning::ADVISORY ANDON (on this commit, not a build failure; advisory-andon.yml tickets it): /'
+              else
+                echo "advisory scan: no advisory at pin $REV"
+              fi
+              ;;
+          esac
       - name: Audit
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -1553,7 +2042,7 @@ jobs:
           fi
 
           if [ "${SOV_ADVISORIES_DIFF_ONLY:-}" = true ]; then
-            echo "cargo audit skipped: the caller's diff gate is the scanner of record (advisories_diff_only: true)"
+            echo "live cargo audit skipped: the 'Advisory gate (diff-only, pinned advisory-db)' step above is the scanner of record (advisories_diff_only: true, the default since ADV-001)"
           else
             cargo audit $IGNORE_FLAGS
           fi
@@ -1582,11 +2071,13 @@ jobs:
             WORK_ROOT="$(dirname "$GITHUB_WORKSPACE")"
           fi
           OWNER="$(id -un):$(id -gn)"
-          sudo -n chown -R "$OWNER" "$WORK_ROOT" 2>/dev/null \
-            || chown -R "$OWNER" "$WORK_ROOT" 2>/dev/null \
-            || true
+          if ! sudo -n chown -R "$OWNER" "$WORK_ROOT"; then
+            chown -R "$OWNER" "$WORK_ROOT" || { echo "::error::chown -R $OWNER failed under $WORK_ROOT (is /etc/sudoers.d/runner-chown deployed?)"; exit 1; }
+          fi
 
   provenance:
+    # NO-FORK-1: inert for a fork-head PR (see fork-guard); other events unchanged.
+    if: ${{ (!startsWith(github.event_name, 'pull_request') || github.event.pull_request.head.repo.full_name == github.repository) }}
     name: provenance
     # 2026-08-20: was ubuntu-latest under an f8 allowlist entry claiming OIDC
     # id-tokens are "only issued on GitHub-hosted runners". That claim is wrong:
@@ -1623,11 +2114,19 @@ jobs:
 
   gate:
     name: gate
-    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    # NO-FORK-1: a fork-head PR runs this gate on a hosted runner (never self-hosted).
+    # This fork branch and fork-guard are the only permitted hosted runs-on in a gate
+    # (NO-FORK-1 07:15Z b): fork-head PRs only, no checkout, no secrets, only the refuse step runs.
+    runs-on: ${{ (startsWith(github.event_name, 'pull_request') && github.event.pull_request.head.repo.full_name != github.repository) && fromJSON('["ubuntu-latest"]') || fromJSON(inputs.runs_on) }}
     timeout-minutes: 5
     if: always()
     needs: [test, lint, coverage, security, provenance]
     steps:
+      - name: NO-FORK-1 refuse fork head (skipped is not passing)
+        if: ${{ startsWith(github.event_name, 'pull_request') && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          echo "::error::NO-FORK-1: fork-head pull request; paiml accepts no fork contributions (see CONTRIBUTING.md in paiml/.github)"
+          exit 1
       # ALLOWLIST, NOT DENYLIST. Each check previously read
       #   if [ "<result>" = "failure" ]; then exit 1
       # which fails ONLY on the literal string "failure". A GitHub job result
@@ -1650,6 +2149,9 @@ jobs:
           COVERAGE_ON: ${{ inputs.coverage_on }}
           EVENT_NAME: ${{ github.event_name }}
           GIT_REF: ${{ github.ref }}
+          HEAVY_ON: ${{ inputs.heavy_on }}
+          HEAD_REF: ${{ github.head_ref }}
+          FULL_CI: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
         run: |
           rc=0
           # coverage_on: 'always' keeps the rule above verbatim (coverage must succeed).
@@ -1669,6 +2171,24 @@ jobs:
               *) coverage_owed=0 ;;
             esac
           fi
+          # heavy_on: 'always' keeps the rule verbatim (test and coverage must succeed).
+          # 'train': on a pull_request whose head is not train/* or batch/* and that carries no
+          # full-ci label, test and coverage are skipped by their own `if:`; that skip, and only
+          # that skip, is accepted and printed as NOT MEASURED. On a train or batch head, a
+          # full-ci PR and every non-PR event they are OWED: skipped there is RED (anti-vacuity).
+          case "$HEAVY_ON" in
+            always|train) ;;
+            *) echo "::error::heavy_on must be 'always' or 'train', got '${HEAVY_ON}'"; exit 1 ;;
+          esac
+          heavy_owed=1
+          if [ "$HEAVY_ON" = train ]; then
+            case "$EVENT_NAME" in
+              pull_request*)
+                case "$HEAD_REF" in train/*|batch/*) heavy_owed=1 ;; *) heavy_owed=0 ;; esac
+                [ "$FULL_CI" = true ] && heavy_owed=1 ;;
+              *) heavy_owed=1 ;;
+            esac
+          fi
           for pair in \
             "test:${{ needs.test.result }}" \
             "lint:${{ needs.lint.result }}" \
@@ -1678,6 +2198,10 @@ jobs:
             res="${pair#*:}"
             if [ "$job" = coverage ] && [ "$coverage_owed" = 0 ] && [ "$res" = skipped ]; then
               echo "coverage: NOT MEASURED on ${EVENT_NAME} (coverage_on=tag; owed on v* tags and dispatch)"
+              continue
+            fi
+            if { [ "$job" = test ] || [ "$job" = coverage ]; } && [ "$heavy_owed" = 0 ] && [ "$res" = skipped ]; then
+              echo "${job}: NOT MEASURED on this PR (heavy_on=train; owed on train/*, batch/*, full-ci and every non-PR event)"
               continue
             fi
             if [ "$res" != "success" ]; then

@@ -286,7 +286,7 @@ _cleanup() {
   [ "$KEEP_WORK" = 1 ] && { printf 'work kept: %s\n' "$WORK" >&2; return 0; }
   local v="${WORK:-}"
   case "$v" in
-    /tmp/?*|/var/folders/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
+    /tmp/?*|/var/folders/?*|"${TMPDIR:-/tmp}"/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
     *) return 0 ;;
   esac
 }

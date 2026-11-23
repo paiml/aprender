@@ -1,13 +1,20 @@
+#[cfg(test)]
+mod apr_tool_snapshot_tests;
 pub mod artifact;
+#[cfg(test)]
+mod book_build_tests;
 mod clause;
 pub mod composition;
 pub mod external_corpora;
 pub mod kaizen;
 mod kind;
 pub mod no_test_debt;
+#[cfg(test)]
+mod page_contracts_tests;
 mod parser;
 mod types;
 mod validator;
+pub mod work_tickets;
 
 pub use artifact::{classify_artifact, validate_artifact, ArtifactKind};
 pub use clause::{Clause, FormalStatus};

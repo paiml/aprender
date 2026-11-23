@@ -1,0 +1,14 @@
+[1m[92m    Updating[0m crates.io index
+[1m[33mwarning[0m: spurious network error (3 tries remaining): [6] Could not resolve hostname (Could not resolve host: index.crates.io)
+[1m[33mwarning[0m: spurious network error (2 tries remaining): [6] Could not resolve hostname (Could not resolve host: index.crates.io)
+[1m[33mwarning[0m: spurious network error (1 try remaining): [6] Could not resolve hostname (Could not resolve host: index.crates.io)
+[1m[33mwarning[0m: spurious network error (3 tries remaining): [6] Could not resolve hostname (Could not resolve host: index.crates.io)
+[1m[33mwarning[0m: spurious network error (2 tries remaining): [6] Could not resolve hostname (Could not resolve host: index.crates.io)
+[1m[33mwarning[0m: spurious network error (1 try remaining): [6] Could not resolve hostname (Could not resolve host: index.crates.io)
+[1m[91merror[0m: download of config.json failed
+
+Caused by:
+  failed to download from `https://index.crates.io/config.json`
+
+Caused by:
+  [6] Could not resolve hostname (Could not resolve host: index.crates.io)

@@ -1,0 +1,733 @@
+//! `qwen4_exp` attention-side ops (#7175, master #7169): the sparse-attention
+//! lightning indexer, the indexed attention module with its sigmoid output
+//! gate, and the hc multi-stream residual.
+//!
+//! Reference: transformers @ 36e937ae761dea806a5b9fbb382e880378ad5435,
+//! `modeling_qwen4_exp.py` (`Qwen4ExpTextQSAIndexer`, `Qwen4ExpTextAttention`,
+//! `Qwen4ExpTextGatedResidual`). Pure fp32 CPU functions on row-major slices
+//! with explicit shapes; one sequence per call (batches are looped by the caller).
+//! Decode (#7332): [`AttnCache`] + [`indexed_attention_step`] carry the KV and
+//! indexer-key cache one token at a time. Not covered: bf16 islands.
+
+use crate::gguf::forward_qwen35::apply_sigmoid_gate;
+use crate::gguf::ops::{rms_norm_unit_offset, softmax};
+
+/// Result of an op: shape violations are reported, never panicked on.
+pub type OpResult<T> = Result<T, String>;
+
+fn positive(name: &str, v: usize) -> OpResult<()> {
+    if v > 0 {
+        Ok(())
+    } else {
+        Err(format!("{name}: must be > 0"))
+    }
+}
+
+fn ensure(name: &str, got: usize, want: usize) -> OpResult<()> {
+    if got == want {
+        Ok(())
+    } else {
+        Err(format!("{name}: length {got}, expected {want}"))
+    }
+}
+
+/// `y[r] = sum_c w[r*cols + c] * x[c]` (torch Linear, weight `[out, in]`, no bias).
+fn linear(w: &[f32], rows: usize, cols: usize, x: &[f32]) -> Vec<f32> {
+    w.chunks_exact(cols)
+        .take(rows)
+        .map(|row| row.iter().zip(x).map(|(a, b)| a * b).sum())
+        .collect()
+}
+
+fn sigmoid(v: f32) -> f32 {
+    1.0 / (1.0 + (-v).exp())
+}
+
+fn silu(v: f32) -> f32 {
+    v * sigmoid(v)
+}
+
+/// Grouped `(1 + w)` RMSNorm: `x` is split in groups of `weight.len() / n_groups`
+/// ... here simply: each `group`-sized chunk of `x` is normalised with the
+/// matching slice of `weight` (`weight.len() == x.len()`).
+fn grouped_rms_norm(x: &[f32], weight: &[f32], group: usize, eps: f32) -> Vec<f32> {
+    x.chunks_exact(group)
+        .zip(weight.chunks_exact(group))
+        .flat_map(|(xg, wg)| rms_norm_unit_offset(xg, wg, eps))
+        .collect()
+}
+
+/// Partial rotate-half RoPE on every head of one token with given cos/sin
+/// (`rotary_dim = cos.len()`; dims past it pass through).
+fn rope_token(x: &mut [f32], head_dim: usize, cos: &[f32], sin: &[f32]) {
+    let half = cos.len() / 2;
+    for head in x.chunks_exact_mut(head_dim) {
+        for i in 0..half {
+            let (a, b) = (head[i], head[i + half]);
+            head[i] = a * cos[i] - b * sin[i];
+            head[i + half] = b * cos[i + half] + a * sin[i + half];
+        }
+    }
+}
+
+/// Checks every cheap shape precondition of the indexer and returns the sequence length.
+fn validate_indexer(
+    p: &IndexerParams,
+    s: &IndexerShape,
+    hidden: &[f32],
+    cos: &[f32],
+    sin: &[f32],
+    visible: &[bool],
+) -> OpResult<usize> {
+    for (n, v) in [
+        ("hidden", s.hidden),
+        ("n_heads", s.n_heads),
+        ("head_dim", s.head_dim),
+        ("ratio", s.ratio),
+    ] {
+        positive(n, v)?;
+    }
+    ensure("hidden", hidden.len() % s.hidden, 0)?;
+    let seq = hidden.len() / s.hidden;
+    positive("seq", seq)?;
+    ensure("visible", visible.len(), seq * seq)?;
+    ensure("cos", cos.len() % seq, 0)?;
+    ensure("sin", sin.len(), cos.len())?;
+    let rot = cos.len() / seq;
+    positive("rotary_dim", rot)?;
+    ensure("rotary_dim parity", rot % 2, 0)?;
+    ensure("rotary_dim <= head_dim", usize::from(rot <= s.head_dim), 1)?;
+    let qk = (s.n_heads + 1) * s.head_dim * s.hidden;
+    ensure("qk_proj", p.qk_proj.len(), qk)?;
+    ensure("q_layernorm", p.q_norm.len(), s.head_dim)?;
+    ensure("k_layernorm", p.k_norm.len(), s.head_dim)?;
+    Ok(seq)
+}
+
+/// Indexer weights (`Qwen4ExpTextQSAIndexer`).
+pub struct IndexerParams<'a> {
+    /// `index_qk_proj.weight` `[(n_heads + 1) * head_dim, hidden]`.
+    pub qk_proj: &'a [f32],
+    /// `q_layernorm.weight` `[head_dim]` (offset from 1).
+    pub q_norm: &'a [f32],
+    /// `k_layernorm.weight` `[head_dim]` (offset from 1).
+    pub k_norm: &'a [f32],
+}
+
+/// Indexer hyperparameters.
+#[derive(Clone, Copy)]
+pub struct IndexerShape {
+    /// Model hidden size.
+    pub hidden: usize,
+    /// Indexer query heads (`indexer_n_heads`); there is exactly one key head.
+    pub n_heads: usize,
+    /// `indexer_head_dim`.
+    pub head_dim: usize,
+    /// `indexer_budget` (tokens).
+    pub budget: usize,
+    /// `indexer_compress_ratio` (tokens per block).
+    pub ratio: usize,
+    /// RMSNorm epsilon.
+    pub eps: f32,
+}
+
+/// Rotated, normed indexer queries `[seq, n_heads * head_dim]` and raw keys `[seq, head_dim]`.
+fn indexer_qk(
+    p: &IndexerParams,
+    s: &IndexerShape,
+    hidden: &[f32],
+    cos: &[f32],
+    sin: &[f32],
+) -> (Vec<f32>, Vec<f32>) {
+    let (dh, rot) = (s.head_dim, cos.len() / (hidden.len() / s.hidden));
+    let qd = s.n_heads * dh;
+    let (mut qs, mut ks) = (Vec::new(), Vec::new());
+    for (t, h) in hidden.chunks_exact(s.hidden).enumerate() {
+        let qk = linear(p.qk_proj, qd + dh, s.hidden, h);
+        let mut q: Vec<f32> = qk[..qd]
+            .chunks_exact(dh)
+            .flat_map(|hd| rms_norm_unit_offset(hd, p.q_norm, s.eps))
+            .collect();
+        rope_token(
+            &mut q,
+            dh,
+            &cos[t * rot..(t + 1) * rot],
+            &sin[t * rot..(t + 1) * rot],
+        );
+        qs.extend(q);
+        ks.extend_from_slice(&qk[qd..]);
+    }
+    (qs, ks)
+}
+
+/// Block scores of one query against the pooled blocks of its visible tokens.
+fn block_scores(
+    p: &IndexerParams,
+    s: &IndexerShape,
+    q: &[f32],
+    keys: &[f32],
+    blocks: &[usize],
+    cs: (&[f32], &[f32]),
+) -> Vec<f32> {
+    let (dh, rot) = (s.head_dim, cs.0.len() / (keys.len() / s.head_dim));
+    blocks
+        .chunks_exact(s.ratio)
+        .map(|blk| {
+            let mut pooled = vec![0f32; dh];
+            for &tok in blk {
+                for (a, b) in pooled.iter_mut().zip(&keys[tok * dh..(tok + 1) * dh]) {
+                    *a += *b;
+                }
+            }
+            for v in pooled.iter_mut() {
+                *v /= s.ratio as f32;
+            }
+            let mut pooled = rms_norm_unit_offset(&pooled, p.k_norm, s.eps);
+            let g = blk[0];
+            rope_token(
+                &mut pooled,
+                dh,
+                &cs.0[g * rot..(g + 1) * rot],
+                &cs.1[g * rot..(g + 1) * rot],
+            );
+            let dot: f32 = q
+                .chunks_exact(dh)
+                .map(|qh| {
+                    qh.iter()
+                        .zip(&pooled)
+                        .map(|(a, b)| a * b)
+                        .sum::<f32>()
+                        .max(0.0)
+                })
+                .sum();
+            dot / (dh as f32).sqrt()
+        })
+        .collect()
+}
+
+/// Indices of the `k` largest scores. Ties resolve to the lower block index
+/// (stable); torch.topk documents no tie order, so a tie is ambiguous vs the reference.
+fn top_k(scores: &[f32], k: usize) -> Vec<usize> {
+    let mut idx: Vec<usize> = (0..scores.len()).collect();
+    idx.sort_by(|&a, &b| scores[b].total_cmp(&scores[a]).then(a.cmp(&b)));
+    idx.truncate(k);
+    idx
+}
+
+/// Selected-token row for one query.
+fn select_row(
+    p: &IndexerParams,
+    s: &IndexerShape,
+    q: &[f32],
+    keys: &[f32],
+    visible: &[bool],
+    cs: (&[f32], &[f32]),
+) -> Vec<bool> {
+    let vis: Vec<usize> = (0..visible.len()).filter(|&i| visible[i]).collect();
+    let nb = vis.len() / s.ratio;
+    let (full, tail) = vis.split_at(nb * s.ratio);
+    let scores = block_scores(p, s, q, keys, full, cs);
+    let mut row = vec![false; visible.len()];
+    for b in top_k(&scores, (s.budget / s.ratio).min(nb)) {
+        full[b * s.ratio..(b + 1) * s.ratio]
+            .iter()
+            .for_each(|&t| row[t] = true);
+    }
+    for &t in tail {
+        row[t] = true;
+    }
+    row
+}
+
+/// Lightning indexer for one sequence of `seq` tokens (queries == keys).
+///
+/// `hidden` `[seq, hidden]`, `cos`/`sin` `[seq, rotary_dim]`, `visible` `[seq, seq]`
+/// (row = query). Returns the selected-token mask `[seq, seq]`.
+pub fn indexer_select(
+    p: &IndexerParams,
+    s: &IndexerShape,
+    hidden: &[f32],
+    cos: &[f32],
+    sin: &[f32],
+    visible: &[bool],
+) -> OpResult<Vec<bool>> {
+    let seq = validate_indexer(p, s, hidden, cos, sin, visible)?;
+    let (q, k) = indexer_qk(p, s, hidden, cos, sin);
+    let qd = s.n_heads * s.head_dim;
+    let mut mask = Vec::with_capacity(seq * seq);
+    for t in 0..seq {
+        mask.extend(select_row(
+            p,
+            s,
+            &q[t * qd..(t + 1) * qd],
+            &k,
+            &visible[t * seq..(t + 1) * seq],
+            (cos, sin),
+        ));
+    }
+    Ok(mask)
+}
+
+/// Weights of `Qwen4ExpTextAttention`.
+pub struct AttentionParams<'a> {
+    /// `q_proj.weight` `[n_heads * head_dim * 2, hidden]` (per head: query then gate).
+    pub q_proj: &'a [f32],
+    /// `k_proj.weight` `[n_kv * head_dim, hidden]`.
+    pub k_proj: &'a [f32],
+    /// `v_proj.weight` `[n_kv * head_dim, hidden]`.
+    pub v_proj: &'a [f32],
+    /// `o_proj.weight` `[hidden, n_heads * head_dim]`.
+    pub o_proj: &'a [f32],
+    /// `q_norm.weight` `[head_dim]`.
+    pub q_norm: &'a [f32],
+    /// `k_norm.weight` `[head_dim]`.
+    pub k_norm: &'a [f32],
+    /// The layer's indexer.
+    pub indexer: IndexerParams<'a>,
+}
+
+/// Attention hyperparameters.
+#[derive(Clone, Copy)]
+pub struct AttentionShape {
+    /// Attention query heads.
+    pub n_heads: usize,
+    /// KV heads (GQA).
+    pub n_kv: usize,
+    /// Per-head dim.
+    pub head_dim: usize,
+    /// Indexer settings (also carries `hidden` and `eps`).
+    pub indexer: IndexerShape,
+}
+
+/// Checks the attention weights against the shape (the indexer is checked separately).
+fn validate_attention(p: &AttentionParams, a: &AttentionShape) -> OpResult<()> {
+    positive("n_heads", a.n_heads)?;
+    positive("n_kv", a.n_kv)?;
+    positive("head_dim", a.head_dim)?;
+    ensure("gqa", a.n_heads % a.n_kv, 0)?;
+    let (h, d) = (a.indexer.hidden, a.head_dim);
+    ensure("q_proj", p.q_proj.len(), a.n_heads * d * 2 * h)?;
+    ensure("k_proj", p.k_proj.len(), a.n_kv * d * h)?;
+    ensure("v_proj", p.v_proj.len(), a.n_kv * d * h)?;
+    ensure("o_proj", p.o_proj.len(), h * a.n_heads * d)?;
+    ensure("q_norm", p.q_norm.len(), d)?;
+    ensure("k_norm", p.k_norm.len(), d)
+}
+
+/// Per-token projections: queries, sigmoid-gate pre-activations, keys, values.
+struct Projected {
+    q: Vec<f32>,
+    gate: Vec<f32>,
+    k: Vec<f32>,
+    v: Vec<f32>,
+}
+
+fn project_qkv(
+    p: &AttentionParams,
+    a: &AttentionShape,
+    hidden: &[f32],
+    cos: &[f32],
+    sin: &[f32],
+) -> Projected {
+    let (d, h) = (a.head_dim, a.indexer.hidden);
+    let seq = hidden.len() / h;
+    let rot = cos.len() / seq;
+    let mut out = Projected {
+        q: vec![],
+        gate: vec![],
+        k: vec![],
+        v: vec![],
+    };
+    for (t, x) in hidden.chunks_exact(h).enumerate() {
+        let qg = linear(p.q_proj, a.n_heads * d * 2, h, x);
+        let mut q = Vec::new();
+        for head in qg.chunks_exact(2 * d) {
+            q.extend(rms_norm_unit_offset(&head[..d], p.q_norm, a.indexer.eps));
+            out.gate.extend_from_slice(&head[d..]);
+        }
+        let kp = linear(p.k_proj, a.n_kv * d, h, x);
+        let mut k: Vec<f32> = kp
+            .chunks_exact(d)
+            .flat_map(|c| rms_norm_unit_offset(c, p.k_norm, a.indexer.eps))
+            .collect();
+        let (c, s) = (&cos[t * rot..(t + 1) * rot], &sin[t * rot..(t + 1) * rot]);
+        rope_token(&mut q, d, c, s);
+        rope_token(&mut k, d, c, s);
+        out.q.extend(q);
+        out.k.extend(k);
+        out.v.extend(linear(p.v_proj, a.n_kv * d, h, x));
+    }
+    out
+}
+
+/// Softmax attention (GQA) of one query head over the allowed keys.
+/// `q_tok` is the query row `[n_heads * head_dim]`; `k`/`v` are `[tokens, n_kv * head_dim]`.
+fn attend_head(
+    a: &AttentionShape,
+    q_tok: &[f32],
+    kv_rows: (&[f32], &[f32]),
+    head: usize,
+    allowed: &[bool],
+) -> Vec<f32> {
+    let (d, nk) = (a.head_dim, a.n_kv * a.head_dim);
+    let (k, v) = kv_rows;
+    let kv = head / (a.n_heads / a.n_kv);
+    let q = &q_tok[head * d..(head + 1) * d];
+    let keys: Vec<usize> = (0..allowed.len()).filter(|&i| allowed[i]).collect();
+    if keys.is_empty() {
+        // A query that sees no key (e.g. a left-pad row): zeros, like torch>=2.5 sdpa safe softmax.
+        // Eager attention would instead average V over all keys (uniform softmax of equal minima).
+        return vec![0f32; d];
+    }
+    let scale = (d as f32).powf(-0.5);
+    let mut w: Vec<f32> = keys
+        .iter()
+        .map(|&j| {
+            q.iter()
+                .zip(&k[j * nk + kv * d..j * nk + (kv + 1) * d])
+                .map(|(x, y)| x * y)
+                .sum::<f32>()
+                * scale
+        })
+        .collect();
+    softmax(&mut w);
+    let mut out = vec![0f32; d];
+    for (&j, wj) in keys.iter().zip(&w) {
+        for (o, v) in out
+            .iter_mut()
+            .zip(&v[j * nk + kv * d..j * nk + (kv + 1) * d])
+        {
+            *o += wj * v;
+        }
+    }
+    out
+}
+
+/// `Qwen4ExpTextAttention.forward` for one sequence: indexer mask AND `visible`,
+/// gated q_proj, per-head q/k norm, partial RoPE, GQA softmax, `* sigmoid(gate)`, `o_proj`.
+///
+/// `hidden` `[seq, hidden]`, `cos`/`sin` `[seq, rotary_dim]`, `visible` `[seq, seq]`.
+/// Returns `[seq, hidden]`.
+pub fn indexed_attention(
+    p: &AttentionParams,
+    a: &AttentionShape,
+    hidden: &[f32],
+    cos: &[f32],
+    sin: &[f32],
+    visible: &[bool],
+) -> OpResult<Vec<f32>> {
+    let h = a.indexer.hidden;
+    validate_attention(p, a)?;
+    let seq = validate_indexer(&p.indexer, &a.indexer, hidden, cos, sin, visible)?;
+    ensure("rotary_dim", usize::from(cos.len() / seq <= a.head_dim), 1)?;
+    let sel = indexer_select(&p.indexer, &a.indexer, hidden, cos, sin, visible)?;
+    let pr = project_qkv(p, a, hidden, cos, sin);
+    let nq = a.n_heads * a.head_dim;
+    let mut out = Vec::with_capacity(seq * h);
+    for t in 0..seq {
+        let allowed: Vec<bool> = (0..seq)
+            .map(|j| sel[t * seq + j] && visible[t * seq + j])
+            .collect();
+        let mut o: Vec<f32> = (0..a.n_heads)
+            .flat_map(|hd| {
+                attend_head(a, &pr.q[t * nq..(t + 1) * nq], (&pr.k, &pr.v), hd, &allowed)
+            })
+            .collect();
+        apply_sigmoid_gate(&mut o, &pr.gate[t * nq..(t + 1) * nq]);
+        out.extend(linear(p.o_proj, h, nq, &o));
+    }
+    Ok(out)
+}
+
+/// Decode-time cache of one `indexed_attention` layer for one sequence (#7332):
+/// post-RoPE keys and values, raw indexer keys, and the cos/sin of every cached
+/// position (the indexer re-pools blocks from the whole history each step and
+/// ropes a block at its first token's position).
+#[derive(Debug, Clone, Default)]
+pub struct AttnCache {
+    k: Vec<f32>,
+    v: Vec<f32>,
+    index_k: Vec<f32>,
+    cos: Vec<f32>,
+    sin: Vec<f32>,
+}
+
+impl AttnCache {
+    /// Empty cache (position 0).
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Cached tokens for a layer whose indexer head dim is `index_head_dim`.
+    pub fn len(&self, index_head_dim: usize) -> usize {
+        self.index_k.len() / index_head_dim.max(1)
+    }
+}
+
+/// One decode step of `Qwen4ExpTextAttention`: appends the token to `cache` and
+/// attends over the cached history.
+///
+/// `hidden` `[hidden]`, `cos`/`sin` `[rotary_dim]` at this position, `visible`
+/// `[pos + 1]` (this query's mask row over the cached tokens plus itself).
+/// Returns `[hidden]`; equal to row `pos` of [`indexed_attention`] on the prefix.
+pub fn indexed_attention_step(
+    p: &AttentionParams,
+    a: &AttentionShape,
+    cache: &mut AttnCache,
+    hidden: &[f32],
+    cos: &[f32],
+    sin: &[f32],
+    visible: &[bool],
+) -> OpResult<Vec<f32>> {
+    validate_attention(p, a)?;
+    validate_indexer(&p.indexer, &a.indexer, hidden, cos, sin, &[true])?;
+    ensure("rotary_dim", usize::from(cos.len() <= a.head_dim), 1)?;
+    let pos = cache.len(a.indexer.head_dim);
+    ensure("visible", visible.len(), pos + 1)?;
+    // A cache built under another shape must be refused here, never indexed out of
+    // bounds in `attend_head` (module doc: shape violations are reported; PR #7356
+    // lane-1 finding 6).
+    ensure(
+        "cache index_k",
+        cache.index_k.len(),
+        pos * a.indexer.head_dim,
+    )?;
+    ensure("cache sin", cache.sin.len(), cache.cos.len())?;
+    ensure(
+        "cache cos (cached rotary_dim)",
+        cache.cos.len(),
+        cos.len() * pos,
+    )?;
+    let kv = pos * a.n_kv * a.head_dim;
+    ensure("cache k", cache.k.len(), kv)?;
+    ensure("cache v", cache.v.len(), kv)?;
+    let (q_idx, k_idx) = indexer_qk(&p.indexer, &a.indexer, hidden, cos, sin);
+    let pr = project_qkv(p, a, hidden, cos, sin);
+    cache.index_k.extend(k_idx);
+    cache.cos.extend_from_slice(cos);
+    cache.sin.extend_from_slice(sin);
+    cache.k.extend_from_slice(&pr.k);
+    cache.v.extend_from_slice(&pr.v);
+    let sel = select_row(
+        &p.indexer,
+        &a.indexer,
+        &q_idx,
+        &cache.index_k,
+        visible,
+        (&cache.cos, &cache.sin),
+    );
+    let allowed: Vec<bool> = sel.iter().zip(visible).map(|(s, v)| *s && *v).collect();
+    let mut o: Vec<f32> = (0..a.n_heads)
+        .flat_map(|hd| attend_head(a, &pr.q, (&cache.k, &cache.v), hd, &allowed))
+        .collect();
+    apply_sigmoid_gate(&mut o, &pr.gate);
+    Ok(linear(
+        p.o_proj,
+        a.indexer.hidden,
+        a.n_heads * a.head_dim,
+        &o,
+    ))
+}
+
+/// `Qwen4ExpTextGatedResidual` weights.
+pub struct HcParams<'a> {
+    /// `hc_norm.weight` `[count * hidden]`.
+    pub norm: &'a [f32],
+    /// `input_mix_weight_down.weight` `[lowrank, count * hidden]`.
+    pub down: &'a [f32],
+    /// `input_mix_weight_up.weight` `[count * hidden, lowrank]`.
+    pub up: &'a [f32],
+    /// `block_inject_weight.weight` `[count, count * hidden]`; `None` for the final mixer.
+    pub inject: Option<&'a [f32]>,
+}
+
+/// hc hyperparameters.
+#[derive(Clone, Copy)]
+pub struct HcShape {
+    /// Model hidden size.
+    pub hidden: usize,
+    /// `hc_count` (streams).
+    pub count: usize,
+    /// `hc_lowrank`.
+    pub lowrank: usize,
+    /// RMSNorm epsilon.
+    pub eps: f32,
+}
+
+/// Output of the gated residual.
+pub struct HcOut {
+    /// `[tokens, hidden]`: stream mix that feeds the sublayer.
+    pub mixed: Vec<f32>,
+    /// `[tokens, count]` injection weights (empty for the final mixer).
+    pub inject: Vec<f32>,
+}
+
+/// Gated residual over `tokens` rows of `[count * hidden]` streams. The raw
+/// streams (the reference's second return value) are `x` itself.
+pub fn hc_gated_residual(p: &HcParams, s: &HcShape, x: &[f32]) -> OpResult<HcOut> {
+    let ch = s.count * s.hidden;
+    ensure("x", x.len() % ch, 0)?;
+    ensure("norm", p.norm.len(), ch)?;
+    ensure("down", p.down.len(), s.lowrank * ch)?;
+    ensure("up", p.up.len(), ch * s.lowrank)?;
+    let mut out = HcOut {
+        mixed: vec![],
+        inject: vec![],
+    };
+    for row in x.chunks_exact(ch) {
+        let xn = grouped_rms_norm(row, p.norm, s.hidden, s.eps);
+        let low: Vec<f32> = linear(p.down, s.lowrank, ch, &xn)
+            .iter()
+            .map(|v| silu(v / s.count as f32))
+            .collect();
+        let mix: Vec<f32> = linear(p.up, ch, s.lowrank, &low)
+            .into_iter()
+            .map(sigmoid)
+            .collect();
+        let mut m = vec![0f32; s.hidden];
+        for (mg, xg) in mix.chunks_exact(s.hidden).zip(xn.chunks_exact(s.hidden)) {
+            for (o, (a, b)) in m.iter_mut().zip(mg.iter().zip(xg)) {
+                *o += a * b / s.count as f32;
+            }
+        }
+        out.mixed.extend(m);
+        if let Some(w) = p.inject {
+            ensure("inject", w.len(), s.count * ch)?;
+            out.inject.extend(
+                linear(w, s.count, ch, &xn)
+                    .iter()
+                    .map(|v| 2.0 * sigmoid(v / s.count as f32)),
+            );
+        }
+    }
+    Ok(out)
+}
+
+/// Decoder-layer residual update: `x_raw + flatten(block_out[..., None, :] * inject[..., :, None])`.
+/// `x` `[tokens, count*hidden]`, `block_out` `[tokens, hidden]`, `inject` `[tokens, count]`.
+pub fn hc_combine(s: &HcShape, x: &[f32], block_out: &[f32], inject: &[f32]) -> OpResult<Vec<f32>> {
+    let tokens = block_out.len() / s.hidden;
+    ensure("x", x.len(), tokens * s.count * s.hidden)?;
+    ensure("inject", inject.len(), tokens * s.count)?;
+    let mut out = x.to_vec();
+    for t in 0..tokens {
+        for c in 0..s.count {
+            for j in 0..s.hidden {
+                out[(t * s.count + c) * s.hidden + j] +=
+                    block_out[t * s.hidden + j] * inject[t * s.count + c];
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Final mixer (`use_combine=False`): collapses streams to `[tokens, hidden]`.
+pub fn hc_final_mixer(p: &HcParams, s: &HcShape, x: &[f32]) -> OpResult<Vec<f32>> {
+    hc_gated_residual(p, s, x).map(|o| o.mixed)
+}
+
+/// Stream init: `hidden.repeat(1, 1, count)` over `[tokens, hidden]` rows.
+pub fn hc_stream_init(s: &HcShape, embeds: &[f32]) -> Vec<f32> {
+    embeds
+        .chunks_exact(s.hidden)
+        .flat_map(|r| r.repeat(s.count))
+        .collect()
+}
+
+#[cfg(test)]
+mod step_cache_tests {
+    use super::*;
+
+    /// Owned weights for one attention shape (values are irrelevant to the shape checks).
+    struct W(Vec<Vec<f32>>);
+
+    fn weights(a: &AttentionShape) -> W {
+        let (h, d, i) = (a.indexer.hidden, a.head_dim, &a.indexer);
+        W(vec![
+            vec![0.01; a.n_heads * d * 2 * h],
+            vec![0.01; a.n_kv * d * h],
+            vec![0.01; a.n_kv * d * h],
+            vec![0.01; h * a.n_heads * d],
+            vec![1.0; d],
+            vec![1.0; d],
+            vec![0.01; (i.n_heads + 1) * i.head_dim * i.hidden],
+            vec![1.0; i.head_dim],
+            vec![1.0; i.head_dim],
+        ])
+    }
+
+    fn params(w: &W) -> AttentionParams<'_> {
+        let v = &w.0;
+        AttentionParams {
+            q_proj: &v[0],
+            k_proj: &v[1],
+            v_proj: &v[2],
+            o_proj: &v[3],
+            q_norm: &v[4],
+            k_norm: &v[5],
+            indexer: IndexerParams {
+                qk_proj: &v[6],
+                q_norm: &v[7],
+                k_norm: &v[8],
+            },
+        }
+    }
+
+    fn shape(n_kv: usize, head_dim: usize) -> AttentionShape {
+        AttentionShape {
+            n_heads: 2,
+            n_kv,
+            head_dim,
+            indexer: IndexerShape {
+                hidden: 8,
+                n_heads: 1,
+                head_dim: 4,
+                budget: 4,
+                ratio: 1,
+                eps: 1e-6,
+            },
+        }
+    }
+
+    #[test]
+    fn qwen4_exp_attn_step_refuses_a_cache_built_under_another_shape() {
+        // The lane-1 repro: one step at (n_kv 1, head_dim 4), then (n_kv 2, head_dim 8) with
+        // the same rotary_dim and indexer head_dim. It used to panic in attend_head.
+        let (hidden, cos, sin) = (vec![0.1_f32; 8], vec![1.0_f32; 2], vec![0.0_f32; 2]);
+        let mut cache = AttnCache::new();
+        let (a1, a2) = (shape(1, 4), shape(2, 8));
+        let (w1, w2) = (weights(&a1), weights(&a2));
+        indexed_attention_step(&params(&w1), &a1, &mut cache, &hidden, &cos, &sin, &[true])
+            .expect("first step");
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            indexed_attention_step(
+                &params(&w2),
+                &a2,
+                &mut cache,
+                &hidden,
+                &cos,
+                &sin,
+                &[true; 2],
+            )
+        }));
+        let err = r
+            .expect("must not panic")
+            .expect_err("mismatched cache must be refused");
+        assert!(err.contains("cache k"), "{err}");
+    }
+
+    #[test]
+    fn qwen4_exp_attn_step_refuses_a_cache_with_unequal_sin_and_cos() {
+        let (hidden, cos, sin) = (vec![0.1_f32; 8], vec![1.0_f32; 2], vec![0.0_f32; 2]);
+        let a = shape(1, 4);
+        let w = weights(&a);
+        let mut cache = AttnCache::new();
+        indexed_attention_step(&params(&w), &a, &mut cache, &hidden, &cos, &sin, &[true])
+            .expect("first step");
+        cache.sin.pop();
+        let err =
+            indexed_attention_step(&params(&w), &a, &mut cache, &hidden, &cos, &sin, &[true; 2])
+                .expect_err("sin/cos mismatch must be refused");
+        assert!(err.contains("cache sin"), "{err}");
+    }
+}

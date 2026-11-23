@@ -1,0 +1,68 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-31'
+  author: PAIML Engineering
+  description: "pv check-symbolic — test a contract's stated invariants against the equation's own formula before anyone invests in a proof. Subset only: equalities and bound chains over the formula's definitions. Unparsed is a reported third state and is never a pass."
+  kind: pattern
+  references:
+    - "crates/aprender-contracts-cli/src/commands/check_symbolic.rs"
+    - "paiml/aprender#6399 (PMAT-6399), pv provenance epic"
+    - "contracts/absolute-position-v1.yaml — the worked example (sinusoidal_position)"
+
+equations:
+  invariant_vs_formula:
+    formula: "for each invariant I of equation E: verdict(I) in {holds, violated, unparsed}"
+    domain: "invariants whose text is `a = b` or a chain `a <= F(..) <= b` (also <, >, >=), joined by `and`, calling a function defined by E.formula as `F(pattern, ..) = expr` (patterns: variable, number, `ki`, `ki+c`; expr over + - * / ^ sin cos exp sqrt abs)"
+    codomain: "holds (>= 1 point evaluated, none failed) | violated (first counterexample printed) | unparsed (reason printed)"
+    invariants:
+      - "violated => exit code 1; holds and unparsed => exit 0"
+      - "unparsed is reported and counted separately; it is never counted as holds"
+      - "an invariant that calls no function defined by the formula is unparsed, not holds"
+      - "an invariant with no sampled point inside a definition's domain is unparsed, not holds"
+      - "variables written `ki` are sampled as non-negative integers; sampling is fixed-seed, so a run is reproducible"
+      - "arithmetic is f64 with relative tolerance 1e-9, NOT exact rational (sin/cos are not rational); the report states it"
+
+proof_obligations:
+  - id: PCS-INV-001
+    type: invariant
+    property: "A correct formula/invariant pair reports holds"
+    formal: "∀ I ∈ sinusoidal_position: I parsed ∧ no counterexample ⇒ verdict(I) = holds ∧ exit = 0"
+    applies_to: invariant_vs_formula
+  - id: PCS-INV-002
+    type: invariant
+    property: "A contradicting formula reports violated with a counterexample"
+    formal: "sin → cos ⇒ PE(0, 2i) ≠ 0 ⇒ verdict = violated ∧ exit = 1"
+    applies_to: invariant_vs_formula
+  - id: PCS-INV-003
+    type: invariant
+    property: "Unparsed is never a pass"
+    formal: "∀ I: I ∉ subset ⇒ verdict(I) = unparsed ∧ verdict(I) ≠ holds"
+    applies_to: invariant_vs_formula
+
+falsification_tests:
+  - id: FALSIFY-PV-CHECK-SYMBOLIC-001
+    rule: "holds on the unmodified contract, violated after sin -> cos"
+    prediction: "run() is Ok on absolute-position-v1.yaml and Err on the same file with sin( replaced by cos("
+    test: "cargo test -p aprender-contracts-cli --lib real_contract_cos_mutation_flips_holds_to_violated"
+    if_fails: "the check cannot tell a contradicting formula from a consistent one"
+
+  - id: FALSIFY-PV-CHECK-SYMBOLIC-002
+    rule: "unparsed is a third state, never a pass"
+    prediction: "prose and foreign-symbol invariants, and a definition with no matching domain point, are Unparsed"
+    test: "cargo test -p aprender-contracts-cli --lib unparsed"
+    if_fails: "an invariant the checker could not read is being reported as holds"
+
+  - id: FALSIFY-PV-CHECK-SYMBOLIC-003
+    rule: "a wrong bound is caught"
+    prediction: "PE(pos, j) <= 0.5 is violated"
+    test: "cargo test -p aprender-contracts-cli --lib wrong_bound_is_violated"
+    if_fails: "bound chains are not evaluated"
+
+qa_gate:
+  id: F-PV-CHECK-SYMBOLIC-001
+  name: "pv check-symbolic — stated invariants agree with the formula"
+  description: "Equality and bound invariants over a formula's own definitions are evaluated at edge and fixed-seed pseudo-random points; a violation prints a counterexample and fails."
+  checks:
+    - "holds_on_consistent_contract"
+    - "violated_on_sin_to_cos"
+    - "unparsed_is_not_pass"

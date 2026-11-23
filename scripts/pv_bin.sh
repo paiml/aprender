@@ -417,17 +417,16 @@ pv_bin_snapshot_locked() {
     pv_bin_sl_dir="${pv_bin_sl_prof%/*}/.pv-snapshot/$pv_bin_sl_key-$pv_bin_sl_satkey/${pv_bin_sl_prof##*/}"
     pv_bin_sl_out="$pv_bin_sl_cand"
     if [ -n "$pv_bin_sl_key" ] && [ -n "$pv_bin_sl_satkey" ] && [ ! -L "$pv_bin_sl_cand" ] \
-        && mkdir -p "$pv_bin_sl_dir" 2>/dev/null; then
+        && mkdir -p "${pv_bin_sl_dir%/*}" 2>/dev/null; then
         # Touched BEFORE it is trusted, so the age prune cannot take it
         # between this check and its use.
         touch "${pv_bin_sl_dir%/*}" 2>/dev/null || true
         # A snapshot pins its inodes, so neither number can be reused while
         # the directory exists: `-ef` is enough to trust an earlier one.
-        if [ "$pv_bin_sl_dir/pv" -ef "$pv_bin_sl_cand" ] \
-            && { [ "$pv_bin_sl_satkey" = none ] || [ "$pv_bin_sl_dir/pv-sat" -ef "$pv_bin_sl_sat" ]; }; then
+        if pv_bin_snapshot_complete "$pv_bin_sl_dir" "$pv_bin_sl_cand" "$pv_bin_sl_sat" "$pv_bin_sl_satkey"; then
             pv_bin_sl_out="$pv_bin_sl_dir/pv"
-        elif { [ "$pv_bin_sl_satkey" = none ] || pv_bin_snapshot_one "$pv_bin_sl_sat" "$pv_bin_sl_dir/pv-sat"; } \
-            && pv_bin_snapshot_one "$pv_bin_sl_cand" "$pv_bin_sl_dir/pv"; then
+        elif { pv_bin_snapshot_dir "$pv_bin_sl_dir" "$pv_bin_sl_cand" "$pv_bin_sl_sat" "$pv_bin_sl_satkey" || true; } \
+            && pv_bin_snapshot_complete "$pv_bin_sl_dir" "$pv_bin_sl_cand" "$pv_bin_sl_sat" "$pv_bin_sl_satkey"; then
             pv_bin_sl_out="$pv_bin_sl_dir/pv"
         fi
     fi
@@ -441,13 +440,28 @@ pv_bin_snapshot_locked() {
     return 0
 }
 
-# Hard-link to a temp name in the destination dir, then rename(2) it into
-# place, so a concurrent resolver sees the old snapshot or the new one, never
-# a partial file.
-pv_bin_snapshot_one() {
-    pv_bin_so_tmp="$2.tmp.$$"
-    ln -f -- "$1" "$pv_bin_so_tmp" 2>/dev/null || return 1
-    mv -f -- "$pv_bin_so_tmp" "$2"
+# A snapshot dir is whole when its pv (and pv-sat, if the profile has one) are
+# the very inodes of the candidate: args = dir cand sat satkey.
+pv_bin_snapshot_complete() {
+    [ "$1/pv" -ef "$2" ] || return 1
+    [ "$4" = none ] || [ "$1/pv-sat" -ef "$3" ]
+}
+
+# Build the snapshot dir beside its final path (same filesystem), hard-linking
+# pv and pv-sat into it, then rename(2) the whole dir into place. The final
+# path therefore appears complete or not at all: a reader (the pv pin guard)
+# never sees a dir with no pv or an empty one (#5388). A loser of the race, or
+# a dir already there, leaves the winner's dir; the caller re-checks it.
+# args = dir cand sat satkey.
+pv_bin_snapshot_dir() {
+    pv_bin_sd_tmp=$(mktemp -d "${1%/*}/.build.XXXXXX" 2>/dev/null) || return 1
+    if { [ "$4" = none ] || ln -f -- "$3" "$pv_bin_sd_tmp/pv-sat" 2>/dev/null; } \
+        && ln -f -- "$2" "$pv_bin_sd_tmp/pv" 2>/dev/null \
+        && mv -T -- "$pv_bin_sd_tmp" "$1" 2>/dev/null; then
+        return 0
+    fi
+    rm -rf -- "${pv_bin_sd_tmp:?}"
+    return 1
 }
 
 # Snapshots are pruned by age, not by owner. Six hours is far past the longest

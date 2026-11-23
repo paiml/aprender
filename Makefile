@@ -1166,28 +1166,20 @@ examples-list: ## List all available examples
 # MUTATION TESTING TARGETS
 # ============================================================================
 
-mutants: ## Run mutation testing (full, ~30-60 min)
-	@echo "🧬 Running mutation testing (full suite)..."
-	@echo "⚠️  This may take 30-60 minutes for full coverage"
-	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants --locked)
-	@cargo mutants --no-times --timeout 300 -- --all-features
-	@echo "✅ Mutation testing complete"
+# infra#3828 (operator ruling, Noah 2026-11-10 16:50Z, verbatim): "NO build can do mutation outside of nightly;
+# the end. FOREVER". A local seat never runs `cargo mutants`: these targets refuse, and
+# .github/workflows/mutants-nightly.yml (schedule only) is the one mutation run. It reports the score; no PR or merge
+# waits on it. Guard: scripts/lab/mutation_nightly_only.sh (MN4 reads this file).
+MUTATION_NIGHTLY_ONLY = echo "REFUSED: mutation testing runs only in the scheduled .github/workflows/mutants-nightly.yml (infra\#3828). Read its report there." >&2; exit 1
 
-mutants-fast: ## Run mutation testing on a sample (quick feedback, ~5 min)
-	@echo "⚡ Running mutation testing (fast sample)..."
-	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants --locked)
-	@cargo mutants --no-times --timeout 120 --shard 1/10 -- --lib
-	@echo "✅ Mutation sample complete"
+mutants: ## REFUSED: mutation testing runs only in the scheduled mutants-nightly.yml (infra#3828)
+	@$(MUTATION_NIGHTLY_ONLY)
 
-mutants-file: ## Run mutation testing on specific file (usage: make mutants-file FILE=src/metrics/mod.rs)
-	@echo "🧬 Running mutation testing on $(FILE)..."
-	@if [ -z "$(FILE)" ]; then \
-		echo "❌ Usage: make mutants-file FILE=src/path/to/file.rs"; \
-		exit 1; \
-	fi
-	@which cargo-mutants > /dev/null 2>&1 || { cargo install cargo-mutants --locked || exit 1; }
-	@cargo mutants --no-times --timeout 120 --file "$(FILE)" -- --all-features
-	@echo "✅ Mutation testing on $(FILE) complete"
+mutants-fast: ## REFUSED: mutation testing runs only in the scheduled mutants-nightly.yml (infra#3828)
+	@$(MUTATION_NIGHTLY_ONLY)
+
+mutants-file: ## REFUSED: mutation testing runs only in the scheduled mutants-nightly.yml (infra#3828)
+	@$(MUTATION_NIGHTLY_ONLY)
 
 mutants-list: ## List mutants without running tests
 	@echo "📋 Listing potential mutants..."
@@ -1538,6 +1530,14 @@ ont-ratchet-check:
 # PVL-001 EV-11 (PMAT-4166): the two `pv lint` ratchets (theorem-pairing, depends-on-present) move ONLY
 # through this target, and only DOWN. The gates read contracts/lint-baseline.json and never write it.
 # NEVER in CI: a CI job that could rewrite the baseline is a ratchet that turns both ways.
+# Operator C2 (2026-11-03): checks before review. The cargo-free half of CI's `pr-light`, run before you push.
+.PHONY: pr-light pr-light-self-test
+pr-light:
+	@bash scripts/pr_light.sh
+
+pr-light-self-test:
+	@bash scripts/pr_light.sh --self-test
+
 .PHONY: lint-ratchet lint-ratchet-self-test
 lint-ratchet:
 	@bash scripts/lint_ratchet.sh
@@ -1643,3 +1643,14 @@ nightly-train-self-test:
 	@test -n "$(BUNDLE)" || { echo "FAIL: BUNDLE=<pinned bundle dir> is required (the helpers live there)"; exit 3; }
 	bash "$(BUNDLE)/nightly_train.sh" --self-test
 	bash "$(BUNDLE)/nightly_train.sh" --mutants
+
+# BUILD-SYNC-001 release gate, aprender canary (ANDON1-6). The gate is vendored byte for byte from
+# paiml/infra fleet/release at the sha in .ops/release/PIN (hashes: .ops/release/SHA256SUMS); fixes
+# land upstream and arrive by a PIN bump, never by editing the copy. pins.tsv is aprender's own row.
+# It only decides GO/NO-GO from receipts; the publish path stays release.yml (PUB1).
+#   make release-gate REPO=paiml/aprender SHA=<tag sha> REL_DIR=<receipt dir>
+-include .ops/release/release.mk
+
+release-gate-canary: ## Check the vendored release gate's hashes and its GO/NO-GO case table
+	bash scripts/release_gate_canary.sh
+.PHONY: release-gate-canary

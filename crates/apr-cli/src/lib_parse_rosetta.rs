@@ -142,6 +142,7 @@
                 weights: false,
                 json: false,
                 quality: false,
+                no_weights: false,
             },
             Commands::Debug {
                 file: Some(PathBuf::from("m.apr").into()),

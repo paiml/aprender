@@ -1208,3 +1208,57 @@ async fn gpu_logprobs_4971_the_gpu_session_serves_them_and_changes_no_token() {
     }
     assert_logprobs_served_and_no_token_changed_4971(false).await;
 }
+
+/// #4374: a Qwen3.5 server holds no dense model, so residency used to read
+/// `unknown` with nothing loaded. A CPU session is `cpu`, and its parity block
+/// says why no GPU gate ran.
+#[test]
+fn falsify_4374_a_cpu_qwen35_session_reports_cpu_residency() {
+    let Some((state, _)) = state_or_skip(true) else {
+        return;
+    };
+    let body = crate::api::effective_config::effective_config(&state);
+    assert_eq!(body.backend_loaded, vec!["cpu"]);
+    assert_eq!(body.compute_class, "cpu");
+    assert_eq!(body.parity.status, "not-run");
+    // `not-run` alone cannot tell the session's answer from the dense fallback
+    // ("no GPU model loaded"), which has the same status. On a CUDA build the
+    // reason and the threshold must be the session's own, with no GPU needed.
+    #[cfg(feature = "cuda")]
+    {
+        assert!(
+            body.parity.basis.contains("qwen35 serves from the CPU"),
+            "the parity block is not the Qwen3.5 session's: {}",
+            body.parity.basis
+        );
+        assert_eq!(body.parity.threshold, crate::infer::F2_GATE_COSINE_MIN);
+    }
+}
+
+/// #4374 on the GPU: after one served prompt the F2 guard has run, and the
+/// endpoint carries its cosine — the C4 receipt comes from the serve itself.
+#[cfg(feature = "cuda")]
+#[tokio::test(flavor = "multi_thread")]
+async fn falsify_4374_a_gpu_qwen35_serve_reports_cuda_and_its_f2_cosine() {
+    let Some((state, _)) = state_or_skip(false) else {
+        return;
+    };
+    let (status, body) = post(
+        create_router(state.clone()),
+        "/v1/chat/completions",
+        chat_body(false, 4),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let ec = crate::api::effective_config::effective_config(&state);
+    assert_eq!(ec.backend_loaded, vec!["cuda"]);
+    assert_eq!(ec.compute_class, "cuda");
+    if ec.parity.basis.contains("source=receipt") {
+        assert_eq!((ec.parity.status.as_str(), ec.parity.cosine), ("PASS", None));
+    } else {
+        assert_eq!(ec.parity.status, "PASS", "{:?}", ec.parity);
+        let cosine = ec.parity.cosine.expect("a fresh F2 run carries its cosine");
+        assert!(cosine >= ec.parity.threshold, "{:?}", ec.parity);
+        assert!(ec.parity.positions >= 2, "{:?}", ec.parity);
+    }
+}

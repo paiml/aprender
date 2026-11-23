@@ -131,7 +131,11 @@ echo "== cargo publish -p apr-format --dry-run --no-verify (dev-dep cycle check)
 # PIPELINE's status -- `tail`'s, made survivable only by `set -o pipefail`. The
 # repo has shipped that construct as a live defect twice (#2336, #2360).
 set +e
-cargo publish -p apr-format --dry-run --no-verify --allow-dirty > "${PUBLISH_LOG}" 2>&1
+# apr-format depends on the in-tree aprender-legacy-codec, which is not on crates.io until the
+# cascade publishes it (tier 1, before apr-format). Resolve that ONE sibling from the workspace
+# path so the cycle check still runs and still fails on a real cycle; no skip, no waiver.
+cargo publish -p apr-format --dry-run --no-verify --allow-dirty \
+  --config 'patch.crates-io.aprender-legacy-codec.path="crates/aprender-legacy-codec"' > "${PUBLISH_LOG}" 2>&1
 PUB_RC=$?
 set -e
 tail -3 "${PUBLISH_LOG}"

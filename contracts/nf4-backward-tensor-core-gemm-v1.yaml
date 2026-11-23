@@ -33,3 +33,10 @@ falsification:
     description: "peak_vram(nf4) < 0.5 × peak_vram(fp16) for same model"
     test: "Related tests in crates/aprender-compute/src/backends/gpu/"
     evidence: "cargo test --lib"
+
+falsification_tests:
+  - id: FALSIFY-NF4-BACKWARD-001
+    description: "Gradient through NF4-dequantised weights stays within quantisation error of fp32 (algorithm level; the fused tensor-core kernel and VRAM claim are GPU-only and NOT CI evidence)"
+    test: "cargo test -p aprender-compute --lib test_nf4_backward_gradient_within_quant_error"
+    prediction: "|dX_nf4 - dX_fp32| <= l1(dy) * eps_w"
+    if_fails: "NF4 dequant error propagates beyond its bound into gradients"

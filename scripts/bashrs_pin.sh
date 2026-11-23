@@ -56,12 +56,27 @@ _bashrs_pin_fail() {
     return 4
 }
 
+# _bashrs_can_mkdir <dir> -> 0 if <dir> exists as a writable dir or its nearest
+# existing ancestor is a writable directory (probed without creating dirs).
+_bashrs_can_mkdir() {
+    local d=$1
+    while [ -n "$d" ] && [ ! -e "$d" ] && [ ! -L "$d" ]; do
+        case "$d" in
+            */*) d=${d%/*}; [ -z "$d" ] && d=/ ;;
+            *) d=. ;;
+        esac
+    done
+    [ -d "$d" ] && [ -w "$d" ] && [ -x "$d" ]
+}
+
 # _bashrs_pin_root <pin> -> the first base whose bashrs-<pin> already holds the
 # binary or can be created. The default base is lambda's layout; a clean-room
 # runner without it (aprender#4429: both ratchets red with "cannot create")
 # falls back to the job's RUNNER_TEMP. That costs one install per job there,
 # and it is still the PINNED binary, version-checked by the caller: a fallback
 # of WHERE, never of WHICH instrument, and never a skip.
+# Under BASHRS_PIN_NO_INSTALL=1, probe writability without mkdir -p so failing
+# closed never leaves an empty pin directory behind.
 _bashrs_pin_root() {
     local base bases
     bases=("${TOOL_PIN_BASE:-/mnt/nvme-raid0/tmp/tool-pins}")
@@ -69,7 +84,16 @@ _bashrs_pin_root() {
     [ -n "${RUNNER_TEMP:-}" ] && bases+=("$RUNNER_TEMP/tool-pins")
     # --- TOOLPIN-FALLBACK-END ---
     for base in "${bases[@]}"; do
-        if [ -x "$base/bashrs-$1/bin/bashrs" ] || mkdir -p -- "$base/bashrs-$1" 2>/dev/null; then
+        if [ -x "$base/bashrs-$1/bin/bashrs" ]; then
+            printf '%s\n' "$base/bashrs-$1"
+            return 0
+        fi
+        if [ "${BASHRS_PIN_NO_INSTALL:-0}" = 1 ]; then
+            if _bashrs_can_mkdir "$base/bashrs-$1"; then
+                printf '%s\n' "$base/bashrs-$1"
+                return 0
+            fi
+        elif mkdir -p -- "$base/bashrs-$1" 2>/dev/null; then
             printf '%s\n' "$base/bashrs-$1"
             return 0
         fi

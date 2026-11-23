@@ -176,9 +176,9 @@ pub struct Menu {
     /// Open submenu index
     #[serde(skip)]
     open_submenu: Option<usize>,
-    /// Trigger widget
+    /// Trigger widget (zero or one; a Vec so `children()` lists it)
     #[serde(skip)]
-    trigger_widget: Option<Box<dyn Widget>>,
+    trigger_widget: Vec<Box<dyn Widget>>,
 }
 
 impl Default for Menu {
@@ -197,7 +197,7 @@ impl Default for Menu {
             panel_bounds: Rect::default(),
             highlighted_index: None,
             open_submenu: None,
-            trigger_widget: None,
+            trigger_widget: Vec::new(),
         }
     }
 }
@@ -260,7 +260,7 @@ impl Menu {
 
     /// Set the trigger widget.
     pub fn trigger_widget(mut self, widget: impl Widget + 'static) -> Self {
-        self.trigger_widget = Some(Box::new(widget));
+        self.trigger_widget = vec![Box::new(widget)];
         self
     }
 
@@ -376,6 +376,213 @@ impl Menu {
 
         None
     }
+
+    /// Whether `p` lies inside `r` (inclusive edges).
+    fn rect_contains(r: &Rect, p: &Point) -> bool {
+        p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height
+    }
+
+    /// Activate the item at `idx` (mouse click or Enter/Space).
+    ///
+    /// Submenu items open their submenu only when `allow_submenu` is set.
+    fn activate_item(&mut self, idx: usize, allow_submenu: bool) -> Option<Box<dyn Any + Send>> {
+        let item = self.items.get_mut(idx)?;
+        match item {
+            MenuItem::Action {
+                action, disabled, ..
+            } if !*disabled => {
+                let action_id = action.clone();
+                self.hide();
+                Some(Box::new(MenuItemSelected { action: action_id }))
+            }
+            MenuItem::Checkbox {
+                action,
+                checked,
+                disabled,
+                ..
+            } if !*disabled => {
+                *checked = !*checked;
+                let action_id = action.clone();
+                let is_checked = *checked;
+                Some(Box::new(MenuCheckboxToggled {
+                    action: action_id,
+                    checked: is_checked,
+                }))
+            }
+            MenuItem::Submenu { disabled, .. } if allow_submenu && !*disabled => {
+                self.open_submenu = Some(idx);
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// Handle a mouse press.
+    fn on_mouse_down(&mut self, position: &Point) -> Option<Box<dyn Any + Send>> {
+        if Self::rect_contains(&self.bounds, position) && self.trigger == MenuTrigger::Click {
+            self.toggle();
+            return Some(Box::new(MenuToggled { open: self.open }));
+        }
+        if !self.open {
+            return None;
+        }
+        if !Self::rect_contains(&self.panel_bounds, position) {
+            // Click outside menu - close
+            self.hide();
+            return Some(Box::new(MenuClosed));
+        }
+        let idx = self.item_at_position(position.y)?;
+        self.activate_item(idx, true)
+    }
+
+    /// Handle a mouse move.
+    fn on_mouse_move(&mut self, position: &Point) {
+        if !self.open {
+            return;
+        }
+        self.highlighted_index = if Self::rect_contains(&self.panel_bounds, position) {
+            self.item_at_position(position.y)
+        } else {
+            None
+        };
+    }
+
+    /// Handle a key press while the menu is open.
+    fn on_key_down(&mut self, key: &Key) -> Option<Box<dyn Any + Send>> {
+        match key {
+            Key::Escape => {
+                self.hide();
+                Some(Box::new(MenuClosed))
+            }
+            Key::Up => {
+                self.highlighted_index = self.next_selectable(self.highlighted_index, false);
+                None
+            }
+            Key::Down => {
+                self.highlighted_index = self.next_selectable(self.highlighted_index, true);
+                None
+            }
+            Key::Enter | Key::Space => {
+                let idx = self.highlighted_index?;
+                self.activate_item(idx, false)
+            }
+            _ => None,
+        }
+    }
+
+    /// Fill the hover background for row `i` when highlighted and enabled.
+    fn paint_hover(&self, canvas: &mut dyn Canvas, i: usize, y: f32, height: f32, disabled: bool) {
+        if self.highlighted_index == Some(i) && !disabled {
+            let hover_rect = Rect::new(self.panel_bounds.x, y, self.panel_bounds.width, height);
+            canvas.fill_rect(hover_rect, self.hover_color);
+        }
+    }
+
+    /// Paint one menu row.
+    fn paint_item(&self, canvas: &mut dyn Canvas, i: usize, item: &MenuItem, y: f32) {
+        let height = item.height();
+        let text_style = TextStyle {
+            size: 14.0,
+            color: self.text_color,
+            ..Default::default()
+        };
+        let disabled_style = TextStyle {
+            size: 14.0,
+            color: self.disabled_color,
+            ..Default::default()
+        };
+        match item {
+            MenuItem::Action {
+                label,
+                disabled,
+                shortcut,
+                ..
+            } => {
+                self.paint_hover(canvas, i, y, height, *disabled);
+                let style = if *disabled {
+                    &disabled_style
+                } else {
+                    &text_style
+                };
+                canvas.draw_text(
+                    label,
+                    Point::new(self.panel_bounds.x + 12.0, y + 20.0),
+                    style,
+                );
+                if let Some(shortcut) = shortcut {
+                    let shortcut_style = TextStyle {
+                        size: 12.0,
+                        color: self.disabled_color,
+                        ..Default::default()
+                    };
+                    canvas.draw_text(
+                        shortcut,
+                        Point::new(
+                            self.panel_bounds.x + self.panel_bounds.width - 60.0,
+                            y + 20.0,
+                        ),
+                        &shortcut_style,
+                    );
+                }
+            }
+            MenuItem::Checkbox {
+                label,
+                checked,
+                disabled,
+                ..
+            } => {
+                self.paint_hover(canvas, i, y, height, *disabled);
+                let check_text = if *checked { "✓" } else { " " };
+                let style = if *disabled {
+                    &disabled_style
+                } else {
+                    &text_style
+                };
+                canvas.draw_text(
+                    check_text,
+                    Point::new(self.panel_bounds.x + 12.0, y + 20.0),
+                    style,
+                );
+                canvas.draw_text(
+                    label,
+                    Point::new(self.panel_bounds.x + 32.0, y + 20.0),
+                    style,
+                );
+            }
+            MenuItem::Separator => {
+                let line_y = y + 4.0;
+                canvas.draw_line(
+                    Point::new(self.panel_bounds.x + 8.0, line_y),
+                    Point::new(self.panel_bounds.x + self.panel_bounds.width - 8.0, line_y),
+                    Color::rgb(0.9, 0.9, 0.9),
+                    1.0,
+                );
+            }
+            MenuItem::Submenu {
+                label, disabled, ..
+            } => {
+                self.paint_hover(canvas, i, y, height, *disabled);
+                let style = if *disabled {
+                    &disabled_style
+                } else {
+                    &text_style
+                };
+                canvas.draw_text(
+                    label,
+                    Point::new(self.panel_bounds.x + 12.0, y + 20.0),
+                    style,
+                );
+                canvas.draw_text(
+                    "›",
+                    Point::new(
+                        self.panel_bounds.x + self.panel_bounds.width - 20.0,
+                        y + 20.0,
+                    ),
+                    style,
+                );
+            }
+        }
+    }
 }
 
 impl Widget for Menu {
@@ -385,7 +592,7 @@ impl Widget for Menu {
 
     fn measure(&self, constraints: Constraints) -> Size {
         // Measure just the trigger area
-        if let Some(ref trigger) = self.trigger_widget {
+        if let Some(trigger) = self.trigger_widget.first() {
             trigger.measure(constraints)
         } else {
             Size::new(self.width.min(constraints.max_width), 32.0)
@@ -396,7 +603,7 @@ impl Widget for Menu {
         self.bounds = bounds;
 
         // Layout trigger widget
-        if let Some(ref mut trigger) = self.trigger_widget {
+        if let Some(trigger) = self.trigger_widget.first_mut() {
             trigger.layout(bounds);
         }
 
@@ -412,10 +619,9 @@ impl Widget for Menu {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
     fn paint(&self, canvas: &mut dyn Canvas) {
         // Paint trigger
-        if let Some(ref trigger) = self.trigger_widget {
+        if let Some(trigger) = self.trigger_widget.first() {
             trigger.paint(canvas);
         }
 
@@ -435,275 +641,30 @@ impl Widget for Menu {
 
         // Paint items
         let mut y = self.panel_bounds.y + 8.0; // Top padding
-        let text_style = TextStyle {
-            size: 14.0,
-            color: self.text_color,
-            ..Default::default()
-        };
-        let disabled_style = TextStyle {
-            size: 14.0,
-            color: self.disabled_color,
-            ..Default::default()
-        };
-
         for (i, item) in self.items.iter().enumerate() {
-            let height = item.height();
-
-            match item {
-                MenuItem::Action {
-                    label,
-                    disabled,
-                    shortcut,
-                    ..
-                } => {
-                    // Hover background
-                    if self.highlighted_index == Some(i) && !disabled {
-                        let hover_rect =
-                            Rect::new(self.panel_bounds.x, y, self.panel_bounds.width, height);
-                        canvas.fill_rect(hover_rect, self.hover_color);
-                    }
-
-                    // Label
-                    let style = if *disabled {
-                        &disabled_style
-                    } else {
-                        &text_style
-                    };
-                    canvas.draw_text(
-                        label,
-                        Point::new(self.panel_bounds.x + 12.0, y + 20.0),
-                        style,
-                    );
-
-                    // Shortcut
-                    if let Some(ref shortcut) = shortcut {
-                        let shortcut_style = TextStyle {
-                            size: 12.0,
-                            color: self.disabled_color,
-                            ..Default::default()
-                        };
-                        canvas.draw_text(
-                            shortcut,
-                            Point::new(
-                                self.panel_bounds.x + self.panel_bounds.width - 60.0,
-                                y + 20.0,
-                            ),
-                            &shortcut_style,
-                        );
-                    }
-                }
-                MenuItem::Checkbox {
-                    label,
-                    checked,
-                    disabled,
-                    ..
-                } => {
-                    // Hover background
-                    if self.highlighted_index == Some(i) && !disabled {
-                        let hover_rect =
-                            Rect::new(self.panel_bounds.x, y, self.panel_bounds.width, height);
-                        canvas.fill_rect(hover_rect, self.hover_color);
-                    }
-
-                    // Checkbox indicator
-                    let check_text = if *checked { "✓" } else { " " };
-                    let style = if *disabled {
-                        &disabled_style
-                    } else {
-                        &text_style
-                    };
-                    canvas.draw_text(
-                        check_text,
-                        Point::new(self.panel_bounds.x + 12.0, y + 20.0),
-                        style,
-                    );
-
-                    // Label
-                    canvas.draw_text(
-                        label,
-                        Point::new(self.panel_bounds.x + 32.0, y + 20.0),
-                        style,
-                    );
-                }
-                MenuItem::Separator => {
-                    let line_y = y + 4.0;
-                    canvas.draw_line(
-                        Point::new(self.panel_bounds.x + 8.0, line_y),
-                        Point::new(self.panel_bounds.x + self.panel_bounds.width - 8.0, line_y),
-                        Color::rgb(0.9, 0.9, 0.9),
-                        1.0,
-                    );
-                }
-                MenuItem::Submenu {
-                    label, disabled, ..
-                } => {
-                    // Hover background
-                    if self.highlighted_index == Some(i) && !disabled {
-                        let hover_rect =
-                            Rect::new(self.panel_bounds.x, y, self.panel_bounds.width, height);
-                        canvas.fill_rect(hover_rect, self.hover_color);
-                    }
-
-                    // Label
-                    let style = if *disabled {
-                        &disabled_style
-                    } else {
-                        &text_style
-                    };
-                    canvas.draw_text(
-                        label,
-                        Point::new(self.panel_bounds.x + 12.0, y + 20.0),
-                        style,
-                    );
-
-                    // Arrow indicator
-                    canvas.draw_text(
-                        "›",
-                        Point::new(
-                            self.panel_bounds.x + self.panel_bounds.width - 20.0,
-                            y + 20.0,
-                        ),
-                        style,
-                    );
-                }
-            }
-
-            y += height;
+            self.paint_item(canvas, i, item, y);
+            y += item.height();
         }
     }
 
-    #[allow(clippy::too_many_lines)]
     fn event(&mut self, event: &Event) -> Option<Box<dyn Any + Send>> {
         match event {
-            Event::MouseDown { position, .. } => {
-                // Check if click is on trigger
-                let on_trigger = position.x >= self.bounds.x
-                    && position.x <= self.bounds.x + self.bounds.width
-                    && position.y >= self.bounds.y
-                    && position.y <= self.bounds.y + self.bounds.height;
-
-                if on_trigger && self.trigger == MenuTrigger::Click {
-                    self.toggle();
-                    return Some(Box::new(MenuToggled { open: self.open }));
-                }
-
-                // Check if click is on menu item
-                if self.open {
-                    let on_menu = position.x >= self.panel_bounds.x
-                        && position.x <= self.panel_bounds.x + self.panel_bounds.width
-                        && position.y >= self.panel_bounds.y
-                        && position.y <= self.panel_bounds.y + self.panel_bounds.height;
-
-                    if on_menu {
-                        if let Some(idx) = self.item_at_position(position.y) {
-                            if let Some(item) = self.items.get_mut(idx) {
-                                match item {
-                                    MenuItem::Action {
-                                        action, disabled, ..
-                                    } if !*disabled => {
-                                        let action_id = action.clone();
-                                        self.hide();
-                                        return Some(Box::new(MenuItemSelected {
-                                            action: action_id,
-                                        }));
-                                    }
-                                    MenuItem::Checkbox {
-                                        action,
-                                        checked,
-                                        disabled,
-                                        ..
-                                    } if !*disabled => {
-                                        *checked = !*checked;
-                                        let action_id = action.clone();
-                                        let is_checked = *checked;
-                                        return Some(Box::new(MenuCheckboxToggled {
-                                            action: action_id,
-                                            checked: is_checked,
-                                        }));
-                                    }
-                                    MenuItem::Submenu { disabled, .. } if !*disabled => {
-                                        self.open_submenu = Some(idx);
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                    } else {
-                        // Click outside menu - close
-                        self.hide();
-                        return Some(Box::new(MenuClosed));
-                    }
-                }
-            }
+            Event::MouseDown { position, .. } => self.on_mouse_down(position),
             Event::MouseMove { position } => {
-                if self.open {
-                    let on_menu = position.x >= self.panel_bounds.x
-                        && position.x <= self.panel_bounds.x + self.panel_bounds.width
-                        && position.y >= self.panel_bounds.y
-                        && position.y <= self.panel_bounds.y + self.panel_bounds.height;
-
-                    if on_menu {
-                        self.highlighted_index = self.item_at_position(position.y);
-                    } else {
-                        self.highlighted_index = None;
-                    }
-                }
+                self.on_mouse_move(position);
+                None
             }
-            Event::KeyDown { key, .. } if self.open => match key {
-                Key::Escape => {
-                    self.hide();
-                    return Some(Box::new(MenuClosed));
-                }
-                Key::Up => {
-                    self.highlighted_index = self.next_selectable(self.highlighted_index, false);
-                }
-                Key::Down => {
-                    self.highlighted_index = self.next_selectable(self.highlighted_index, true);
-                }
-                Key::Enter | Key::Space => {
-                    if let Some(idx) = self.highlighted_index {
-                        if let Some(item) = self.items.get_mut(idx) {
-                            match item {
-                                MenuItem::Action {
-                                    action, disabled, ..
-                                } if !*disabled => {
-                                    let action_id = action.clone();
-                                    self.hide();
-                                    return Some(Box::new(MenuItemSelected { action: action_id }));
-                                }
-                                MenuItem::Checkbox {
-                                    action,
-                                    checked,
-                                    disabled,
-                                    ..
-                                } if !*disabled => {
-                                    *checked = !*checked;
-                                    let action_id = action.clone();
-                                    let is_checked = *checked;
-                                    return Some(Box::new(MenuCheckboxToggled {
-                                        action: action_id,
-                                        checked: is_checked,
-                                    }));
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
+            Event::KeyDown { key, .. } if self.open => self.on_key_down(key),
+            _ => None,
         }
-
-        None
     }
 
     fn children(&self) -> &[Box<dyn Widget>] {
-        &[]
+        &self.trigger_widget
     }
 
     fn children_mut(&mut self) -> &mut [Box<dyn Widget>] {
-        &mut []
+        &mut self.trigger_widget
     }
 
     fn is_focusable(&self) -> bool {

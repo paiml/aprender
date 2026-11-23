@@ -78,7 +78,7 @@ jobs:
           SHA: ${{ steps.decide.outputs.sha }}
         run: |
           git fetch --no-tags --depth 1 origin "$SHA"
-          git worktree add --detach "$RUNNER_TEMP/rc-tree" "$SHA"
+          git worktree prune && git worktree add --detach "$RUNNER_TEMP/rc-tree" "$SHA"
           bash scripts/release/rc_publish_gate.sh "$RUNNER_TEMP/rc-tree"
       - name: Cut the rc
         if: success() && steps.decide.outputs.tag != ''  # explicit: a red publish gate never reaches the cut

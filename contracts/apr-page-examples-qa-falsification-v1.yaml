@@ -60,3 +60,10 @@ falsification:
   - condition: "Legacy name in page text"
     severity: P0
     action: delete_from_summary
+
+# #7235: falsification tests bound to CI-run tests.
+falsification_tests:
+  - id: FALSIFY-APR-PAGE-EXAMPLES-QA-FALSIFICATION-001
+    rule: "the page exists at its declared path and its ## sections are exactly the contract's sections list (a missing page, a missing section or an unlisted section is a P0)"
+    prediction: "book_page_contracts_match_their_pages passes; it fails when the page is absent or its section headings drift from the contract"
+    test: "cargo test -p aprender-contracts --lib book_page_contracts_match_their_pages"

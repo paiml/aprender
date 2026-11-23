@@ -32,19 +32,89 @@
 //!   and Graphical Statistics.
 
 mod aes;
+mod build;
 mod coord;
 mod data;
+mod dist;
+mod dist_math;
 mod facet;
+mod filled;
 mod geom;
 mod ggplot;
+#[cfg(test)]
+mod ggplot2_bars_fill_oracle;
+#[cfg(test)]
+mod ggplot2_bars_oracle;
+#[cfg(test)]
+mod ggplot2_bars_stack_oracle;
+#[cfg(test)]
+mod ggplot2_dist_density_oracle;
+#[cfg(test)]
+mod ggplot2_dist_freqpoly_oracle;
+#[cfg(test)]
+mod ggplot2_dist_oracle;
+#[cfg(test)]
+mod ggplot2_geom_area_oracle;
+#[cfg(test)]
+mod ggplot2_geom_ribbon_oracle;
+#[cfg(test)]
+mod ggplot2_lines_oracle;
+#[cfg(test)]
+mod ggplot2_marks_oracle;
+#[cfg(test)]
+mod ggplot2_oracle;
+#[cfg(test)]
+mod ggplot2_oracle_scales;
+#[cfg(test)]
+mod ggplot2_position_dodge_oracle;
+#[cfg(test)]
+mod ggplot2_raster_oracle;
+#[cfg(test)]
+mod ggplot2_rect_oracle;
+#[cfg(test)]
+mod ggplot2_rects_common;
+#[cfg(test)]
+mod ggplot2_tile_oracle;
+mod marks;
+mod path;
+mod position;
+mod r_format;
+mod rects;
+mod scale_discrete;
+mod scale_spec;
+mod scale_trans;
 mod stat;
+mod stat_count;
+mod stroke;
+mod term;
 mod theme;
 
 pub use aes::Aes;
+pub use build::{
+    format_labels, point_defaults, point_diameter_px, point_size_mm_for_diameter_px, BuiltBins,
+    BuiltDensity, BuiltLayer, BuiltLayout, PointAes, PositionScale,
+};
 pub use coord::{apply, apply_limits, Coord};
 pub use data::{DataFrame, DataValue};
+pub use dist::{DistKind, DistSpec};
 pub use facet::{panels, Facet, Panel};
-pub use geom::Geom;
+pub use filled::BuiltFilled;
+pub use geom::{Geom, StepDirection};
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
+pub use path::{BuiltPath, Reference, ReferenceKind, Stairs, StrokeAes};
+pub use position::{apply as apply_position, apply_panels, BarRow, Position, Preserve};
+pub use rects::{BuiltRects, RectKind};
+pub use scale_discrete::{DiscreteSpec, DISCRETE_EXPAND_ADD};
+pub use scale_spec::{
+    scale_continuous, scale_discrete, scale_log10, zero_range, ContinuousSpec, Expansion,
+    PositionScaleSpec,
+};
 pub use stat::Stat;
+pub use stat_count::{
+    bar_layout, bar_layout_in, BarError, BarSpec, BarStat, BuiltBars, DiscreteAxis,
+};
+pub use term::{
+    TerminalPlot, LINE_GLYPH, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT,
+    MIN_TERMINAL_WIDTH, POINT_GLYPH,
+};
 pub use theme::Theme;

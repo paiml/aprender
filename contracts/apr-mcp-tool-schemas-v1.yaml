@@ -327,3 +327,12 @@ falsification:
 # YAML but missing from the test-side codegen-constant tables.
 # All six assertions in the `falsification.FALSIFY-MCP-008.assertions`
 # block above are now load-bearing at both layers.
+
+# #7235: the contract is the source for the tool names and descriptions the
+# server advertises. This test parses them out of this file and compares with
+# the live tools/list.
+falsification_tests:
+  - id: FALSIFY-MCP-SCHEMAS-001
+    rule: "every tool name and description in this contract equals the live tools/list entry, and no live tool is missing from the contract"
+    prediction: "live_tools_match_schema_contract_names_and_descriptions passes; it fails when either side drifts"
+    test: "cargo test -p aprender-mcp --lib live_tools_match_schema_contract_names_and_descriptions"

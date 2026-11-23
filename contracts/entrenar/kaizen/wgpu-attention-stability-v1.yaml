@@ -54,3 +54,13 @@ affected_files:
 - path: src/train/transformer_trainer/wgpu_attention.rs
   functions:
   - 'attention_forward: added QK-norm + output norm tracing'
+
+falsification_tests:
+  - id: FALSIFY-WGPU-ATTN-STABLE-001
+    rule: "RMS normalisation (the QK-norm operation) maps a vector to unit RMS; CPU reference of the same math only. The wgpu attention forward, its output-norm bound and the live-training loss claim need the gpu feature/hardware and are NOT CI evidence"
+    prediction: "test_rms_norm_normalization_property fails if RMS norm does not produce unit RMS"
+    test: "cargo test -p aprender-train --lib test_rms_norm_normalization_property"
+  - id: FALSIFY-WGPU-ATTN-STABLE-002
+    rule: "batched RMS normalisation keeps all output values finite and shaped as input"
+    prediction: "test_rms_norm_batched fails if batched norm changes length or yields non-finite values"
+    test: "cargo test -p aprender-train --lib test_rms_norm_batched"

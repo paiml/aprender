@@ -96,6 +96,10 @@ struct Vocabulary {
     prefix: String,
     root_class: String,
     nested: Vec<(String, String)>,
+    /// `refs: {key: array}` (optional): a string under `key` names, by `id`, an element of the root's `array`; the
+    /// triple points at that element's node, or at an untyped dangling node when no element has that id, so a
+    /// `class` constraint on the property is the join (a reference to an undeclared id is refused by name).
+    refs: Vec<(String, String)>,
 }
 
 fn scalar(v: Option<&serde_yaml::Value>) -> Option<String> {
@@ -134,10 +138,20 @@ fn vocabulary(stem: &str, doc: &serde_yaml::Value) -> Result<Vocabulary, Extract
             nested.push((k, class));
         }
     }
+    let mut refs = Vec::new();
+    if let Some(serde_yaml::Value::Mapping(m)) = v.and_then(|v| v.get("refs")) {
+        for (k, target) in m {
+            let (Some(k), Some(target)) = (scalar(Some(k)), scalar(Some(target))) else {
+                return Err(need("`refs` must map key → root array key"));
+            };
+            refs.push((k, target));
+        }
+    }
     Ok(Vocabulary {
         prefix,
         root_class,
         nested,
+        refs,
     })
 }
 
@@ -184,7 +198,13 @@ fn extract_text(
             path: path.to_string(),
             why: e.to_string(),
         })?;
-    node(g, stem, stem, &vocab.root_class, true, &value, vocab)?;
+    let ctx = Ctx {
+        stem,
+        vocab,
+        root_id: stem,
+        root: &value,
+    };
+    node(g, &ctx, stem, &vocab.root_class, true, &value)?;
     Ok(Vec::new())
 }
 
@@ -197,6 +217,7 @@ pub fn positive_control() -> bool {
         prefix: "pc".into(),
         root_class: "pc:Root".into(),
         nested: vec![("child".into(), "pc:Child".into())],
+        refs: Vec::new(),
     };
     let mut g = Graph::new();
     let mapped = extract_text(
@@ -239,15 +260,14 @@ fn extract_jsonl(
         match serde_json::from_str::<serde_json::Value>(line) {
             Ok(value) => {
                 parsed += 1;
-                node(
-                    &mut staged,
+                let root_id = format!("{stem}.{}", i + 1);
+                let ctx = Ctx {
                     stem,
-                    &format!("{stem}.{}", i + 1),
-                    &vocab.root_class,
-                    true,
-                    &value,
                     vocab,
-                )?;
+                    root_id: &root_id,
+                    root: &value,
+                };
+                node(&mut staged, &ctx, &root_id, &vocab.root_class, true, &value)?;
             }
             Err(e) => warnings.push(Warning {
                 contract: stem.to_string(),
@@ -271,17 +291,43 @@ fn extract_jsonl(
     Ok(warnings)
 }
 
+/// What every level of one document's walk shares: the contract, its vocabulary, and the document's root (for refs).
+struct Ctx<'a> {
+    stem: &'a str,
+    vocab: &'a Vocabulary,
+    root_id: &'a str,
+    root: &'a serde_json::Value,
+}
+
+/// The node a `refs` string points at: the root's `target[i]` whose `id` is `want`, else an untyped dangling node
+/// (nothing types it, so a `class` constraint on the property refuses it, naming the path).
+fn ref_target(ctx: &Ctx<'_>, target: &str, want: &str) -> Term {
+    let hit = ctx
+        .root
+        .get(target)
+        .and_then(serde_json::Value::as_array)
+        .and_then(|a| {
+            a.iter()
+                .position(|e| e.get("id").and_then(serde_json::Value::as_str) == Some(want))
+        });
+    let id = match hit {
+        Some(i) => format!("{}.{target}.{i}", ctx.root_id),
+        None => format!("{}.{target}.undeclared.{want}", ctx.root_id),
+    };
+    Term::iri(iri(&ctx.vocab.prefix, &id))
+}
+
 /// One JSON object as a node `id` typed `class`; recurses through the vocabulary map. A non-object at the root is
 /// the declaration's fault too — a shape targets nodes, and a bare scalar has none.
 fn node(
     g: &mut Graph,
-    stem: &str,
+    ctx: &Ctx<'_>,
     id: &str,
     class: &str,
     is_root: bool,
     value: &serde_json::Value,
-    vocab: &Vocabulary,
 ) -> Result<(), ExtractError> {
+    let (stem, vocab) = (ctx.stem, ctx.vocab);
     let serde_json::Value::Object(map) = value else {
         return Err(ExtractError::NotJson {
             contract: stem.to_string(),
@@ -298,37 +344,56 @@ fn node(
         let pred = expand(&format!("{}:{key}", vocab.prefix));
         match v {
             serde_json::Value::Null => {}
+            serde_json::Value::String(want) if vocab.refs.iter().any(|(k, _)| k == key) => {
+                let target = vocab.refs.iter().find(|(k, _)| k == key).map(|(_, t)| t);
+                let hit = target.map_or_else(|| literal(v), |t| ref_target(ctx, t, want));
+                g.insert(s.clone(), pred, hit);
+            }
             serde_json::Value::Object(_) => {
                 let child_class = nested_class(stem, key, vocab)?;
                 let child_id = format!("{id}.{key}");
-                node(g, stem, &child_id, &child_class, false, v, vocab)?;
+                node(g, ctx, &child_id, &child_class, false, v)?;
                 g.insert(s.clone(), pred, Term::iri(iri(&vocab.prefix, &child_id)));
             }
             serde_json::Value::Array(items) => {
-                for (i, item) in items.iter().enumerate() {
-                    match item {
-                        serde_json::Value::Null => {}
-                        serde_json::Value::Object(_) => {
-                            let child_class = nested_class(stem, key, vocab)?;
-                            let child_id = format!("{id}.{key}.{i}");
-                            node(g, stem, &child_id, &child_class, false, item, vocab)?;
-                            g.insert(
-                                s.clone(),
-                                pred.clone(),
-                                Term::iri(iri(&vocab.prefix, &child_id)),
-                            );
-                        }
-                        serde_json::Value::Array(_) => {
-                            return Err(ExtractError::Unmapped {
-                                contract: stem.to_string(),
-                                key: format!("{key}[{i}] (an array of arrays has no node shape)"),
-                            })
-                        }
-                        other => g.insert(s.clone(), pred.clone(), literal(other)),
-                    }
-                }
+                array_items(g, ctx, (s.as_str(), pred.as_str()), id, key, items)?;
             }
             other => g.insert(s.clone(), pred, literal(other)),
+        }
+    }
+    Ok(())
+}
+
+/// The elements of one array property: objects become nested nodes, scalars literals, nulls nothing.
+fn array_items(
+    g: &mut Graph,
+    ctx: &Ctx<'_>,
+    (s, pred): (&str, &str),
+    id: &str,
+    key: &str,
+    items: &[serde_json::Value],
+) -> Result<(), ExtractError> {
+    let (stem, vocab) = (ctx.stem, ctx.vocab);
+    for (i, item) in items.iter().enumerate() {
+        match item {
+            serde_json::Value::Null => {}
+            serde_json::Value::Object(_) => {
+                let child_class = nested_class(stem, key, vocab)?;
+                let child_id = format!("{id}.{key}.{i}");
+                node(g, ctx, &child_id, &child_class, false, item)?;
+                g.insert(
+                    s.to_owned(),
+                    pred.to_owned(),
+                    Term::iri(iri(&vocab.prefix, &child_id)),
+                );
+            }
+            serde_json::Value::Array(_) => {
+                return Err(ExtractError::Unmapped {
+                    contract: stem.to_string(),
+                    key: format!("{key}[{i}] (an array of arrays has no node shape)"),
+                })
+            }
+            other => g.insert(s.to_owned(), pred.to_owned(), literal(other)),
         }
     }
     Ok(())
@@ -554,6 +619,39 @@ mod tests {
         assert!(matches!(err, ExtractError::NotJson { .. }), "{err}");
         assert!(err.to_string().contains("no line parses; line 1"), "{err}");
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_ref_resolves_to_the_declared_node_and_an_undeclared_id_dangles_untyped() {
+        let vocab = Vocabulary {
+            prefix: "r".into(),
+            root_class: "r:Root".into(),
+            nested: vec![
+                ("laws".into(), "r:Law".into()),
+                ("invs".into(), "r:Inv".into()),
+            ],
+            refs: vec![("inv".into(), "invs".into())],
+        };
+        let typed = |g: &Graph, id: &str| {
+            g.objects(&iri("r", id), RDF_TYPE)
+                .iter()
+                .any(|t| t.as_iri() == Some(expand("r:Inv").as_str()))
+        };
+        let mut g = Graph::new();
+        let text = r#"{"laws":[{"inv":"B"},{"inv":"Z"}],"invs":[{"id":"A"},{"id":"B"}]}"#;
+        extract_text(&mut g, "d", "d.json", text, &vocab).expect("extracts");
+        let pred = expand("r:inv");
+        let law0 = g.objects(&iri("r", "d.laws.0"), &pred);
+        let law1 = g.objects(&iri("r", "d.laws.1"), &pred);
+        assert_eq!(law0.len(), 1);
+        assert_eq!(law0[0].as_iri(), Some(iri("r", "d.invs.1").as_str()));
+        assert!(typed(&g, "d.invs.1"), "a declared id lands on a typed node");
+        let dangling = law1[0].as_iri().expect("iri").to_owned();
+        assert!(dangling.ends_with("d.invs.undeclared.Z"), "{dangling}");
+        assert!(
+            !typed(&g, "d.invs.undeclared.Z"),
+            "a dangling node is untyped"
+        );
     }
 
     #[test]

@@ -360,7 +360,7 @@ mod qwen35_serve_route_tests {
             ..ServerConfig::default()
         };
         let state = build_qwen35_state(mapped, &config).expect("qwen35 state");
-        let router = realizar::api::create_router_with_config(state, config.router_config());
+        let router = build_gguf_router(state, &config, super::super::auth::AuthGate::disabled());
         let get = |uri: &'static str| {
             let router = router.clone();
             async move {
@@ -570,9 +570,8 @@ mod gguf_router_auth_tests {
 /// The GGUF/Qwen3.5 CPU path (and every other caller of `serve_router`) was built straight from
 /// `create_router_with_config`: `APR_API_KEY_HASH` was set and
 /// ignored, and the server answered 200 without a key (observed on v0.70.3 and
-/// v0.71.4). The GPU, CUDA and APR GPU routers (`start_gguf_server_gpu_batched`,
-/// `start_gguf_server_cuda` (past its early serve_router fallback), and the APR/SafeTensors GPU starters in
-/// `handlers_include_01.rs`) are still ungated: follow-up.
+/// v0.71.4). The GPU-batched, CUDA and APR/SafeTensors GPU starters build through this helper
+/// too (#5478); `tests_router_auth_5478` refuses any router built outside `auth::layer`.
 /// `serve_router` is a thin wrapper that supplies `AuthGate::from_env()`;
 /// the seam exists so the wiring is testable without a socket or model weights.
 #[cfg(feature = "inference")]
@@ -659,7 +658,7 @@ fn start_gguf_server_gpu_batched(
     mapped_model: std::sync::Arc<realizar::gguf::MappedGGUFModel>,
     config: &ServerConfig,
 ) -> Result<()> {
-    use realizar::api::{create_router_with_config, spawn_batch_processor, AppState, BatchConfig};
+    use realizar::api::{spawn_batch_processor, AppState, BatchConfig};
     use realizar::gguf::OwnedQuantizedModelCachedSync;
 
     println!(
@@ -711,7 +710,6 @@ fn start_gguf_server_gpu_batched(
     println!("  GPU threshold: {}", batch_config.gpu_threshold);
 
     let bind_addr = config.bind_addr();
-    let router_config = config.router_config();
 
     // Run everything inside the runtime context
     runtime.block_on(async move {
@@ -723,7 +721,7 @@ fn start_gguf_server_gpu_batched(
         let state = state.with_batch_config(batch_tx, batch_config);
 
         // Create router
-        let app = create_router_with_config(state, router_config);
+        let app = build_gguf_router(state, config, super::auth::AuthGate::from_env()); // #5478
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
             .await

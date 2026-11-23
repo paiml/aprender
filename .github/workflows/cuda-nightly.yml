@@ -516,7 +516,7 @@ jobs:
           grep '^PP-26-WITNESS: ' "$log" > "$observed" || : > "$observed"
 
           verdict=""
-          rm -rf /tmp/pp26-prev-witness && mkdir -p /tmp/pp26-prev-witness
+          rm -rf "$RUNNER_TEMP"/pp26-prev-witness && mkdir -p "$RUNNER_TEMP"/pp26-prev-witness
           # 67-F1 (PMAT-1098): the self-hosted CUDA boxes carry no `gh` (#3083 / 67-C2), so
           # this step failed every night on gx10 as "gh run list failed (auth/API error)" —
           # `gh: command not found` wearing an auth error's label. Read-only REST with the
@@ -547,9 +547,9 @@ jobs:
               verdict="NO-BASELINE"
             else
               dl_err="$(mktemp)"
-              if curl -sSfL -H "$hdr_auth" -o /tmp/pp26-prev-witness/witness.zip "$art_url" 2>"$dl_err" \
+              if curl -sSfL -H "$hdr_auth" -o "$RUNNER_TEMP"/pp26-prev-witness/witness.zip "$art_url" 2>"$dl_err" \
                  && python3 -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
-                      /tmp/pp26-prev-witness/witness.zip /tmp/pp26-prev-witness 2>>"$dl_err"; then
+                      "$RUNNER_TEMP"/pp26-prev-witness/witness.zip "$RUNNER_TEMP"/pp26-prev-witness 2>>"$dl_err"; then
                 :
               else
                 echo "::error::PP-26 witness: artifact download/unzip failed for run $run_id (pp26-witness-${{ matrix.name }})"
@@ -561,8 +561,8 @@ jobs:
             fi
           fi
           if [ "$verdict" != "NO-BASELINE" ]; then
-            if [ -f /tmp/pp26-prev-witness/probe.log ]; then
-              grep '^PP-26-WITNESS: ' /tmp/pp26-prev-witness/probe.log > "$expected" || : > "$expected"
+            if [ -f "$RUNNER_TEMP"/pp26-prev-witness/probe.log ]; then
+              grep '^PP-26-WITNESS: ' "$RUNNER_TEMP"/pp26-prev-witness/probe.log > "$expected" || : > "$expected"
             else
               # Download succeeded but this run's artifact had no probe.log
               # (e.g. a yielded night) - still nothing to compare against.
