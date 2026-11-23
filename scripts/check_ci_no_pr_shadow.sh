@@ -113,6 +113,7 @@ pr_path() { # FILE -> 0 when the workflow can run on the PR / merge-queue / push
     local n
     n="$(grep -cE '^[?"'"'"'[:space:]]*(on|true|"on"|'"'"'on'"'"')[[:space:]]*(:|$)' "$1" || true)"
     grep -qE '^[?"'"'"']' "$1" && return 0
+    grep -vE '^[[:space:]]|^#|^$' "$1" | grep -qvE '^(name|run-name):[[:space:]]*[^"'"'"'&*!|>{[%@`#:]+$|^(on|jobs|permissions|concurrency|env|defaults):[[:space:]]*(#.*)?$' && return 0
     [ "$n" = 1 ] || return 0
     grep -qE '^on:[[:space:]]*(#.*)?$' "$1" || return 0
     awk 'BEGIN{b=-1} /^on:/{p=1;next} p&&/^[^-[:space:]#]/{p=0} p&&!/^[[:space:]]*(#.*)?$/{match($0,/^ */);i=RLENGTH;t=substr($0,i+1);if(b<0)b=i;if(i<b){print "BAD";next}if(i==b&&t!~/^-/){if(t ~ /^workflow_dispatch:[[:space:]]*(#.*)?$/)c="d";else if(t ~ /^schedule:[[:space:]]*(#.*)?$/)c="s";else print "BAD";next}if(c=="d")next;if(c=="s"&&t ~ /^-[[:space:]]+cron:[[:space:]]*["\047]?[-0-9*\/, ]+["\047]?[[:space:]]*(#.*)?$/)next;print "BAD"}' "$1" | grep -q BAD && return 0
@@ -224,6 +225,11 @@ self_test() {
     printf 'name: x\non:\n  workflow_dispatch:\n  "\\u0070ull_request":\njobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n' > "$td/w/new.yml"
     if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: a YAML-escaped trigger key hid pull_request"; fails=1; else echo "ok    red   MUTANT: YAML-escaped trigger key is still scanned"; fi
     for case_ in 'flow on: continued at column 0|name: x\non: {workflow_dispatch: {},\npull_request: {}}\n' 'decoy true: plus spaced on :|name: x\non : pull_request\ntrue: workflow_dispatch\n' 'complex key ? on plus decoy true:|name: x\n? on\n: pull_request\ntrue: workflow_dispatch\n' 'trigger nested under schedule list|name: x\non:\n  schedule:\n    - cron: "0 0 * * *"\n    - pull_request\n'; do
+        lbl="${case_%%|*}"; body="${case_#*|}"
+        printf "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
+        if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: $lbl skipped the workflow"; fails=1; else echo "ok    red   MUTANT: $lbl is still scanned"; fi
+    done
+    for case_ in 'quoted-scalar decoy plus anchored real on|name: "x\non:\n  workflow_dispatch:\nz"\n&a on:\n  pull_request:\n' 'tagged real on key|name: x\non:\n  workflow_dispatch:\n!!str on:\n  pull_request:\n'; do
         lbl="${case_%%|*}"; body="${case_#*|}"
         printf "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
         if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: $lbl skipped the workflow"; fails=1; else echo "ok    red   MUTANT: $lbl is still scanned"; fi
