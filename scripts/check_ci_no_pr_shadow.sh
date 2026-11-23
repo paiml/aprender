@@ -9,7 +9,7 @@
 # ci/sections.yml for a LAB lane; only the PR and merge_group lists are checked.
 #
 # Usage:  bash scripts/check_ci_no_pr_shadow.sh [--self-test] [WORKFLOW_FILE]
-# Wired:  ci/explicit-test-commands.d/871-ci-no-pr-shadow.cmd (--self-test).
+# Wired:  ci/explicit-test-commands.d/893-ci-no-pr-shadow.cmd (--self-test).
 set -euo pipefail
 
 check() { # FILE -> one FAIL line per --sections list that names the section; rc 1 when any
