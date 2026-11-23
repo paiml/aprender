@@ -510,7 +510,7 @@ jobs:
         if: always()
         run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
       - uses: actions/upload-artifact@v7
-        if: ${{ always() && github.event_name != 'pull_request' }}
+        if: always()
         with:
           name: pr-review-shadow-sample
           path: ${{ runner.temp }}/fat/artifacts/pr-review-shadow-sample/
