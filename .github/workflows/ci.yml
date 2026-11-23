@@ -825,6 +825,24 @@ jobs:
         with:
           fetch-depth: 0
       # #4596: see the x86-main step of the same name.
+      - name: Pin yq v4.52.2 for the shard self-tests (sha256-verified, fail closed)
+        env:
+          YQ_BASE: https://github.com/mikefarah/yq/releases/download/v4.52.2
+          YQ_SHA256_AMD64: a74bd266990339e0c48a2103534aef692abf99f19390d12c2b0ce6830385c459
+          YQ_SHA256_ARM64: c82856ac30da522f50dcdd4f53065487b5a2927e9b87ff637956900986f1f7c2
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) YQ_URL="$YQ_BASE/yq_linux_amd64"; YQ_SHA256="$YQ_SHA256_AMD64" ;;
+            aarch64 | arm64) YQ_URL="$YQ_BASE/yq_linux_arm64"; YQ_SHA256="$YQ_SHA256_ARM64" ;;
+            *) echo "::error::no pinned yq for arch $(uname -m)"; exit 1 ;;
+          esac
+          d="$RUNNER_TEMP/yq-4.52.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/yq" "$YQ_URL"
+          printf '%s  %s\n' "$YQ_SHA256" "$d/yq" | sha256sum -c -
+          chmod +x "$d/yq"
+          echo "$d" >> "$GITHUB_PATH"
       - name: fat_driver case table must still turn RED
         run: setsid --wait bash scripts/ci/fixture_quiet.sh "fat_driver self-test" -- python3 scripts/ci/fat_driver.py self-test
       # `?` for the brackets and the comma: --sections splits on commas.
