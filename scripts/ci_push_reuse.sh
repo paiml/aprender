@@ -137,8 +137,60 @@ decide() {
     *) [[ $verdict =~ ^[A-Za-z0-9-]+$ ]] && no "$verdict" || no "decision filter returned an unknown verdict"; return 0 ;;
   esac
 }
+# ---- the case table (S2b: base facts, must-reuse, C1/C2/C3 rows, malformed input, and the two lane-2 regressions of #7426).
+# Each row edits the all-green base facts with one jq expression and states the one-line verdict it must print.
+self_test() {
+  command -v jq > /dev/null 2>&1 || { echo "ENV: jq missing" >&2; return 2; }
+  local base n=0 fails=0 s1 s2 s3 s4 s5 s6
+  s1=$(printf '%040d' 1); s2=$(printf '%040d' 2); s3=$(printf '%040d' 3); s4=$(printf '%040d' 4); s5=$(printf '%040d' 5); s6=$(printf '%040d' 6)
+  base=$(jq -nc --arg S "$s1" --arg T "$s2" --arg B "$s3" --arg H "$s4" --arg M "$s5" '
+    {event:"push", ref:"refs/heads/main", sha:$S, tree:$T, parents:[$B], before:$B, repo:"paiml/aprender",
+     pr:{number:7000, merged:true, merge_commit_sha:$S, base_ref:"main", head_ref:"feat/x", is_fork:false, head_repo:"paiml/aprender", draft:false, head_sha:$H},
+     stamp:{sha:$M, tree:$T, base:$B, head:$H}, m_derived:{tree:$T, base:$B, head:$H},
+     expect_shards:2, runs_complete:true,
+     run:{id:100, event:"pull_request", path:".github/workflows/ci.yml", head_sha:$H, head_branch:"feat/x", status:"completed", conclusion:"success",
+          newest_id:100, created_epoch:1000000, jobs_total:9, sov_test:"success",
+          jobs:(["x86-main","determinism","gate","ci / gate","workspace-test","workspace-test-ran","workspace-test-shard (1, 2)","workspace-test-shard (2, 2)"]
+                | map({name:., conclusion:"success", run_id:100, head_sha:$H}))
+               + [{name:"x86-main-advisories", conclusion:"skipped", run_id:100, head_sha:$H}]},
+     paths:["crates/aprender-core/src/lib.rs"], now:1000100}') || return 2
+  row() { # name, jq edit of the base, the verdict line it must print
+    local out; out=$(jq -c "$2" <<< "$base" | bash "$SELF" decide --facts -)
+    n=$((n + 1)); [ "$out" = "$3" ] || { echo "FAIL $1: got '$out', want '$3'"; fails=$((fails + 1)); }
+  }
+  raw() { # name, stdin text, the verdict line it must print
+    local out; out=$(printf '%s' "$2" | bash "$SELF" decide --facts -)
+    n=$((n + 1)); [ "$out" = "$3" ] || { echo "FAIL $1: got '$out', want '$3'"; fails=$((fails + 1)); }
+  }
+  row must-reuse '.' 'reuse=yes'
+  row c1-event '.event="pull_request"' 'reuse=no reason=C1-event'
+  row c1-ref '.ref="refs/heads/dev"' 'reuse=no reason=C1-ref'
+  row c1-two-parents ".parents+=[\"$s6\"]" 'reuse=no reason=C1-one-parent'
+  row c1-before ".before=\"$s6\"" 'reuse=no reason=C1-before'
+  row c2-number '.pr.number=0' 'reuse=no reason=C2-pr-number'
+  row c2-merged '.pr.merged=false' 'reuse=no reason=C2-merged'
+  row c2-merge-sha ".pr.merge_commit_sha=\"$s6\"" 'reuse=no reason=C2-merge-sha'
+  row c2-fork '.pr.is_fork=true' 'reuse=no reason=C2-fork'
+  row c2-draft '.pr.draft=true' 'reuse=no reason=C2-draft'
+  row c3-stamp-null '.stamp=null' 'reuse=no reason=C3-tree-identity'
+  row c3-stamp-tree ".stamp.tree=\"$s6\"" 'reuse=no reason=C3-tree-identity'
+  row c3-stamp-base ".stamp.base=\"$s6\"" 'reuse=no reason=C3-tree-identity'
+  row c3-stamp-head ".stamp.head=\"$s6\"" 'reuse=no reason=C3-tree-identity'
+  row c3-m-derived-null '.m_derived=null' 'reuse=no reason=C3-tree-identity'
+  row c3-m-derived-tree ".m_derived.tree=\"$s6\"" 'reuse=no reason=C3-tree-identity'
+  # lane-2 regressions at 0ac867c: a trailing newline on a sha, and a ./-prefixed path past the ^-anchored gate rules
+  row sha-trailing-newline '.pr.head_sha+="\n" | .run.head_sha+="\n" | .stamp.head+="\n" | .m_derived.head+="\n"' 'reuse=no reason=C2-head-sha'
+  row path-dot-slash '.paths=["./scripts/ci_push_reuse.sh"]' 'reuse=no reason=C5-paths-judgeable'
+  row path-gate '.paths=["scripts/ci_push_reuse.sh"]' 'reuse=no reason=C5-no-gate-path'
+  raw empty-stdin '' 'reuse=no reason=facts are empty'
+  raw empty-object '{}' 'reuse=no reason=F-shape'
+  raw not-json 'not json' 'reuse=no reason=decision filter failed (malformed facts)'
+  echo "ci_push_reuse self-test: $n rows, $fails failed"
+  [ "$fails" -eq 0 ]
+}
 case "${1-}" in
   decide) shift; decide "$@" ;;
+  --self-test) self_test ;;
   -h | --help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) echo "usage: ci_push_reuse.sh decide --facts FILE|- | --self-test | --mutants" >&2; exit 2 ;;
 esac
