@@ -14,9 +14,9 @@ set -euo pipefail
 
 # values(): every --sections value in the workflow, one per line. Comment lines are dropped BEFORE lines are joined, so a comment
 # ending in a backslash cannot swallow code and a folded `run: >-` block whose value sits on the next line still reads as one string.
-# ${{ ... }} expressions become `?` (a one-char wildcard) so a matrix shard name stays checkable.
+# ${{ ... }} expressions become @EXPR@; only the workspace-test shard names may carry one (it is a matrix index), any other part with one is refused.
 values() {
-    grep -v '^[[:space:]]*#' "$1" | tr '\n' ' ' | sed -e 's/\\ / /g' -e 's/\${{[^}]*}}/?/g' \
+    grep -v '^[[:space:]]*#' "$1" | tr '\n' ' ' | sed -e 's/\\ / /g' -e 's/\${{[^}]*}}/@EXPR@/g' \
         | grep -oE -- "--sec[a-z]*(=|[[:space:]]+)('[^']*'|\"[^\"]*\"|[^[:space:]]+)" | sed -E "s/^--sec[a-z]*(=|[[:space:]]+)//; s/^['\"]//; s/['\"]\$//"
 }
 
@@ -29,7 +29,7 @@ check() { # FILE -> one FAIL line per --sections list that resolves to the secti
         local IFS=,
         for part in $v; do
             part="${part#"${part%%[![:space:]]*}"}"; part="${part%"${part##*[![:space:]]}"}"   # fat_driver strips each part
-            case "$part" in *[!?]*) ;; *) echo "FAIL  --sections part is only an expression, cannot be resolved: '$v'"; bad=1; continue ;; esac
+            case "$part" in *@EXPR@*) case "$part" in workspace-test-shard?@EXPR@?@EXPR@?) part="${part//@EXPR@/?}" ;; *) echo "FAIL  --sections part holds an expression and cannot be resolved: '$part'"; bad=1; continue ;; esac ;; esac
             # shellcheck disable=SC2053  # the unquoted right side is the point: fat_driver matches a section name with fnmatch
             if [[ pr-review-shadow == $part ]]; then echo "FAIL  --sections '$v' resolves to pr-review-shadow (via '$part')"; bad=1; fi
         done
@@ -59,6 +59,8 @@ self_test() {
     mutant "abbreviated option --section" "s/--sections 'guard-tree,pr-review-sign/--section 'guard-tree,pr-review-shadow,pr-review-sign/"
     mutant "quote splicing" "s/--sections 'guard-tree,pr-review-sign/--sections 'guard-tree,'pr-review-shadow,pr-review-sign/"
     mutant "whole-value expression" "s/--sections 'guard-tree,pr-review-sign/--sections '\${{ vars.PR_SECS }}' --x 'guard-tree,pr-review-sign/"
+    mutant "partial expression" "s/--sections 'guard-tree,pr-review-sign/--sections 'guard-tree,pr-review-\${{ env.S }},pr-review-sign/"
+    mutant "adjacent quoting" "s/--sections 'guard-tree,pr-review-sign/--sections 'guard-tree,pr-review-''shadow,pr-review-sign/"
     # a comment ending in a backslash must not hide the code on the next line
     printf '  - run: |\n      # merge queue: sign only \\\n      python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n' > "$td/c.yml"
     if check "$td/c.yml" > /dev/null; then echo "FAIL  mutant: comment ending in a backslash hid the next line"; fails=1; else echo "ok    red   MUTANT: comment ending in a backslash does not swallow the next line"; fi
