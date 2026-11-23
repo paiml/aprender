@@ -5,6 +5,8 @@ required ci.yml workspace-test
 allow push-only advisory-andon.yml andon - -- scheduled advisory alarm (cron + push refresh); C324 non-blocking
 allow push-only book.yml deploy - -- GitHub Pages deploy after merge; PR runs book build on same runner labels
 allow push-only ci.yml mg-reuse - -- reads merge_group run on sha to decide push reuse (T43/#4748); no PR equivalent
+allow mg-only ci.yml guards - -- merge_group-only guard suite (PMAT-5971); --live verifies active merge_queue ruleset
+allow mg-only ci.yml mg-reuse-wt - -- merge_group-only workspace-test reuse lookup (T43b); --live verifies active merge_queue ruleset
 allow not-required book.yml build - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
 allow not-required book-contracts.yml chapter-examples-compile - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
 allow not-required book-contracts.yml chapter-examples-run - -- path-filtered workflow (cannot be branch-protection required); runs symmetrically on PR and push
