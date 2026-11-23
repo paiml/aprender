@@ -785,10 +785,14 @@ mod tests {
         }
     }
 
-    /// (contract file, equation) pairs whose three invariants are typed formulas (SIM3D #7253).
-    const TYPED: [(&str, &str); 2] = [
+    /// (contract file, equation) pairs whose three invariants are typed formulas (SIM3D #7253, #7305).
+    const TYPED: [(&str, &str); 6] = [
+        ("simular/simulation-determinism-v1.yaml", "step_determinism"),
         ("simular/simulation-determinism-v1.yaml", "time_advancement"),
+        ("simular/simulation-determinism-v1.yaml", "audit_trail"),
         ("simular/simulation-step-v1.yaml", "step_monotonicity"),
+        ("simular/simulation-step-v1.yaml", "audit_completeness"),
+        ("simular/simulation-step-v1.yaml", "simulate_convergence"),
     ];
 
     fn typed_equation(file: &str, eq: &str) -> (String, Vec<String>) {
@@ -820,15 +824,39 @@ mod tests {
         for (file, eq, from, to) in [
             (
                 "simular/simulation-determinism-v1.yaml",
+                "step_determinism",
+                "energy(x, v) = 0.5 * (v^2 + w^2 * x^2);",
+                "energy(x, v) = 0.5 * (v^2 - w^2 * x^2);",
+            ),
+            (
+                "simular/simulation-determinism-v1.yaml",
                 "time_advancement",
                 "t0 + n * timestep_secs;",
                 "t0 - n * timestep_secs;",
+            ),
+            (
+                "simular/simulation-determinism-v1.yaml",
+                "audit_trail",
+                "record_id(n) = n;",
+                "record_id(n) = 0;",
             ),
             (
                 "simular/simulation-step-v1.yaml",
                 "step_monotonicity",
                 "step_count(n) = n",
                 "step_count(n) = 2 * n",
+            ),
+            (
+                "simular/simulation-step-v1.yaml",
+                "audit_completeness",
+                "step_forward(pos) = pos + 1",
+                "step_forward(pos) = pos + 2",
+            ),
+            (
+                "simular/simulation-step-v1.yaml",
+                "simulate_convergence",
+                "portfolio_t(n) = n * dt",
+                "portfolio_t(n) = -n * dt",
             ),
         ] {
             let (formula, invs) = typed_equation(file, eq);

@@ -8,13 +8,13 @@ metadata:
   - 'Hairer et al. (2006) Geometric Numerical Integration'
 equations:
   step_determinism:
-    formula: '∀ state S, dt: step(S, dt) = step(S, dt)'
+    formula: 'step_x(x, v, dt) = x * cos(w * dt) + (v / w) * sin(w * dt); step_v(x, v, dt) = v * cos(w * dt) - w * x * sin(w * dt); energy(x, v) = 0.5 * (v^2 + w^2 * x^2); step_count(n) = n'
     domain: S ∈ SimState, dt ∈ f64 where dt > 0
     codomain: SimState
     invariants:
-    - 'Deterministic: identical initial state + dt → identical next state'
-    - 'Energy conservation: |E(S_n) - E(S_0)| < ε for symplectic integrators'
-    - step_count increments by 1 per step call
+    - 'step_x(x, v, dt) = step_x(x, v, dt) and step_v(x, v, dt) = step_v(x, v, dt)'
+    - 'abs(energy(step_x(x, v, dt), step_v(x, v, dt)) - energy(x, v)) <= 0.000000001 * (1 + abs(energy(x, v)))'
+    - 'step_count(n + 1) = step_count(n) + 1'
     preconditions:
     - dt > 0.0
     - state is finite (no NaN/Inf)
@@ -32,13 +32,13 @@ equations:
     - target_time > current_time
     lean_theorem: Theorems.Time_Advancement
   audit_trail:
-    formula: A(step_id) = record_step(state, equations) → AuditEntry
+    formula: 'record_id(n) = n; find_by_step_id(id) = id; seek_pos(id) = id'
     domain: state ∈ SimState, equations ∈ [String]
     codomain: AuditEntry
     invariants:
-    - record_step produces unique audit entries
-    - find_by_step_id retrieves exact match
-    - seek(step_id) positions iterator at correct entry
+    - 'record_id(n + 1) > record_id(n)'
+    - 'find_by_step_id(record_id(id)) = id'
+    - 'find_by_step_id(seek_pos(id)) = id'
     preconditions:
     - step_id is valid (within simulation range)
     lean_theorem: Theorems.Audit_Trail
