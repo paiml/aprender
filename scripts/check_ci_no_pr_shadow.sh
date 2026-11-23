@@ -111,6 +111,8 @@ check_file() { # FILE REQUIRE(1|0) -> FAIL lines; rc 1 when any
 
 pr_path() { # FILE -> 0 when the workflow can run on the PR / merge-queue / push path. STRICT ALLOWLIST: skipped (1) only if the file has exactly ONE on/true-ish key, it is the bare `on:`, and everything under it is `workflow_dispatch:` (any nested inputs), `schedule:` or plain `- cron: "<cron chars>"` items. Anything else is scanned.
     local n
+    LC_ALL=C grep -q '[^[:print:][:space:]]' "$1" && return 0
+    LC_ALL=C grep -q "$(printf '[\r\v\f]')" "$1" && return 0
     n="$(grep -cE '^[?"'"'"'[:space:]]*(on|true|"on"|'"'"'on'"'"')[[:space:]]*(:|$)' "$1" || true)"
     grep -qE '^[?"'"'"']' "$1" && return 0
     grep -vE '^[[:space:]]|^#|^$' "$1" | grep -qvE '^(name|run-name):[[:space:]]*[^"'"'"'&*!|>{[%@`#:]+$|^(on|jobs|permissions|concurrency|env|defaults):[[:space:]]*(#.*)?$' && return 0
@@ -230,6 +232,11 @@ self_test() {
         if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: $lbl skipped the workflow"; fails=1; else echo "ok    red   MUTANT: $lbl is still scanned"; fi
     done
     for case_ in 'quoted-scalar decoy plus anchored real on|name: "x\non:\n  workflow_dispatch:\nz"\n&a on:\n  pull_request:\n' 'tagged real on key|name: x\non:\n  workflow_dispatch:\n!!str on:\n  pull_request:\n'; do
+        lbl="${case_%%|*}"; body="${case_#*|}"
+        printf "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
+        if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: $lbl skipped the workflow"; fails=1; else echo "ok    red   MUTANT: $lbl is still scanned"; fi
+    done
+    for case_ in 'bare CR inside a comment|name: x\non:\n  workflow_dispatch:\n  # c\r  pull_request:\n' 'vertical tab line break|name: x\non:\n  workflow_dispatch:\n  # c\v  pull_request:\n'; do
         lbl="${case_%%|*}"; body="${case_#*|}"
         printf "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
         if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: $lbl skipped the workflow"; fails=1; else echo "ok    red   MUTANT: $lbl is still scanned"; fi
