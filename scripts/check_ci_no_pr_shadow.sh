@@ -56,7 +56,7 @@ stmt_ok() {
         case "$stmt" in *--s*|*"sections '"*|*'sections "'*) echo "FAIL  [R10-comment] line $at: comment names the driver and a sections option: $stmt"; return 1 ;; esac
         return 0
     fi
-    stmt="$(printf '%s' "$stmt" | sed -E 's/\$\{\{[^}]*\}\}/@EXPR@/g')"
+    stmt="$(printf '%s' "$stmt" | sed -E 's/\$\{\{ matrix\.(shard|shards) \}\}/@EXPR@/g')"   # only these two exact matrix expressions are pinned; any other ${{ }} stays and fails R4 (it can evaluate to commas and new parts)
     if ! [[ $stmt =~ $PRE ]]; then echo "FAIL  [R1-form] line $at: driver line is not the accepted 'fat_driver.py run --sections <list>' form: $stmt"; return 1; fi
     rest="${BASH_REMATCH[2]}"
     if [[ $rest == \'* ]]; then
@@ -157,8 +157,9 @@ self_test() {
     mutant "abbreviated option --section" R1 "${A}--section 'guard-tree,pr-review-shadow,pr-review-sign/"
     mutant "abbreviated option --se" R1 "${A}--se 'guard-tree,pr-review-shadow,pr-review-sign/"
     mutant "quote splicing" R1 "${A}--sections 'guard-tree,'pr-review-shadow,pr-review-sign/"
-    mutant "whole-value expression" "R9|R1" "${A}--sections '\${{ vars.PR_SECS }}' --x 'guard-tree,pr-review-sign/"
-    mutant "partial expression" R9 "${A}--sections 'guard-tree,pr-review-\${{ env.S }},pr-review-sign/"
+    mutant "whole-value expression" "R9|R4|R1" "${A}--sections '\${{ vars.PR_SECS }}' --x 'guard-tree,pr-review-sign/"
+    mutant "partial expression" "R9|R4" "${A}--sections 'guard-tree,pr-review-\${{ env.S }},pr-review-sign/"
+    mutant "shard expression that evaluates to a comma list" "R9|R4" "${A}--sections 'workspace-test-shard?\${{ 'x,pr-review-shadow,' }}?\${{ matrix.shards }}?/"
     mutant "adjacent quoting" R1 "${A}--sections 'guard-tree,pr-review-''shadow,pr-review-sign/"
     mutant "quote splicing after a space" R4 "${A}--sections 'guard-tree, ''pr-review-shadow'\\'',pr-review-sign/"
     mutant "unquoted prefix splicing a quoted suffix with a space" R4 "${A}--sections guard-tree,' pr-review-shadow'\\'',x/"
