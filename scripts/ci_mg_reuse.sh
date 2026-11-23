@@ -625,9 +625,9 @@ STUB
   # pr-light is the ONLY runner of the PR path: no merge-queue label (mq) may sit on it. X64 is allowed (clean-room X64 pool, not the gx10 build host).
   if grep -qE '"mq"|\bmq\b' <<< "$(job pr-light | grep -m1 '^    runs-on:')"; then
     fail=$((fail + 1)); echo "FAIL pr-light: runs-on carries a merge-queue label"; else pass=$((pass + 1)); fi
-  # Opus-A on #5964: the sections that run only for a PR (guard-tree incl. R-2 / 11.1, pr-review-shadow, pr-review-sign)
-  # ran inside x86-main, which a PR no longer runs. pr-light must run all three, and the feeder must judge pr-light.
-  for sec in guard-tree pr-review-shadow pr-review-sign; do
+  # Opus-A on #5964: the sections that run only for a PR (guard-tree incl. R-2 / 11.1, pr-review-sign; pr-review-shadow is LAB, #5996)
+  # ran inside x86-main, which a PR no longer runs. pr-light must run both, and the feeder must judge pr-light.
+  for sec in guard-tree pr-review-sign; do
     if grep -q -- "--sections '[^']*\b$sec\b" <<<"$(job pr-light)"; then pass=$((pass + 1)); else
       fail=$((fail + 1)); echo "FAIL pr-light: does not run the PR-only section $sec"; fi
   done
