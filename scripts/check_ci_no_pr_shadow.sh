@@ -22,6 +22,7 @@ values() {
 
 check() { # FILE -> one FAIL line per --sections list that resolves to the section (globs included); rc 1 when any
     local f="$1" bad=0 n=0 v part
+    if grep -qE '[^[:space:]]\\$' "$f"; then echo "FAIL  a line ends in a backslash glued to a non-space character (bash joins it mid-word; the guard cannot read it): $(grep -nE '[^[:space:]]\\$' "$f" | head -n 3 | tr '\n' ' ')"; bad=1; fi
     while IFS= read -r v; do
         n=$((n + 1))
         case "$v" in *'$'*|*'`'*) echo "FAIL  indirect --sections value cannot be resolved: $v"; bad=1; continue ;; esac
@@ -29,6 +30,7 @@ check() { # FILE -> one FAIL line per --sections list that resolves to the secti
         local IFS=,
         for part in $v; do
             part="${part#"${part%%[![:space:]]*}"}"; part="${part%"${part##*[![:space:]]}"}"   # fat_driver strips each part
+            case "$part" in *[^A-Za-z0-9._?*\[\]@-]*|*'[^'*|*'[!'*|*'[]'*) echo "FAIL  --sections part uses syntax outside the allowlist (brace, negated or empty bracket, backslash) that bash and fnmatch read differently: '$part'"; bad=1; continue ;; esac
             case "$part" in *@EXPR@*) case "$part" in workspace-test-shard?@EXPR@?@EXPR@?) part="${part//@EXPR@/?}" ;; *) echo "FAIL  --sections part holds an expression and cannot be resolved: '$part'"; bad=1; continue ;; esac ;; esac
             # shellcheck disable=SC2053  # the unquoted right side is the point: fat_driver matches a section name with fnmatch
             if [[ pr-review-shadow == $part ]]; then echo "FAIL  --sections '$v' resolves to pr-review-shadow (via '$part')"; bad=1; fi
@@ -64,6 +66,10 @@ self_test() {
     mutant "quote splicing after a space" "s/--sections 'guard-tree,pr-review-sign/--sections 'guard-tree, ''pr-review-shadow'\\'',pr-review-sign/"
     mutant "abbreviated option --se" "s/--sections 'guard-tree,pr-review-sign/--se 'guard-tree,pr-review-shadow,pr-review-sign/"
     mutant "unquoted prefix splicing a quoted suffix with a space" "s/--sections 'guard-tree,pr-review-sign/--sections guard-tree,' pr-review-shadow'\\'',x/"
+    mutant "brace expansion (last value wins)" "s/--sections 'guard-tree,pr-review-sign/--sections={guard-tree,pr-review-shadow}/"
+    mutant "glued backslash-newline inside the option name" "s/--sections 'guard-tree,pr-review-sign/--sec\\\\\ntions pr-review-shadow --x 'guard-tree,pr-review-sign/"
+    mutant "glued backslash-newline inside the value" "s/--sections 'guard-tree,pr-review-sign/--sections guard-tree,pr-review-sha\\\\\ndow --x 'guard-tree,pr-review-sign/"
+    mutant "negated bracket fnmatch vs bash" "s/--sections 'guard-tree,pr-review-sign/--sections 'guard-tree,pr-review-[^s]hadow,pr-review-sign/"
     # a comment ending in a backslash must not hide the code on the next line
     printf '  - run: |\n      # merge queue: sign only \\\n      python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n' > "$td/c.yml"
     if check "$td/c.yml" > /dev/null; then echo "FAIL  mutant: comment ending in a backslash hid the next line"; fails=1; else echo "ok    red   MUTANT: comment ending in a backslash does not swallow the next line"; fi
