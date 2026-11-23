@@ -105,6 +105,16 @@ pub(crate) fn diff_fingerprints(
     (changed, deleted)
 }
 
+/// Keep only deletions under the scanned `root`, so one index can be fed from several roots
+/// (an `--incremental` run over root B must not delete the documents indexed from root A).
+#[allow(dead_code)] // Used by sqlite-gated code and tests
+pub(crate) fn retain_under_root(deleted: Vec<String>, root: &Path) -> Vec<String> {
+    deleted
+        .into_iter()
+        .filter(|d| Path::new(d).starts_with(root))
+        .collect()
+}
+
 // ── SQLite-gated implementation ────────────────────────────────────────
 
 /// Full incremental indexing pipeline (requires `sqlite` feature).
@@ -146,7 +156,7 @@ fn run_index_incremental_inner(
     println!("Found {} files on disk", files.len());
 
     let file_hashes = compute_file_hashes(&files)?;
-    let (changed, deleted) = diff_against_stored(&sqlite_index, &file_hashes)?;
+    let (changed, deleted) = diff_against_stored(&sqlite_index, &file_hashes, path)?;
 
     if changed.is_empty() && deleted.is_empty() {
         println!("No changes detected — index is up to date.");
@@ -196,16 +206,12 @@ fn run_index_incremental_inner(
     Ok(())
 }
 
-/// Open an existing SQLite index, failing if it does not exist.
+/// Open the SQLite index under `output`, creating the directory and database on first use
+/// so a corpus can be built from scratch in resumable batches (no `index.json` needed).
 #[cfg(feature = "sqlite")]
 fn open_existing_index(output: &str) -> Result<aprender_rag::SqliteIndex> {
+    std::fs::create_dir_all(output)?;
     let db_path = Path::new(output).join("index.sqlite");
-    if !db_path.exists() {
-        anyhow::bail!(
-            "No existing SQLite index at {}. Run a full index first (without --incremental).",
-            db_path.display()
-        );
-    }
     aprender_rag::SqliteIndex::open(&db_path)
         .map_err(|e| anyhow::anyhow!("Failed to open SQLite index: {e}"))
 }
@@ -215,12 +221,14 @@ fn open_existing_index(output: &str) -> Result<aprender_rag::SqliteIndex> {
 fn diff_against_stored(
     sqlite_index: &aprender_rag::SqliteIndex,
     file_hashes: &[(PathBuf, [u8; 32])],
+    root: &Path,
 ) -> Result<(Vec<(PathBuf, [u8; 32])>, Vec<String>)> {
     let stored_fps = sqlite_index
         .list_fingerprints()
         .map_err(|e| anyhow::anyhow!("Failed to list fingerprints: {e}"))?;
     let stored_map: HashMap<String, Vec<u8>> = stored_fps.into_iter().collect();
-    Ok(diff_fingerprints(file_hashes, &stored_map))
+    let (changed, deleted) = diff_fingerprints(file_hashes, &stored_map);
+    Ok((changed, retain_under_root(deleted, root)))
 }
 
 /// Remove deleted sources from the SQLite index, printing each removal.
@@ -277,6 +285,7 @@ fn incremental_insert(
     // Group chunks by source
     let mut doc_chunks: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let mut doc_titles: HashMap<String, Option<String>> = HashMap::new();
+    let mut doc_metas: BTreeMap<String, Vec<Option<String>>> = BTreeMap::new();
 
     for (i, pc) in chunks.iter().enumerate() {
         let doc_id = pc.source.as_deref().unwrap_or("unknown").to_string();
@@ -285,6 +294,10 @@ fn incremental_insert(
             .entry(doc_id.clone())
             .or_default()
             .push((chunk_id, pc.content.clone()));
+        doc_metas
+            .entry(doc_id.clone())
+            .or_default()
+            .push(crate::ingest::chunk_timing_meta(pc));
         doc_titles.entry(doc_id).or_insert_with(|| pc.title.clone());
     }
 
@@ -298,13 +311,15 @@ fn incremental_insert(
 
         let fingerprint = hash_map.get(doc_id).map(|h| (doc_id.as_str(), h));
 
+        let metas = doc_metas.get(doc_id).map_or(&[][..], Vec::as_slice);
         sqlite_index
-            .insert_document(
+            .insert_document_with_meta(
                 doc_id,
                 title,
                 Some(doc_id.as_str()),
                 &content,
                 chunk_pairs,
+                metas,
                 fingerprint,
             )
             .map_err(|e| anyhow::anyhow!("Failed to insert document {doc_id}: {e}"))?;

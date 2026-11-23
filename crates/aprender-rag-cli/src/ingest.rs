@@ -156,6 +156,17 @@ fn to_persisted_chunk(chunk: &Chunk, doc: &Document) -> PersistedChunk {
     }
 }
 
+/// JSON metadata stored per SQLite chunk: `{"start_secs":..,"end_secs":..}`, or `None` when untimed.
+pub(crate) fn chunk_timing_meta(pc: &PersistedChunk) -> Option<String> {
+    match (pc.start_secs, pc.end_secs) {
+        (None, None) => None,
+        (s, e) => {
+            let f = |v: Option<f64>| v.map_or("null".to_string(), |x| format!("{x}"));
+            Some(format!(r#"{{"start_secs":{},"end_secs":{}}}"#, f(s), f(e)))
+        }
+    }
+}
+
 /// Check if a chunk is a duplicate based on content hash. Returns true if novel.
 fn is_novel_chunk(seen: &mut HashSet<u64>, content: &str) -> bool {
     let mut hasher = std::hash::DefaultHasher::new();
@@ -373,6 +384,7 @@ pub(crate) fn export_sqlite(persisted: &PersistedIndex, output_path: &Path) -> R
     // Group chunks by source document
     let mut doc_chunks: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let mut doc_titles: HashMap<String, Option<String>> = HashMap::new();
+    let mut doc_metas: BTreeMap<String, Vec<Option<String>>> = BTreeMap::new();
     for (i, pc) in persisted.chunks.iter().enumerate() {
         let doc_id = pc.source.as_deref().unwrap_or("unknown").to_string();
         let chunk_id = format!("{}#{}", doc_id, i);
@@ -380,6 +392,10 @@ pub(crate) fn export_sqlite(persisted: &PersistedIndex, output_path: &Path) -> R
             .entry(doc_id.clone())
             .or_default()
             .push((chunk_id, pc.content.clone()));
+        doc_metas
+            .entry(doc_id.clone())
+            .or_default()
+            .push(crate::ingest::chunk_timing_meta(pc));
         doc_titles.entry(doc_id).or_insert_with(|| pc.title.clone());
     }
 
@@ -394,8 +410,17 @@ pub(crate) fn export_sqlite(persisted: &PersistedIndex, output_path: &Path) -> R
             .map(|(_, c)| c.as_str())
             .collect::<Vec<_>>()
             .join("\n");
+        let metas = doc_metas.get(doc_id).map_or(&[][..], Vec::as_slice);
         sqlite_index
-            .insert_document(doc_id, title, Some(doc_id.as_str()), &content, chunks, None)
+            .insert_document_with_meta(
+                doc_id,
+                title,
+                Some(doc_id.as_str()),
+                &content,
+                chunks,
+                metas,
+                None,
+            )
             .map_err(|e| anyhow::anyhow!("Failed to insert document {doc_id}: {e}"))?;
     }
 

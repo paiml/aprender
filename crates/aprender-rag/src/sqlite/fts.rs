@@ -20,6 +20,8 @@ pub struct FtsResult {
     pub score: f64,
     /// Chunk position within its document.
     pub position: i64,
+    /// Per-chunk metadata string (JSON with `start_secs`/`end_secs` for media chunks).
+    pub metadata: Option<String>,
 }
 
 /// Escape user input for FTS5 MATCH syntax.
@@ -43,20 +45,49 @@ fn escape_fts5_query(query: &str) -> String {
         .join(" ")
 }
 
+/// Words too common to help ranking; dropped by [`search_any`] so an OR query stays fast.
+const STOPWORDS: &[&str] = &[
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how", "in", "is", "it", "of",
+    "on", "or", "that", "the", "this", "to", "was", "what", "when", "where", "which", "with",
+];
+
+/// Escape a natural-language question as an FTS5 OR query over its content words.
+/// Falls back to all tokens when every token is a stopword. Empty when there are no tokens.
+fn escape_fts5_any(query: &str) -> String {
+    let tokens: Vec<String> = query
+        .split_whitespace()
+        .map(|t| t.replace(['"', '*'], ""))
+        .filter(|t| !t.is_empty())
+        .collect();
+    let kept: Vec<&String> =
+        tokens.iter().filter(|t| !STOPWORDS.contains(&t.to_lowercase().as_str())).collect();
+    let chosen: Vec<&String> = if kept.is_empty() { tokens.iter().collect() } else { kept };
+    chosen.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" OR ")
+}
+
+/// BM25 search where any content word may match (OR semantics, stopwords dropped).
+/// Suited to natural-language questions; [`search`] requires every token.
+pub fn search_any(conn: &Connection, query: &str, k: usize) -> Result<Vec<FtsResult>> {
+    search_escaped(conn, &escape_fts5_any(query), k)
+}
+
 /// Search the FTS5 index with BM25 ranking.
 ///
 /// Returns up to `k` results ordered by descending relevance.
 /// SQLite's `bm25()` returns negative scores where more negative = more
 /// relevant, so we negate to produce positive scores where higher = better.
 pub fn search(conn: &Connection, query: &str, k: usize) -> Result<Vec<FtsResult>> {
-    let escaped = escape_fts5_query(query);
+    search_escaped(conn, &escape_fts5_query(query), k)
+}
+
+fn search_escaped(conn: &Connection, escaped: &str, k: usize) -> Result<Vec<FtsResult>> {
     if escaped.is_empty() {
         return Ok(Vec::new());
     }
 
     let mut stmt = conn
         .prepare_cached(
-            "SELECT c.id, c.doc_id, c.content, -bm25(chunks_fts) AS score, c.position
+            "SELECT c.id, c.doc_id, c.content, -bm25(chunks_fts) AS score, c.position, c.metadata
              FROM chunks_fts
              JOIN chunks c ON chunks_fts.rowid = c.rowid
              WHERE chunks_fts MATCH ?1
@@ -73,6 +104,7 @@ pub fn search(conn: &Connection, query: &str, k: usize) -> Result<Vec<FtsResult>
                 content: row.get(2)?,
                 score: row.get(3)?,
                 position: row.get(4)?,
+                metadata: row.get(5)?,
             })
         })
         .map_err(|e| crate::Error::Query(format!("FTS5 search failed: {e}")))?
@@ -111,6 +143,29 @@ mod tests {
             rusqlite::params![chunk_id, doc_id, content, pos],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_escape_any_drops_stopwords_and_joins_or() {
+        assert_eq!(escape_fts5_any("How is the GPU kernel"), "\"GPU\" OR \"kernel\"");
+        assert_eq!(escape_fts5_any("what is the"), "\"what\" OR \"is\" OR \"the\"");
+        assert_eq!(escape_fts5_any("  \"*\"  "), "");
+        assert_eq!(escape_fts5_any(""), "");
+    }
+
+    #[test]
+    fn test_search_any_matches_partial_and_empty() {
+        let conn = setup();
+        insert_chunk(&conn, "d", "c1", "SIMD vector operations for tensor math", 0);
+        insert_chunk(&conn, "d", "c2", "GPU kernel dispatch", 1);
+        let r = search_any(&conn, "what is a GPU kernel on zebra", 5).unwrap();
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].chunk_id, "c2");
+        assert!(r[0].metadata.is_none());
+        assert!(search_any(&conn, "the", 5).unwrap().is_empty());
+        assert!(search_any(&conn, "", 5).unwrap().is_empty());
+        // strict search needs every token, so the same question finds nothing
+        assert!(search(&conn, "GPU kernel zebra", 5).unwrap().is_empty());
     }
 
     #[test]

@@ -105,6 +105,11 @@ pub(crate) fn run_query(
     let index_path = Path::new(index_path);
     let index_file = index_path.join("index.json");
 
+    // A directory built only by `index --sqlite --incremental` has no index.json: use FTS5.
+    if !index_file.exists() && index_path.join("index.sqlite").exists() {
+        return run_query_sqlite(query, index_path, top_k, format);
+    }
+
     if !index_file.exists() {
         anyhow::bail!("Index not found at: {}", index_file.display());
     }
@@ -140,6 +145,60 @@ pub(crate) fn run_query(
     let scores = apply_rerank(rerank, query, &scores, &persisted.chunks, top_k)?;
 
     format_query_results(query, &scores, &persisted.chunks, format)
+}
+
+/// Map FTS5 hits to display chunks (source = document id, timing from chunk metadata).
+#[cfg(feature = "sqlite")]
+pub(crate) fn fts_hits_to_chunks(
+    hits: &[aprender_rag::sqlite::fts::FtsResult],
+) -> (Vec<(usize, f32)>, Vec<PersistedChunk>) {
+    let chunks: Vec<PersistedChunk> = hits
+        .iter()
+        .map(|h| {
+            let meta: Option<serde_json::Value> = h
+                .metadata
+                .as_deref()
+                .and_then(|m| serde_json::from_str(m).ok());
+            let secs = |key: &str| {
+                meta.as_ref()
+                    .and_then(|m| m.get(key))
+                    .and_then(serde_json::Value::as_f64)
+            };
+            PersistedChunk {
+                content: h.content.clone(),
+                title: None,
+                source: Some(h.doc_id.clone()),
+                start_secs: secs("start_secs"),
+                end_secs: secs("end_secs"),
+            }
+        })
+        .collect();
+    let scores = hits
+        .iter()
+        .enumerate()
+        .map(|(i, h)| (i, h.score as f32))
+        .collect();
+    (scores, chunks)
+}
+
+/// Query an `index.sqlite` with FTS5 BM25 (no index load: p95 stays flat as the corpus grows).
+#[cfg(feature = "sqlite")]
+fn run_query_sqlite(query: &str, dir: &Path, top_k: usize, format: &str) -> Result<()> {
+    let idx = aprender_rag::SqliteIndex::open(dir.join("index.sqlite"))
+        .map_err(|e| anyhow::anyhow!("Failed to open SQLite index: {e}"))?;
+    let hits = idx
+        .search_fts_any(query, top_k)
+        .map_err(|e| anyhow::anyhow!("FTS5 search failed: {e}"))?;
+    let (scores, chunks) = fts_hits_to_chunks(&hits);
+    format_query_results(query, &scores, &chunks, format)
+}
+
+#[cfg(not(feature = "sqlite"))]
+fn run_query_sqlite(_query: &str, dir: &Path, _top_k: usize, _format: &str) -> Result<()> {
+    anyhow::bail!(
+        "{} holds only index.sqlite; build with --features sqlite to query it",
+        dir.display()
+    )
 }
 
 /// Create the correct embedder for querying based on the index's embedder_type.
@@ -495,7 +554,7 @@ pub(crate) fn format_query_results(
                 _ => String::new(),
             };
             println!("{}. [Score: {:.3}] {}{}", rank + 1, score, title, time_info);
-            let preview = &chunk.content[..80.min(chunk.content.len())];
+            let preview: String = chunk.content.chars().take(80).collect();
             println!("   {preview}...\n");
         }
     }

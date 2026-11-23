@@ -32,7 +32,7 @@ globset = "0.4"
 blake3 = "1.5"
 
 [features]
-default = []
+default = ["sqlite"]
 # Enable production semantic embeddings via fastembed (GH-1)
 embeddings = ["aprender-rag/embeddings"]
 # Enable NVIDIA Embed Nemotron 8B support (GH-3)

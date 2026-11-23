@@ -594,3 +594,88 @@ fn test_subcommand_help() {
         .success()
         .stdout(predicate::str::contains("Index documents"));
 }
+
+#[test]
+#[cfg(feature = "sqlite")]
+fn test_incremental_from_scratch_then_fts_query_has_timecodes() {
+    let tmp = TempDir::new().unwrap();
+    let docs = tmp.path().join("docs");
+    fs::create_dir(&docs).unwrap();
+    fs::write(
+        docs.join("lec.srt"),
+        "1\n00:00:01,000 --> 00:00:05,000\nThe kubernetes scheduler places pods on nodes.\n\n\
+         2\n00:00:06,000 --> 00:00:09,000\nNext we cover persistent volumes.\n",
+    )
+    .unwrap();
+    fs::write(docs.join("note.txt"), "Plain text about zebra crossings.").unwrap();
+    let index = tmp.path().join("idx");
+    let run_index = || {
+        cli()
+            .args(["index", "--path", docs.to_str().unwrap(), "--output"])
+            .arg(&index)
+            .args(["--sqlite", "--incremental", "--chunk-strategy", "timestamp"])
+            .assert()
+            .success()
+    };
+    run_index();
+    assert!(index.join("index.sqlite").exists());
+    assert!(!index.join("index.json").exists());
+    // second run: nothing changed
+    run_index().stdout(predicate::str::contains("up to date"));
+
+    let out = cli()
+        .args(["query", "what does the kubernetes scheduler do", "--index"])
+        .arg(&index)
+        .args(["-f", "json", "-t", "3"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(v[0]["source"].as_str().unwrap().ends_with("lec.srt"));
+    assert!(v[0]["start_secs"].as_f64().is_some());
+    assert!(v[0]["end_secs"].as_f64().is_some());
+
+    // text format, untimed doc, no-hit query
+    cli()
+        .args(["query", "zebra", "--index"])
+        .arg(&index)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("note.txt").not())
+        .stdout(predicate::str::contains("Plain text"));
+    cli()
+        .args(["query", "qqqzzz", "--index"])
+        .arg(&index)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Results (0)"));
+}
+
+#[test]
+#[cfg(feature = "sqlite")]
+fn test_incremental_second_root_keeps_first_root_docs() {
+    let tmp = TempDir::new().unwrap();
+    let (a, b) = (tmp.path().join("a"), tmp.path().join("b"));
+    fs::create_dir(&a).unwrap();
+    fs::create_dir(&b).unwrap();
+    fs::write(a.join("one.txt"), "alpha content about narwhals").unwrap();
+    fs::write(b.join("two.txt"), "beta content about walruses").unwrap();
+    let index = tmp.path().join("idx");
+    for root in [&a, &b] {
+        cli()
+            .args(["index", "--path", root.to_str().unwrap(), "--output"])
+            .arg(&index)
+            .args(["--sqlite", "--incremental"])
+            .assert()
+            .success();
+    }
+    for (q, f) in [("narwhals", "one.txt"), ("walruses", "two.txt")] {
+        cli()
+            .args(["query", q, "--index"])
+            .arg(&index)
+            .args(["-f", "json"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(f));
+    }
+}

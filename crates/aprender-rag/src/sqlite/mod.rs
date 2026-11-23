@@ -110,6 +110,23 @@ impl SqliteIndex {
         chunks: &[(String, String)],
         fingerprint: Option<(&str, &[u8; 32])>,
     ) -> Result<()> {
+        self.insert_document_with_meta(doc_id, title, source, content, chunks, &[], fingerprint)
+    }
+
+    /// Like [`insert_document`](Self::insert_document), with a per-chunk metadata
+    /// string (e.g. JSON `{"start_secs":..,"end_secs":..}`) stored in `chunks.metadata`.
+    /// `metas[i]` belongs to `chunks[i]`; a short or empty slice leaves the rest NULL.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_document_with_meta(
+        &self,
+        doc_id: &str,
+        title: Option<&str>,
+        source: Option<&str>,
+        content: &str,
+        chunks: &[(String, String)],
+        metas: &[Option<String>],
+        fingerprint: Option<(&str, &[u8; 32])>,
+    ) -> Result<()> {
         // Contract: configuration-v1.yaml precondition (pv codegen)
         contract_pre_configuration!(doc_id.as_bytes());
 
@@ -134,12 +151,13 @@ impl SqliteIndex {
         {
             let mut stmt = tx
                 .prepare_cached(
-                    "INSERT OR REPLACE INTO chunks (id, doc_id, content, position) VALUES (?1, ?2, ?3, ?4)",
+                    "INSERT OR REPLACE INTO chunks (id, doc_id, content, position, metadata) VALUES (?1, ?2, ?3, ?4, ?5)",
                 )
                 .map_err(|e| crate::Error::Query(format!("Failed to prepare chunk insert: {e}")))?;
 
             for (i, (chunk_id, chunk_content)) in chunks.iter().enumerate() {
-                stmt.execute(rusqlite::params![chunk_id, doc_id, chunk_content, i as i64])
+                let meta = metas.get(i).and_then(|m| m.as_deref());
+                stmt.execute(rusqlite::params![chunk_id, doc_id, chunk_content, i as i64, meta])
                     .map_err(|e| crate::Error::Query(format!("Failed to insert chunk: {e}")))?;
             }
         }
@@ -228,6 +246,12 @@ impl SqliteIndex {
     pub fn search_fts(&self, query: &str, k: usize) -> Result<Vec<fts::FtsResult>> {
         let conn = self.conn.lock().map_err(|e| lock_err(&e))?;
         fts::search(&conn, query, k)
+    }
+
+    /// FTS5 BM25 search with OR semantics over content words (natural-language questions).
+    pub fn search_fts_any(&self, query: &str, k: usize) -> Result<Vec<fts::FtsResult>> {
+        let conn = self.conn.lock().map_err(|e| lock_err(&e))?;
+        fts::search_any(&conn, query, k)
     }
 
     /// Get chunk content by ID.
@@ -498,6 +522,21 @@ mod tests {
     }
 
     // --- SqliteIndex tests ---
+
+    #[test]
+    fn test_insert_with_meta_roundtrips_through_search_any() {
+        let idx = SqliteIndex::open_in_memory().unwrap();
+        let chunks = vec![
+            ("c0".to_string(), "alpha beta gamma".to_string()),
+            ("c1".to_string(), "delta epsilon".to_string()),
+        ];
+        let metas = vec![Some(r#"{"start_secs":1.5,"end_secs":9.0}"#.to_string())];
+        idx.insert_document_with_meta("d", None, Some("d"), "x", &chunks, &metas, None).unwrap();
+        let hit = idx.search_fts_any("what is alpha", 3).unwrap();
+        assert_eq!(hit[0].metadata.as_deref(), Some(r#"{"start_secs":1.5,"end_secs":9.0}"#));
+        let hit = idx.search_fts_any("epsilon", 3).unwrap();
+        assert!(hit[0].metadata.is_none());
+    }
 
     #[test]
     fn test_index_roundtrip() {

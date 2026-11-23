@@ -1668,6 +1668,50 @@ mod tests {
     }
 
     #[test]
+    fn test_chunk_timing_meta_and_fts_mapping() {
+        let mk = |s, e| PersistedChunk {
+            content: "c".into(),
+            title: None,
+            source: None,
+            start_secs: s,
+            end_secs: e,
+        };
+        assert_eq!(chunk_timing_meta(&mk(None, None)), None);
+        let full = chunk_timing_meta(&mk(Some(1.5), Some(9.0))).unwrap();
+        assert_eq!(full, r#"{"start_secs":1.5,"end_secs":9}"#);
+        let part = chunk_timing_meta(&mk(Some(2.0), None)).unwrap();
+        assert!(part.contains("null"));
+        let hit = |m: Option<String>| aprender_rag::sqlite::fts::FtsResult {
+            chunk_id: "i".into(),
+            doc_id: "d".into(),
+            content: "t".into(),
+            score: 2.0,
+            position: 0,
+            metadata: m,
+        };
+        let (scores, chunks) =
+            fts_hits_to_chunks(&[hit(Some(full)), hit(Some("not json".into())), hit(None)]);
+        assert_eq!(scores.len(), 3);
+        assert_eq!(chunks[0].start_secs, Some(1.5));
+        assert_eq!(chunks[0].end_secs, Some(9.0));
+        assert_eq!(chunks[0].source.as_deref(), Some("d"));
+        assert!(chunks[1].start_secs.is_none() && chunks[2].end_secs.is_none());
+    }
+
+    #[test]
+    fn test_retain_under_root_ignores_other_roots() {
+        let del = vec![
+            "/a/x.srt".to_string(),
+            "/ab/y.srt".to_string(),
+            "/b/z.srt".to_string(),
+        ];
+        assert_eq!(
+            retain_under_root(del, Path::new("/a")),
+            vec!["/a/x.srt".to_string()]
+        );
+    }
+
+    #[test]
     fn test_diff_fingerprints_detects_deleted() {
         let current: Vec<(PathBuf, [u8; 32])> = vec![];
         let mut stored: HashMap<String, Vec<u8>> = HashMap::new();
