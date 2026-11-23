@@ -318,7 +318,7 @@ jobs:
       - name: install the toolchain rust-toolchain.toml pins
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
       # Noah 15:09Z (#5955), Opus-A on #5964: the sections that exist ONLY for a pull request (guard-tree with its
-      # R-2 and 11.1 steps, pr-review-shadow, pr-review-sign) ran inside x86-main, which a PR no longer runs.
+      # R-2 and 11.1 steps, pr-review-sign) ran inside x86-main, which a PR no longer runs.
       # They run here, on a PR only, so arming still sees guard-tree and the receipt signed.
       - name: PR-only sections (guard-tree, pr-review-sign)
         run: >-
@@ -477,7 +477,7 @@ jobs:
               --results "$RUNNER_TEMP/fat/results.json" \
               --background-until 'determinism[X64]'
           elif [ "$EVT" = pull_request ]; then
-            # pr-light already runs pr-review-shadow and pr-review-sign on a PR and uploads pr-review-shadow-sample; running them here
+            # pr-light already runs pr-review-sign on a PR (pr-review-shadow is LAB only, #5996); running them here
             # too would race the PR comment and make the second upload-artifact of that name fail with 409 (lane review of #7273).
             python3 scripts/ci/fat_driver.py run \
               --sections 'sov.*,guard-tree,guard-cargo-shard?*,guard-cargo,vendored-schemas,determinism[X64]' \
