@@ -13,7 +13,7 @@ STATE="${MQ_FEEDER_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/mq-feeder}"
 INBOX="${MQ_FEEDER_INBOX:-/mnt/nvme-raid0/cop-inbox/inbox.md}"
 ARM="${MQ_FEEDER_ARM:-$(dirname "$0")/arm_pr_automerge.sh}"
 # guard-tree is a section, not a check run on PR heads (arm_pr_automerge.sh refused every PR as "absent"). A PR no longer runs
-# x86-main (Noah 15:09Z, #5955): pr-light runs guard-tree and the other PR-only sections, so judge pr-light
+# x86-main (Noah 15:09Z, #5955; x86-main itself now runs on a PR too, ci.yml parity): pr-light runs guard-tree and the other PR-only sections, so judge pr-light
 export GUARD_CHECK_NAME="${GUARD_CHECK_NAME:-pr-light}"
 TRIES="${MQ_FEEDER_TRIES:-3}"
 dry=0
@@ -553,7 +553,7 @@ GH2EOF
   rm -rf "${d2:?}"
   # PMAT-5843: the required check must exist on a PR head. required set ∩ merge_group-only jobs = ∅, read from the real ci.yml.
   wf="$(dirname "$0")/../.github/workflows/ci.yml"
-  eq 'static: the parser finds the known merge-queue-only job x86-main' "$(mq_only_jobs "$wf" | grep -cxF x86-main)" 1
+  eq 'static: the parser finds the known merge-queue-only job mg-reuse (x86-main runs on PRs since the parity change)' "$(mq_only_jobs "$wf" | grep -cxF mg-reuse)" 1
   eq 'static: the parser does not call pr-light merge-queue-only' "$(mq_only_jobs "$wf" | grep -cxF pr-light)" 0
   eq 'static: the feeder requires a job that exists in ci.yml' "$(ci_jobs all "$wf" | grep -cxF -e "$GUARD_CHECK_NAME")" 1
   eq 'static: the feeder required set is disjoint from the merge-queue-only jobs' "$(required_is_mq_only "$GUARD_CHECK_NAME" "$wf")" ''

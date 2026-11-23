@@ -224,7 +224,7 @@ jobs:
     # both pr-x64 runners offline, pr-light queues until it is unset. pull_request only, so no merge_group or release path reads it.
     runs-on: ${{ vars.PR_LIGHT_POOL == 'pr-x64' && fromJSON('["self-hosted","Linux","X64","pr-x64"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 60
-    # The PR-only sections (guard-tree, pr-review-shadow, pr-review-sign) carry their own permissions blocks; one job token covers all.
+    # The PR-only sections (guard-tree, pr-review-sign) carry their own permissions blocks; one job token covers all.
     permissions: write-all
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -318,12 +318,12 @@ jobs:
       - name: install the toolchain rust-toolchain.toml pins
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
       # Noah 15:09Z (#5955), Opus-A on #5964: the sections that exist ONLY for a pull request (guard-tree with its
-      # R-2 and 11.1 steps, pr-review-shadow, pr-review-sign) ran inside x86-main, which a PR no longer runs.
+      # R-2 and 11.1 steps, pr-review-sign) ran inside x86-main, which a PR no longer runs.
       # They run here, on a PR only, so arming still sees guard-tree and the receipt signed.
-      - name: PR-only sections (guard-tree, pr-review-shadow, pr-review-sign)
+      - name: PR-only sections (guard-tree, pr-review-sign)
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'guard-tree,pr-review-shadow,pr-review-sign'
+          --sections 'guard-tree,pr-review-sign'
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'guard-tree'
       - name: PR-only sections (wait for every one to finish)
@@ -342,9 +342,9 @@ jobs:
 
   x86-main:
     needs: [mg-reuse]
-    # Noah 15:09Z (#5955): heavy jobs run only in the merge queue and on push; a PR runs pr-light. `!= 'pull_request'` is
-    # fail-closed: an empty or unknown event name owes the heavy job.
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+    # One check set per repo (decision: #7272 issuecomment-7007305270): every job that runs on a push to main also runs on a pull_request,
+    # on the same runner pool, matrix and features. A draft owes nothing until ready_for_review.
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true }}
     # every event, merge_group included, takes the certified clean-room seats: [self-hosted, Linux, X64, clean-room]
     runs-on: [self-hosted, Linux, X64, clean-room]
     # merge_group: 2 x p95 (8.9 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull (the Set-up-runner pull has measured 20 min, sections.yml:94); the 240 stays for push.
@@ -473,12 +473,19 @@ jobs:
         run: |
           if [ "$EVT" = merge_group ]; then
             python3 scripts/ci/fat_driver.py run \
-              --sections 'sov.*,pr-review-shadow,pr-review-sign,determinism[X64]' \
+              --sections 'sov.*,pr-review-sign,determinism[X64]' \
+              --results "$RUNNER_TEMP/fat/results.json" \
+              --background-until 'determinism[X64]'
+          elif [ "$EVT" = pull_request ]; then
+            # pr-light already runs pr-review-sign on a PR (pr-review-shadow is LAB only, #5996); running them here
+            # too would race the PR comment and make the second upload-artifact of that name fail with 409 (lane review of #7273).
+            python3 scripts/ci/fat_driver.py run \
+              --sections 'sov.*,guard-tree,guard-cargo-shard?*,guard-cargo,vendored-schemas,determinism[X64]' \
               --results "$RUNNER_TEMP/fat/results.json" \
               --background-until 'determinism[X64]'
           else
             python3 scripts/ci/fat_driver.py run \
-              --sections 'sov.*,guard-tree,guard-cargo-shard?*,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]' \
+              --sections 'sov.*,guard-tree,guard-cargo-shard?*,guard-cargo,vendored-schemas,pr-review-sign,determinism[X64]' \
               --results "$RUNNER_TEMP/fat/results.json" \
               --background-until 'determinism[X64]'
           fi
@@ -612,7 +619,7 @@ jobs:
 
   x86-main-advisories:
     needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 30
     permissions:
@@ -689,12 +696,10 @@ jobs:
 
   determinism:
     needs: [mg-reuse, x86-main]
-    # Operator 2026-10-17 (cop window), verbatim: "we are not gaiting on night this is a boondoggle,
-    # only gating on tags/release"; the PR gate is the quick tier. The ARM64 raster + compare leg ran on
-    # PR heads on the same gx10 pool as the queue head (a PR-head determinism queued ahead of the MQ
-    # head's), so it runs on merge_group / push / tag only. x86-main stays on PR heads. The gate skips
-    # DET:determinism-compare on pull_request only (loop below; scripts/check_determinism_wait.sh W10).
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}
+    # One check set per repo (decision: #7272 issuecomment-7007305270): determinism runs on a pull_request exactly
+    # as on a push to main, so a red determinism-compare is found before the merge. This reverses the 2026-10-17 rule that
+    # kept it off PR heads; the gate reads DET:determinism-compare on every event (scripts/check_determinism_wait.sh W10).
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
     # T42: start only once x86-main has concluded. The ARM64 raster takes about a minute; before
@@ -787,7 +792,7 @@ jobs:
   workspace-test-shard:
     # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them
     needs: [mg-reuse-wt]
-    if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}
     # same lane as x86-main: the plain clean-room seats on every event
     runs-on: [self-hosted, Linux, X64, clean-room]
     # pull_request/push: >= section 150 (sections.yml:112) + the untimed ~20-min image pull on the full-tier fallback. merge_group is DELIBERATELY
@@ -872,11 +877,12 @@ jobs:
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "draft PR: the shards are not owed until ready_for_review"; exit 0; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
-          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
-          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          # A pull_request owes pr-light AND every heavy job that runs on a push to main (one check set per repo,
+          # decision: #7272 issuecomment-7007305270). pr-light passing is never a pass by itself: the block falls through to the
+          # heavy-job checks below on every event, an empty one included (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
-            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+            echo "pull_request: pr-light passed; the heavy jobs are checked below, exactly as on a push"
           fi
           # --- PR-LIGHT-VERDICT-END ---
           echo "workspace-test-shard matrix result: $SHARD_RESULT (reuse key wt='${WT_REUSE:-}')"
@@ -888,6 +894,9 @@ jobs:
             exit 0
           fi
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
+      # #7273: the checkout, the artifact download and the cross-shard Σ below stay off a pull_request (the PR spot pool may carry no
+      # checkout or artifact step: falsification_pr_spot_labels.rs). A PR therefore proves the shards green and pr-light; the
+      # cross-shard Σ-executed runs on the queue entry and on push, and scripts/ci_mg_reuse.sh never cites a PR run's workspace-test (wt=0).
       - uses: actions/checkout@v7
         if: ${{ github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
       - uses: actions/download-artifact@v4
@@ -957,11 +966,12 @@ jobs:
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "ci / gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
-          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
-          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          # A pull_request owes pr-light AND every heavy job that runs on a push to main (one check set per repo,
+          # decision: #7272 issuecomment-7007305270). pr-light passing is never a pass by itself: the block falls through to the
+          # heavy-job checks below on every event, an empty one included (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
-            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+            echo "pull_request: pr-light passed; the heavy jobs are checked below, exactly as on a push"
           fi
           # --- PR-LIGHT-VERDICT-END ---
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
@@ -1021,11 +1031,12 @@ jobs:
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
           [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
-          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
-          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          # A pull_request owes pr-light AND every heavy job that runs on a push to main (one check set per repo,
+          # decision: #7272 issuecomment-7007305270). pr-light passing is never a pass by itself: the block falls through to the
+          # heavy-job checks below on every event, an empty one included (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
-            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+            echo "pull_request: pr-light passed; the heavy jobs are checked below, exactly as on a push"
           fi
           # --- PR-LIGHT-VERDICT-END ---
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
@@ -1050,8 +1061,6 @@ jobs:
             [ "$EVT" != merge_group ] || [ "${GRDR:-}" = success ] || { echo "guards job: ${GRDR:-missing}"; exit 1; }
             for pair in "$G:guard-tree" "$G:guard-cargo" X86:sov.gate DET:determinism-compare; do
               job="${pair%%:*}" sec="${pair#*:}"
-              # determinism does not run on a PR head (job-level if above): not a failure there.
-              [ "$job:$EVT" = "DET:pull_request" ] && continue
               r=$(res "${!job}" "$sec")
               if [ "$r" != success ]; then
                 echo "$sec failed: $r"
