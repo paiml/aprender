@@ -113,7 +113,7 @@ pr_path() { # FILE -> 0 when the workflow can run on the PR / merge-queue path
     local on
     on="$(awk '/^("on"|on|true):/{p=1;print;next} p&&/^[^[:space:]#]/{p=0} p' "$1" | grep -v '^[[:space:]]*#' || true)"
     [ -z "$on" ] && return 0
-    printf '%s\n' "$on" | grep -qE 'pull_request|merge_group|workflow_call|workflow_run'
+    printf '%s\n' "$on" | grep -qE 'pull_request|push|merge_group|workflow_call|workflow_run'
 }
 
 check() { # FILE-or-DIR-anchor -> ci.yml (required) plus PR-path siblings
@@ -207,6 +207,9 @@ self_test() {
     pw merge_group "python3 scripts/ci/fat_driver.py run --sec''tions 'pr-review-shadow'"
     if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: a new merge_group workflow with a hidden option stayed green"; fails=1
     elif printf '%s\n' "$got" | grep -q '(new.yml).*\[R1-'; then echo "ok    red   MUTANT [R1]: new merge_group workflow hides the option"; else echo "FAIL  wrong reason for new.yml: $got"; fails=1; fi
+    pw push "python3 scripts/ci/fat_driver.py run --sections 'pr-review-shadow'"
+    if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: a new on:push workflow with the shadow stayed green"; fails=1
+    elif printf '%s\n' "$got" | grep -q '(new.yml).*\[R5-'; then echo "ok    red   MUTANT [R5]: new push workflow names the shadow"; else echo "FAIL  wrong reason for new.yml: $got"; fails=1; fi
     pw workflow_dispatch "python3 scripts/ci/fat_driver.py run --sections 'pr-review-shadow'"
     if got="$(check "$td/w/ci.yml")"; then echo "ok    green control: a workflow_dispatch-only LAB workflow may carry the shadow"; else echo "FAIL  LAB workflow flagged: $got"; fails=1; fi
     return "$fails"
