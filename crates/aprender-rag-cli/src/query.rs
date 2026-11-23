@@ -181,14 +181,100 @@ pub(crate) fn fts_hits_to_chunks(
     (scores, chunks)
 }
 
+/// Fraction of `terms` that occur in `lower` (already lowercased); 0 when there are no terms.
+#[cfg(feature = "sqlite")]
+pub(crate) fn coverage(lower: &str, terms: &[String]) -> f64 {
+    if terms.is_empty() {
+        return 0.0;
+    }
+    terms.iter().filter(|t| lower.contains(t.as_str())).count() as f64 / terms.len() as f64
+}
+
+/// Re-rank chunk hits at document level: a document scores its best chunk plus a quarter of its
+/// next two, times (1 + 0.5 * fraction of query words found in its path). Returns the best chunk of
+/// each of the top `k` documents. Targets "find the lecture/file" questions where the answer is a file.
+#[cfg(feature = "sqlite")]
+pub(crate) fn rank_docs(
+    hits: &[aprender_rag::sqlite::fts::FtsResult],
+    query: &str,
+    k: usize,
+) -> Vec<aprender_rag::sqlite::fts::FtsResult> {
+    use aprender_rag::sqlite::fts::is_stopword;
+    let words: Vec<String> = query
+        .split_whitespace()
+        .filter(|w| !is_stopword(w))
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
+        .filter(|w| w.len() >= 4)
+        .collect();
+    let terms: Vec<String> = query
+        .split_whitespace()
+        .filter(|w| !is_stopword(w))
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
+        .filter(|w| w.len() >= 3)
+        .collect();
+    let hits: Vec<aprender_rag::sqlite::fts::FtsResult> = hits
+        .iter()
+        .map(|h| {
+            let lower = h.content.to_lowercase();
+            let cov = coverage(&lower, &terms);
+            aprender_rag::sqlite::fts::FtsResult {
+                score: h.score * (1.0 + 6.0 * cov * cov),
+                ..h.clone()
+            }
+        })
+        .collect();
+    let hits = hits.as_slice();
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, h) in hits.iter().enumerate() {
+        let g = groups.entry(h.doc_id.clone()).or_default();
+        if g.is_empty() {
+            order.push(h.doc_id.clone());
+        }
+        g.push(i);
+    }
+    let mut ranked: Vec<(f64, usize)> = order
+        .iter()
+        .map(|d| {
+            let idx = &groups[d];
+            let best = hits[idx[0]].score;
+            let rest: f64 = idx.iter().skip(1).take(2).map(|&i| hits[i].score).sum();
+            let path = d.to_lowercase();
+            let found = words.iter().filter(|w| path.contains(w.as_str())).count();
+            let frac = if words.is_empty() {
+                0.0
+            } else {
+                found as f64 / words.len() as f64
+            };
+            ((best + 0.25 * rest) * (1.0 + 0.5 * frac), idx[0])
+        })
+        .collect();
+    ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+    ranked
+        .into_iter()
+        .take(k)
+        .map(|(s, i)| aprender_rag::sqlite::fts::FtsResult {
+            score: s,
+            ..hits[i].clone()
+        })
+        .collect()
+}
+
 /// Query an `index.sqlite` with FTS5 BM25 (no index load: p95 stays flat as the corpus grows).
 #[cfg(feature = "sqlite")]
 fn run_query_sqlite(query: &str, dir: &Path, top_k: usize, format: &str) -> Result<()> {
     let idx = aprender_rag::SqliteIndex::open(dir.join("index.sqlite"))
         .map_err(|e| anyhow::anyhow!("Failed to open SQLite index: {e}"))?;
     let hits = idx
-        .search_fts_any(query, top_k)
+        .search_fts_any(query, top_k.max(1) * 80)
         .map_err(|e| anyhow::anyhow!("FTS5 search failed: {e}"))?;
+    let hits = rank_docs(&hits, query, top_k);
     let (scores, chunks) = fts_hits_to_chunks(&hits);
     format_query_results(query, &scores, &chunks, format)
 }

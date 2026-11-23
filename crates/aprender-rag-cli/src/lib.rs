@@ -1699,6 +1699,35 @@ mod tests {
     }
 
     #[test]
+    fn test_rank_docs_prefers_coverage_and_dedupes_docs() {
+        let h = |doc: &str, content: &str, score: f64| aprender_rag::sqlite::fts::FtsResult {
+            chunk_id: format!("{doc}-{score}"),
+            doc_id: doc.into(),
+            content: content.into(),
+            score,
+            position: 0,
+            metadata: None,
+        };
+        assert_eq!(crate::query::coverage("abc", &[]), 0.0);
+        assert_eq!(
+            crate::query::coverage("rust cloud", &["rust".into(), "wasm".into()]),
+            0.5
+        );
+        let hits = vec![
+            h("/a/noise.md", "cloud cloud cloud", 5.0),
+            h("/a/noise.md", "cloud again", 4.0),
+            h("/b/rust-gcp.json", "rust google cloud run", 4.0),
+        ];
+        let out = crate::query::rank_docs(&hits, "rust google cloud?", 5);
+        assert_eq!(out.len(), 2, "one hit per document");
+        assert_eq!(out[0].doc_id, "/b/rust-gcp.json");
+        assert_eq!(
+            crate::query::rank_docs(&hits, "rust google cloud", 1).len(),
+            1
+        );
+    }
+
+    #[test]
     fn test_retain_under_root_ignores_other_roots() {
         let del = vec![
             "/a/x.srt".to_string(),

@@ -47,9 +47,66 @@ fn escape_fts5_query(query: &str) -> String {
 
 /// Words too common to help ranking; dropped by [`search_any`] so an OR query stays fast.
 const STOPWORDS: &[&str] = &[
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how", "in", "is", "it", "of",
-    "on", "or", "that", "the", "this", "to", "was", "what", "when", "where", "which", "with",
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "how",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "was",
+    "what",
+    "when",
+    "where",
+    "which",
+    "with",
+    // question scaffolding that says nothing about the topic
+    "about",
+    "can",
+    "cover",
+    "covers",
+    "course",
+    "demo",
+    "do",
+    "does",
+    "episode",
+    "explain",
+    "explains",
+    "find",
+    "instead",
+    "into",
+    "lecture",
+    "not",
+    "show",
+    "shows",
+    "teach",
+    "teaches",
+    "walkthrough",
+    "who",
+    "why",
+    "would",
+    "you",
 ];
+
+/// True when `token` (ignoring surrounding punctuation, case) is a stopword.
+pub fn is_stopword(token: &str) -> bool {
+    let t = token.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+    STOPWORDS.contains(&t.as_str())
+}
 
 /// Escape a natural-language question as an FTS5 OR query over its content words.
 /// Falls back to all tokens when every token is a stopword. Empty when there are no tokens.
@@ -59,8 +116,7 @@ fn escape_fts5_any(query: &str) -> String {
         .map(|t| t.replace(['"', '*'], ""))
         .filter(|t| !t.is_empty())
         .collect();
-    let kept: Vec<&String> =
-        tokens.iter().filter(|t| !STOPWORDS.contains(&t.to_lowercase().as_str())).collect();
+    let kept: Vec<&String> = tokens.iter().filter(|t| !is_stopword(t)).collect();
     let chosen: Vec<&String> = if kept.is_empty() { tokens.iter().collect() } else { kept };
     chosen.iter().map(|t| format!("\"{t}\"")).collect::<Vec<_>>().join(" OR ")
 }
@@ -166,6 +222,14 @@ mod tests {
         assert!(search_any(&conn, "", 5).unwrap().is_empty());
         // strict search needs every token, so the same question finds nothing
         assert!(search(&conn, "GPU kernel zebra", 5).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_is_stopword_ignores_punctuation_and_case() {
+        assert!(is_stopword("Lecture,"));
+        assert!(is_stopword("(THE)"));
+        assert!(!is_stopword("kubernetes"));
+        assert!(!is_stopword("..."));
     }
 
     #[test]
