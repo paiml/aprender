@@ -1,27 +1,66 @@
 #!/usr/bin/env bash
 # ONE-GATE parity falsifier (APR-GREEN-001): diffs push-to-main jobs vs PR-required set.
-# Usage: check_one_gate_parity.sh [--workflows DIR] [--allow FILE] | --self-test | --help
+# Usage: check_one_gate_parity.sh [--workflows DIR] [--allow FILE] [--live] [--repo OWNER/REPO] [--rulesets-json FILE] | --self-test | --help
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 wf_dir="$root/.github/workflows"; allow="$root/.github/one-gate-allow.txt"; mode=check
+live=0; repo="${GITHUB_REPOSITORY:-paiml/aprender}"; rulesets_json=""
 SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT
+usage() { echo "usage: $0 [--workflows DIR] [--allow FILE] [--live] [--repo OWNER/REPO] [--rulesets-json FILE] | --self-test"; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    --workflows) [ $# -ge 2 ] || { echo "usage: $0 [--workflows DIR] [--allow FILE] | --self-test" >&2; exit 2; }; wf_dir=$2; shift 2 ;;
-    --allow) [ $# -ge 2 ] || { echo "usage: $0 [--workflows DIR] [--allow FILE] | --self-test" >&2; exit 2; }; allow=$2; shift 2 ;;
+    --workflows) [ $# -ge 2 ] || { usage >&2; exit 2; }; wf_dir=$2; shift 2 ;;
+    --allow) [ $# -ge 2 ] || { usage >&2; exit 2; }; allow=$2; shift 2 ;;
+    --repo) [ $# -ge 2 ] || { usage >&2; exit 2; }; repo=$2; shift 2 ;;
+    --rulesets-json) [ $# -ge 2 ] || { usage >&2; exit 2; }; rulesets_json=$2; live=1; shift 2 ;;
+    --live) live=1; shift ;;
     --self-test) mode=self-test; shift ;;
-    -h|--help) echo "usage: $0 [--workflows DIR] [--allow FILE] | --self-test"; exit 0 ;;
-    *) echo "usage: $0 [--workflows DIR] [--allow FILE] | --self-test" >&2; exit 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
   esac
 done
 
+live_has_merge_queue() {
+  local json_file=$1 raw ids id item items=()
+  command -v jq >/dev/null 2>&1 || { echo "one-gate: --live requires jq" >&2; return 2; }
+  if [ -n "$json_file" ]; then
+    [ -r "$json_file" ] || { echo "one-gate: unreadable rulesets json $json_file" >&2; return 2; }
+    raw=$(cat "$json_file") || return 2
+  else
+    command -v gh >/dev/null 2>&1 || { echo "one-gate: --live requires gh" >&2; return 2; }
+    raw=$(gh api "repos/${repo}/rulesets" 2>/dev/null) || { echo "one-gate: gh api repos/${repo}/rulesets failed" >&2; return 2; }
+    ids=$(jq -r '.[] | select(.enforcement == "active" and .target == "branch") | .id' <<< "$raw" 2>/dev/null) || { echo "one-gate: invalid rulesets list json" >&2; return 2; }
+    for id in $ids; do
+      item=$(gh api "repos/${repo}/rulesets/${id}" 2>/dev/null) || { echo "one-gate: gh api repos/${repo}/rulesets/${id} failed" >&2; return 2; }
+      items+=("$item")
+    done
+    if [ "${#items[@]}" -eq 0 ]; then raw="[]"; else raw=$(printf '%s\n' "${items[@]}" | jq -s '.' 2>/dev/null) || return 2; fi
+  fi
+  local rc=0
+  jq -e '
+    if type == "array" then . else [.] end | any(
+      .enforcement == "active"
+      and .target == "branch"
+      and ((.conditions.ref_name.include // []) | any(. == "refs/heads/main" or . == "~DEFAULT_BRANCH" or . == "refs/heads/*" or . == "refs/heads/**" or . == "**"))
+      and (((.conditions.ref_name.exclude // []) | any(. == "refs/heads/main" or . == "~DEFAULT_BRANCH")) | not)
+      and ((.rules // []) | any(.type == "merge_queue"))
+    )
+  ' <<< "$raw" >/dev/null 2>&1 || rc=$?
+  case "$rc" in
+    0) echo 1 ;;
+    1) echo 0 ;;
+    *) echo "one-gate: invalid rulesets json" >&2; return 2 ;;
+  esac
+}
+
 run_check() {
-  local dir=$1 al=$2 files=() f
+  local dir=$1 al=$2 has_mq=0 files=() f
   [ -d "$dir" ] || { echo "one-gate: no workflows dir $dir" >&2; return 2; }
   [ -r "$al" ] || { echo "one-gate: unreadable allow-list $al" >&2; return 2; }
   for f in "$dir"/*.yml "$dir"/*.yaml; do [ -f "$f" ] && files+=("$f"); done
   [ "${#files[@]}" -gt 0 ] || { echo "one-gate: no workflows in $dir (fail closed)" >&2; return 2; }
-  awk -f <(cat <<'AWK'
+  if [ "$live" -eq 1 ]; then has_mq=$(live_has_merge_queue "$rulesets_json") || return 2; fi
+  awk -v live="$live" -v has_mq="$has_mq" -v alfile="$al" -f <(cat <<'AWK'
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 function unq(s) { s = trim(s); if ((s ~ /^".*"$/) || (s ~ /^\047.*\047$/)) s = substr(s, 2, length(s)-2); return s }
 function strip_c(s,    i, c, q, out) {
@@ -109,12 +148,12 @@ function pPrim(   t, n, v, a, b, u0, ua, ub) {
 function ev_expr(e, ev,    v) { EV = ev; bad = 0; unk = 0; tok(e); tp = 1; if (bad) return "UNPARSEABLE"; v = pOr(); if (bad || tp <= nt) return "UNPARSEABLE"; gsub(/ /, "", v); return v }
 function resolve(raw, ev,    e) { raw = unq(raw); if (match(raw, /^\$\{\{.*\}\}$/)) { e = substr(raw, 4, length(raw)-5); return ev_expr(e, ev) }; gsub(/ /, "", raw); return raw }
 function ifval(raw, ev,    e) { raw = trim(raw); if (raw == "") return 1; if (match(raw, /^\$\{\{.*\}\}$/)) raw = substr(raw, 4, length(raw)-5); e = ev_expr(raw, ev); if (e == "UNPARSEABLE") { unparse[wf_ "|" job_] = raw; return 1 }; return truthy(e) }
-function viol(kind, w, j, d, msg,    key) { gsub(/ /, "_", d); key = kind "|" w "|" j "|" d; if (key in allowed) { used[key] = 1; return }; printf "RED %s: %s %s: %s  [allow %s %s %s %s]\n", kind, w, (j == "-" ? "" : j), msg, kind, w, j, d; bad_n++ }
-FNR == 1 { fno++; top = ""; ontrig = ""; job = ""; jsec = ""; sidx = 0; in_mat = 0; in_br = 0; in_paths = 0; wf = FILENAME; sub(/.*\//, "", wf) }
-fno == 1 {
+function viol(kind, w, j, d, msg,    key) { gsub(/ /, "_", d); key = kind "|" w "|" j "|" d; if (kind != "live-mq-off" && (key in allowed)) { used[key] = 1; return }; if (kind == "live-mq-off") printf "RED %s: %s %s: %s  [enable merge_queue ruleset]\n", kind, w, (j == "-" ? "" : j), msg; else printf "RED %s: %s %s: %s  [allow %s %s %s %s]\n", kind, w, (j == "-" ? "" : j), msg, kind, w, j, d; bad_n++ }
+FNR == 1 { top = ""; ontrig = ""; job = ""; jsec = ""; sidx = 0; in_mat = 0; in_br = 0; in_paths = 0; wf = FILENAME; sub(/.*\//, "", wf) }
+FILENAME == alfile {
   if ($0 ~ /^[ \t]*(#|$)/) next; na = split($0, a, " ")
   if (a[1] == "required") { req[a[2] "|" a[3]] = 1; next }
-  if (a[1] == "allow") { key = a[2] "|" a[3] "|" a[4] "|" a[5]; if (index($0, " -- ") == 0 || a[6] != "--" || na < 7) { printf "RED allow-list missing reason: %s\n", $0; bad_n++ }; allowed[key] = 1; next }
+  if (a[1] == "allow") { if (a[2] == "live-mq-off") { printf "RED allow-list cannot exempt live-mq-off: %s\n", $0; bad_n++; next }; key = a[2] "|" a[3] "|" a[4] "|" a[5]; if (index($0, " -- ") == 0 || a[6] != "--" || na < 7) { printf "RED allow-list missing reason: %s\n", $0; bad_n++ }; allowed[key] = 1; next }
   printf "RED allow-list unknown line: %s\n", $0; bad_n++; next
 }
 { raw = $0; line = strip_c($0); if (line == "") next }
@@ -153,16 +192,27 @@ END {
   for (rk in req) { stack[++sn] = rk; inclos[rk] = 1 }
   while (sn > 0) { cur = stack[sn--]; n = split(needs[cur], nn, " "); split(cur, cp, "|"); for (i = 1; i <= n; i++) { nk = cp[1] "|" nn[i]; if (!(nk in inclos)) { inclos[nk] = 1; stack[++sn] = nk } } }
   for (key in jobs) {
-    split(key, p, "|"); w = p[1]; j = p[2]; if (!(w in pwfs) || !ran[key "|push"]) continue; wf_ = w; job_ = j
-    if (!(ran[key "|pull_request"] || ran[key "|merge_group"])) viol("push-only", w, j, "-", "runs on push to main but on neither pull_request nor merge_group")
-    else if (!(key in inclos)) viol("not-required", w, j, "-", "runs on push to main but not in needs closure of any required job")
-    for (e = 2; e <= 3; e++) {
-      ev = EVS[e]; if (!ran[key "|" ev]) continue
-      for (ak in rawattr) { split(ak, ap, "|"); if (ap[1] == w && ap[2] == j) { a1 = resolve(rawattr[ak], "push"); a2 = resolve(rawattr[ak], ev); if (a1 != a2) viol("attr", w, j, ap[3], ap[3] " differs: push=" a1 " vs " ev "=" a2) } }
-      for (si = 1; si <= nstep[key]; si++) { snm = (sname[key, si] != "" ? sname[key, si] : (suses[key, si] != "" ? suses[key, si] : "#" si)); if (ifval(sif[key, si], "push") && !ifval(sif[key, si], ev)) viol("step", w, j, snm, "step runs on push but not on " ev) }
+    split(key, p, "|"); w = p[1]; j = p[2]; if (!(w in pwfs)) continue
+    is_push = ran[key "|push"]; is_mg_only = (ran[key "|merge_group"] && !is_push && !ran[key "|pull_request"])
+    if (!is_push && !is_mg_only) continue; wf_ = w; job_ = j
+    if (is_push) {
+      if (!(ran[key "|pull_request"] || ran[key "|merge_group"])) viol("push-only", w, j, "-", "runs on push to main but on neither pull_request nor merge_group")
+      else {
+        if (!(key in inclos)) viol("not-required", w, j, "-", "runs on push to main but not in needs closure of any required job")
+        if (live && !has_mq && !ran[key "|pull_request"] && ran[key "|merge_group"]) viol("live-mq-off", w, j, "-", "merge_group is the only cover for push-to-main job and no active ruleset has a merge_queue rule")
+      }
+      for (e = 2; e <= 3; e++) {
+        ev = EVS[e]; if (!ran[key "|" ev]) continue
+        for (ak in rawattr) { split(ak, ap, "|"); if (ap[1] == w && ap[2] == j) { a1 = resolve(rawattr[ak], "push"); a2 = resolve(rawattr[ak], ev); if (a1 != a2) viol("attr", w, j, ap[3], ap[3] " differs: push=" a1 " vs " ev "=" a2) } }
+        for (si = 1; si <= nstep[key]; si++) { snm = (sname[key, si] != "" ? sname[key, si] : (suses[key, si] != "" ? suses[key, si] : "#" si)); if (ifval(sif[key, si], "push") && !ifval(sif[key, si], ev)) viol("step", w, j, snm, "step runs on push but not on " ev) }
+      }
+      for (ak in rawattr) { split(ak, ap, "|"); if (ap[1] == w && ap[2] == j && resolve(rawattr[ak], "push") == "UNPARSEABLE") viol("attr", w, j, ap[3], ap[3] " unparseable (fail closed)") }
+      for (i = 1; i <= npin[key]; i++) if (pinv[key, i] ~ /github\.(event_name|ref|ref_name|event\.pull_request)/) viol("pin", w, j, "-", "event-dependent pin: " pinv[key, i])
+    } else {
+      viol("mg-only", w, j, "-", "runs on merge_group only (neither push nor pull_request)")
+      if (!(key in inclos)) viol("not-required", w, j, "-", "runs on merge_group only but not in needs closure of any required job")
+      if (live && !has_mq) viol("live-mq-off", w, j, "-", "runs on merge_group only and no active ruleset has a merge_queue rule")
     }
-    for (ak in rawattr) { split(ak, ap, "|"); if (ap[1] == w && ap[2] == j && resolve(rawattr[ak], "push") == "UNPARSEABLE") viol("attr", w, j, ap[3], ap[3] " unparseable (fail closed)") }
-    for (i = 1; i <= npin[key]; i++) if (pinv[key, i] ~ /github\.(event_name|ref|ref_name|event\.pull_request)/) viol("pin", w, j, "-", "event-dependent pin: " pinv[key, i])
   }
   for (key in unparse) { split(key, p, "|"); viol("attr", p[1], p[2], "if", "if unparseable: " unparse[key]) }
   for (pk in ppaths) { split(pk, q, "|"); if (q[1] in pwfs) has_p[q[1] "|" q[2]] = 1 }
@@ -211,6 +261,30 @@ case_run "M18 wildcard branches [**] catches push-only" 1 "" "s/branches: \[main
 case_run "M19 github.ref event-dependent pin" 1 "" "s/^  build:\$/  build:\n    container: \${{ github.ref == ${Q}refs\/heads\/main${Q} \&\& ${Q}img:1${Q} || ${Q}img:2${Q} }}/"
 case_run "M20 job header with inline comment" 1 "" "s/^  shard:\$/  shard: # inline comment\n    if: github.event_name == ${Q}push${Q}/"
 case_run "A2 unknown-context contains() stays truthy on push" 0 $'allow step ci.yml shard test -- post-merge step\n' "s/^      - name: test\$/      - if: always() \&\& github.event_name == ${Q}push${Q} \&\& contains(steps.wait.outputs.deferred, ${Q}codecov${Q})\n        name: test/"
+case_run "M21 mg-only guards job without allow is RED" 1 "" "s/^  gate:\$/  guards:\n    if: github.event_name == ${Q}merge_group${Q}\n    runs-on: [self-hosted, Linux, X64, clean-room]\n    steps: [{name: g, run: echo g}]\n  gate:/; s/^    needs: \[build, shard\]\$/    needs: [build, shard, guards]/"
+case_run "A3 mg-only guards job with allow passes offline" 0 $'allow mg-only ci.yml guards - -- merge_group-only guards\n' "s/^  gate:\$/  guards:\n    if: github.event_name == ${Q}merge_group${Q}\n    runs-on: [self-hosted, Linux, X64, clean-room]\n    steps: [{name: g, run: echo g}]\n  gate:/; s/^    needs: \[build, shard\]\$/    needs: [build, shard, guards]/"
+case_live() {
+  local name=$1 want=$2 extra=$3 mut=$4 rs=$5 rc=0
+  rm -rf -- "${st:?}/wf"; mkdir -p "$st/wf"; base_ci >"$st/wf/ci.yml"
+  [ -z "$mut" ] || sed -i "$mut" "$st/wf/ci.yml"
+  printf 'required ci.yml gate\n%s' "$extra" >"$st/allow.txt"
+  printf '%s\n' "$rs" >"$st/rs.json"
+  "$0" --workflows "$st/wf" --allow "$st/allow.txt" --live --rulesets-json "$st/rs.json" >"$st/out" 2>&1 || rc=$?
+  if [ "$rc" = "$want" ]; then printf 'ok   %s (rc=%s)\n' "$name" "$rc"
+  else printf 'FAIL %s: want rc=%s got rc=%s\n' "$name" "$want" "$rc"; sed 's/^/     /' "$st/out"; fail=1; fi
+}
+RS_OFF='[{"id":17836320,"enforcement":"active","target":"branch","conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},"rules":[]}]'
+RS_ON='[{"id":17836320,"enforcement":"active","target":"branch","conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},"rules":[{"type":"merge_queue"}]}]'
+RS_DIS='[{"id":17836320,"enforcement":"disabled","target":"branch","conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},"rules":[{"type":"merge_queue"}]}]'
+case_live "L1 --live fails when merge_group is only cover and merge_queue is off" 1 "" "s/^  shard:\$/  shard:\n    if: github.event_name != ${Q}pull_request${Q}/" "$RS_OFF"
+case_live "L2 --live fails on allow-listed mg-only guards when merge_queue is off" 1 $'allow mg-only ci.yml guards - -- merge_group-only guards\n' "s/^  gate:\$/  guards:\n    if: github.event_name == ${Q}merge_group${Q}\n    runs-on: [self-hosted, Linux, X64, clean-room]\n    steps: [{name: g, run: echo g}]\n  gate:/; s/^    needs: \[build, shard\]\$/    needs: [build, shard, guards]/" "$RS_OFF"
+case_live "L3 --live passes when active ruleset has merge_queue" 0 $'allow mg-only ci.yml guards - -- merge_group-only guards\n' "s/^  shard:\$/  shard:\n    if: github.event_name != ${Q}pull_request${Q}/; s/^  gate:\$/  guards:\n    if: github.event_name == ${Q}merge_group${Q}\n    runs-on: [self-hosted, Linux, X64, clean-room]\n    steps: [{name: g, run: echo g}]\n  gate:/; s/^    needs: \[build, shard\]\$/    needs: [build, shard, guards]/" "$RS_ON"
+case_live "L4 --live fails when merge_queue ruleset is disabled" 1 "" "s/^  shard:\$/  shard:\n    if: github.event_name != ${Q}pull_request${Q}/" "$RS_DIS"
+case_live "L5 allow live-mq-off in allow-list is refused" 1 $'allow live-mq-off ci.yml shard - -- cannot suppress\n' "s/^  shard:\$/  shard:\n    if: github.event_name != ${Q}pull_request${Q}/" "$RS_ON"
+case_live "V3 --live fails closed on invalid rulesets json" 2 "" "" "not-json"
+rm -rf -- "${st:?}/wf"; mkdir -p "$st/wf"; base_ci >"$st/wf/ci.yml"; : >"$st/empty.txt"
+rc=0; "$0" --workflows "$st/wf" --allow "$st/empty.txt" >"$st/out" 2>&1 || rc=$?
+[ "$rc" -eq 1 ] && grep -q '^RED not-required: ci.yml build:' "$st/out" && ! grep -q '^RED allow-list' "$st/out" && printf 'ok   M22 empty allow-list fails without misreading workflow (rc=%s)\n' "$rc" || { printf 'FAIL M22: want rc=1 got rc=%s\n' "$rc"; sed 's/^/     /' "$st/out"; fail=1; }
 rm -rf -- "${st:?}/wf"; mkdir -p "$st/wf"; base_ci >"$st/wf/ci.yml"
 printf 'on:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\njobs:\n  extra:\n    runs-on: [self-hosted]\n    steps: [{name: ok, run: echo ok}]\n' >"$st/wf/extra.yaml"
 printf 'required ci.yml gate\n' >"$st/allow.txt"
