@@ -23,6 +23,3 @@ allow attr ci.yml workspace-test-shard env.FAT_IDLE_LIMIT_S -- merge_group arms 
 allow attr ci.yml x86-main env.FAT_TIMEOUT_SCALE -- merge_group uses unscaled section timeouts, push uses x2 default
 allow step ci.yml x86-main codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 -- coverage upload, continue-on-error, post-merge only
 allow step ci.yml x86-main Generate_SLSA_provenance -- SLSA provenance attestation, continue-on-error, post-merge only
-allow step ci.yml workspace-test actions/checkout@v7 -- PR reads pr-light verdict; shard artifacts exist only on push/merge_group
-allow step ci.yml workspace-test actions/download-artifact@v4 -- PR reads pr-light verdict; shard artifacts exist only on push/merge_group
-allow step ci.yml workspace-test Σ-executed:_the_union_of_the_shards_is_exactly_the_owed_set_(#4433) -- runs on push/merge_group shards, not PR
