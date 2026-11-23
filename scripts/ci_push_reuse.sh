@@ -44,7 +44,7 @@ SELF="${BASH_SOURCE[0]}"
 # or invert it. chk() is false on an error, on no output and on more than one output: a condition that
 # cannot be evaluated is UNPROVEN, never skipped.
 read -r -d '' JQ_PROG <<'JQ'
-def sha: type == "string" and test("^[0-9a-f]{40}$");
+def sha: type == "string" and test("\\A[0-9a-f]{40}\\z");
 def isint: type == "number" and . == floor and . >= 0;
 def cj(f): [try f catch false] | (length == 1 and .[0] == true);
 def chk($n; f): [$n, ([try f catch false] | (length == 1 and .[0] == true))];
@@ -94,7 +94,7 @@ def c3a: # an absent or non-object stamp makes every field check below false, so
   chk("C4-advisories-skipped"; (named("x86-main-advisories") | length) == 1 and named("x86-main-advisories")[0].conclusion == "skipped"), # R-C4ADV
   chk("C4-not-a-reuse"; all(.run.jobs[]; .name != "receipt-judge" or .conclusion == "skipped")), # R-C4TIER
   chk("C4-sov-test"; .run.sov_test == "success"), # R-C4SOV
-  chk("C5-paths-judgeable"; (.paths | type == "array" and length > 0) and all(.paths[]; type == "string" and length > 0 and (test("^/|\\.\\.|\"|\\\\|\\n") | not))), # R-C5JUDGE
+  chk("C5-paths-judgeable"; (.paths | type == "array" and length > 0) and all(.paths[]; type == "string" and length > 0 and (test("^/|^\\./|\\.\\.|\"|\\\\|\\n") | not))), # R-C5JUDGE
   chk("C5-no-gate-path"; all(.paths[]; gatepath | not)), # R-C5GATE
   chk("C6-fresh"; (.now | isint) and (.run.created_epoch | isint) and (.now - .run.created_epoch) >= 0 and (.now - .run.created_epoch) <= 86400) # R-C6
 ]
