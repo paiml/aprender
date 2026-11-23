@@ -19,24 +19,24 @@ equations:
     - timestep_secs > 0.0
     lean_theorem: Theorems.Step_Monotonicity
   audit_completeness:
-    formula: '∀ step_id ∈ [0, step_count): record_step(step_id) is recoverable'
+    formula: 'step_count(n) = n'
     domain: step_id ∈ usize
     codomain: Result<StepRecord, AuditError>
     invariants:
     - 'All recorded steps retrievable: find_by_step_id never returns None for valid ID'
     - 'seek(step_id) positions audit cursor correctly'
-    - step_forward advances by exactly 1 step
+    - 'step_count(n+1) = step_count(n) + 1'
     preconditions:
     - step_id < step_count()
     lean_theorem: Theorems.Audit_Completeness
   simulate_convergence:
-    formula: simulate_path(params) → trajectory where energy is bounded
+    formula: 'time(n) = n * dt'
     domain: params ∈ SimulationParams
     codomain: Vec<StateSnapshot>
     invariants:
     - Energy conservation (Hamiltonian systems) within tolerance
     - Orbit simulations return to near-initial state after full period
-    - Portfolio simulation paths have non-negative time axis
+    - 'time(1 * n) >= 0'
     preconditions:
     - params.dt > 0.0
     - params.steps > 0

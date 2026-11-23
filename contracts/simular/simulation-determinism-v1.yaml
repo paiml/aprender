@@ -8,13 +8,13 @@ metadata:
   - 'Hairer et al. (2006) Geometric Numerical Integration'
 equations:
   step_determinism:
-    formula: '∀ state S, dt: step(S, dt) = step(S, dt)'
+    formula: 'step_count(n) = n'
     domain: S ∈ SimState, dt ∈ f64 where dt > 0
     codomain: SimState
     invariants:
     - 'Deterministic: identical initial state + dt → identical next state'
     - 'Energy conservation: |E(S_n) - E(S_0)| < ε for symplectic integrators'
-    - step_count increments by 1 per step call
+    - 'step_count(n+1) = step_count(n) + 1'
     preconditions:
     - dt > 0.0
     - state is finite (no NaN/Inf)

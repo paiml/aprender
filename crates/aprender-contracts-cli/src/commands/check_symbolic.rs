@@ -841,4 +841,58 @@ mod tests {
             );
         }
     }
+
+    /// (file, equation, typed invariant, mutation site, planted replacement) for the P1c slice (#7305).
+    const SLICE_P1C: [(&str, &str, &str, &str, &str); 3] = [
+        (
+            "simular/simulation-determinism-v1.yaml",
+            "step_determinism",
+            "step_count(n+1) = step_count(n) + 1",
+            "step_count(n) = n",
+            "step_count(n) = 2 * n",
+        ),
+        (
+            "simular/simulation-step-v1.yaml",
+            "audit_completeness",
+            "step_count(n+1) = step_count(n) + 1",
+            "step_count(n) = n",
+            "step_count(n) = n * n",
+        ),
+        (
+            "simular/simulation-step-v1.yaml",
+            "simulate_convergence",
+            "time(1 * n) >= 0",
+            "time(n) = n * dt",
+            "time(n) = n * dt - 1",
+        ),
+    ];
+
+    #[test]
+    fn simular_p1c_invariants_hold() {
+        for (file, eq, inv, _, _) in SLICE_P1C {
+            let (formula, invs) = typed_equation(file, eq);
+            assert!(
+                invs.iter().any(|i| i == inv),
+                "{file} {eq}: {inv} not typed"
+            );
+            let v = check_invariant(&formula, inv);
+            assert!(
+                matches!(v, Verdict::Holds { points } if points > 10),
+                "{file} {eq}: {v:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn simular_p1c_planted_wrong_formula_is_violated() {
+        for (file, eq, inv, from, to) in SLICE_P1C {
+            let (formula, _) = typed_equation(file, eq);
+            assert!(formula.contains(from), "{file}: mutation site missing");
+            let bad = formula.replacen(from, to, 1);
+            assert!(
+                matches!(check_invariant(&bad, inv), Verdict::Violated { .. }),
+                "{file} {eq}: planted formula not caught"
+            );
+        }
+    }
 }
