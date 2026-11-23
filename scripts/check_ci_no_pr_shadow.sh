@@ -116,10 +116,10 @@ pr_path() { # FILE -> 0 when the workflow can run on the PR / merge-queue / push
     LC_ALL=C grep -q "$(printf '[\r\v\f]')" "$1" && return 0
     n="$(grep -cE '^[?"'"'"'[:space:]]*(on|true|"on"|'"'"'on'"'"')[[:space:]]*(:|$)' "$1" || true)"
     grep -qE '^[?"'"'"']' "$1" && return 0
-    grep -vE '^[[:space:]]|^#|^$' "$1" | grep -qvE '^(name|run-name):[[:space:]]*[^"'"'"'&*!|>{[%@`#:]+$|^(on|jobs|permissions|concurrency|env|defaults):[[:space:]]*(#.*)?$' && return 0
+    grep -qvE '^(name|run-name):[[:space:]]*[^"'"'"'&*!|>{[%@`#:]+$|^(on|jobs|permissions|concurrency|env|defaults):[[:space:]]*(#.*)?$' < <(grep -vE '^[[:space:]]|^#|^$' "$1") && return 0
     [ "$n" = 1 ] || return 0
     grep -qE '^on:[[:space:]]*(#.*)?$' "$1" || return 0
-    awk 'BEGIN{b=-1} /^on:/{p=1;next} p&&/^[^-[:space:]#]/{p=0} p&&!/^[[:space:]]*(#.*)?$/{match($0,/^ */);i=RLENGTH;t=substr($0,i+1);if(b<0)b=i;if(i<b){print "BAD";next}if(i==b&&t!~/^-/){if(t ~ /^workflow_dispatch:[[:space:]]*(#.*)?$/)c="d";else if(t ~ /^schedule:[[:space:]]*(#.*)?$/)c="s";else print "BAD";next}if(c=="d"){if(t ~ /["\047\[{]/)print "BAD";next}if(c=="s"&&t ~ /^-[[:space:]]+cron:[[:space:]]*["\047]?[-0-9*\/, ]+["\047]?[[:space:]]*(#.*)?$/)next;print "BAD"}' "$1" | grep -q BAD && return 0
+    grep -q BAD < <(awk 'BEGIN{b=-1} /^on:/{p=1;next} p&&/^[^-[:space:]#]/{p=0} p&&!/^[[:space:]]*(#.*)?$/{match($0,/^ */);i=RLENGTH;t=substr($0,i+1);if(b<0)b=i;if(i<b){print "BAD";next}if(i==b&&t!~/^-/){if(t ~ /^workflow_dispatch:[[:space:]]*(#.*)?$/)c="d";else if(t ~ /^schedule:[[:space:]]*(#.*)?$/)c="s";else print "BAD";next}if(c=="d"){if(t ~ /["\047\[{]/)print "BAD";next}if(c=="s"&&t ~ /^-[[:space:]]+cron:[[:space:]]*["\047]?[-0-9*\/, ]+["\047]?[[:space:]]*(#.*)?$/)next;print "BAD"}' "$1") && return 0
     return 1
 }
 
@@ -147,7 +147,7 @@ self_test() {
         sed -e "$3" "$src" > "$td/ci.yml"
         if cmp -s "$src" "$td/ci.yml"; then echo "FAIL  mutant did not change the file: $1"; fails=1; return; fi
         if got="$(check "$td/ci.yml")"; then echo "FAIL  mutant stayed green: $1"; fails=1
-        elif printf '%s\n' "$got" | grep -qE "\[($2)-"; then echo "ok    red   MUTANT [$2]: $1"
+        elif grep -qE "\[($2)-" <<<"$got"; then echo "ok    red   MUTANT [$2]: $1"
         else echo "FAIL  mutant red for the WRONG reason (wanted $2): $1 :: $(printf '%s' "$got" | head -n 2)"; fails=1; fi
     }
     local A="s/--sections 'guard-tree,pr-review-sign/"
@@ -194,29 +194,29 @@ self_test() {
     # code in a comment-looking line, with and without a here-doc
     printf '  - run: |\n      cat <<EOF\n      # python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n      EOF\n' > "$td/h.yml"
     if got="$(check_file "$td/h.yml" 0)"; then echo "FAIL  mutant: #-prefixed here-doc data line hid code"; fails=1
-    elif printf '%s\n' "$got" | grep -qE '\[R10-'; then echo "ok    red   MUTANT [R10]: #-prefixed here-doc data line"; else echo "FAIL  wrong reason for the here-doc comment: $got"; fails=1; fi
+    elif grep -qE '\[R10-' <<<"$got"; then echo "ok    red   MUTANT [R10]: #-prefixed here-doc data line"; else echo "FAIL  wrong reason for the here-doc comment: $got"; fails=1; fi
     printf '  - run: |\n      cat <<EOF\n      python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n      EOF\n' > "$td/h2.yml"
     if got="$(check_file "$td/h2.yml" 0)"; then echo "FAIL  mutant: here-doc data line hid code"; fails=1
-    elif printf '%s\n' "$got" | grep -qE '\[R5-'; then echo "ok    red   MUTANT [R5]: here-doc data line"; else echo "FAIL  wrong reason for the here-doc line: $got"; fails=1; fi
+    elif grep -qE '\[R5-' <<<"$got"; then echo "ok    red   MUTANT [R5]: here-doc data line"; else echo "FAIL  wrong reason for the here-doc line: $got"; fails=1; fi
     printf '  - run: |\n      SECS="--sections pr-review-shadow"\n      python3 scripts/ci/fat_driver.py run $SECS\n' > "$td/o.yml"
     if got="$(check_file "$td/o.yml" 0)"; then echo "FAIL  mutant: orphan --sections hid code"; fails=1
-    elif printf '%s\n' "$got" | grep -qE '\[R(11|1)-'; then echo "ok    red   MUTANT [R11|R1]: --sections kept in a variable"; else echo "FAIL  wrong reason for the orphan: $got"; fails=1; fi
+    elif grep -qE '\[R(11|1)-' <<<"$got"; then echo "ok    red   MUTANT [R11|R1]: --sections kept in a variable"; else echo "FAIL  wrong reason for the orphan: $got"; fails=1; fi
     # a comment ending in a backslash must not hide the code on the next line
     printf '  - run: |\n      # merge queue: sign only \\\n      python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n' > "$td/c.yml"
     if got="$(check_file "$td/c.yml" 0)"; then echo "FAIL  mutant: comment ending in a backslash hid the next line"; fails=1
-    elif printf '%s\n' "$got" | grep -qE '\[R5-'; then echo "ok    red   MUTANT [R5]: comment ending in a backslash does not swallow the next line"; else echo "FAIL  wrong reason: $got"; fails=1; fi
+    elif grep -qE '\[R5-' <<<"$got"; then echo "ok    red   MUTANT [R5]: comment ending in a backslash does not swallow the next line"; else echo "FAIL  wrong reason: $got"; fails=1; fi
     # bypass 4: a workflow other than ci.yml
     mkdir "$td/w"; cp "$src" "$td/w/ci.yml"
     pw() { printf 'name: x\non:\n  %s:\njobs:\n  j:\n    steps:\n      - run: |\n          %s\n' "$1" "$2" > "$td/w/new.yml"; }
     pw pull_request "python3 scripts/ci/fat_driver.py run --sections 'guard-tree,pr-review-shadow'"
     if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: a new on:pull_request workflow with the shadow stayed green"; fails=1
-    elif printf '%s\n' "$got" | grep -q '(new.yml).*\[R5-'; then echo "ok    red   MUTANT [R5]: new pull_request workflow names the shadow"; else echo "FAIL  wrong reason for new.yml: $got"; fails=1; fi
+    elif grep -q '(new.yml).*\[R5-' <<<"$got"; then echo "ok    red   MUTANT [R5]: new pull_request workflow names the shadow"; else echo "FAIL  wrong reason for new.yml: $got"; fails=1; fi
     pw merge_group "python3 scripts/ci/fat_driver.py run --sec''tions 'pr-review-shadow'"
     if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: a new merge_group workflow with a hidden option stayed green"; fails=1
-    elif printf '%s\n' "$got" | grep -q '(new.yml).*\[R1-'; then echo "ok    red   MUTANT [R1]: new merge_group workflow hides the option"; else echo "FAIL  wrong reason for new.yml: $got"; fails=1; fi
+    elif grep -q '(new.yml).*\[R1-' <<<"$got"; then echo "ok    red   MUTANT [R1]: new merge_group workflow hides the option"; else echo "FAIL  wrong reason for new.yml: $got"; fails=1; fi
     pw push "python3 scripts/ci/fat_driver.py run --sections 'pr-review-shadow'"
     if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: a new on:push workflow with the shadow stayed green"; fails=1
-    elif printf '%s\n' "$got" | grep -q '(new.yml).*\[R5-'; then echo "ok    red   MUTANT [R5]: new push workflow names the shadow"; else echo "FAIL  wrong reason for new.yml: $got"; fails=1; fi
+    elif grep -q '(new.yml).*\[R5-' <<<"$got"; then echo "ok    red   MUTANT [R5]: new push workflow names the shadow"; else echo "FAIL  wrong reason for new.yml: $got"; fails=1; fi
     pw workflow_dispatch "python3 scripts/ci/fat_driver.py run --sections 'pr-review-shadow'"
     if got="$(check "$td/w/ci.yml")"; then echo "ok    green control: a workflow_dispatch-only LAB workflow may carry the shadow"; else echo "FAIL  LAB workflow flagged: $got"; fails=1; fi
     printf 'name: x\non:\n- pull_request\njobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n' > "$td/w/new.yml"
