@@ -47,8 +47,8 @@ self_test() {
   j='{"jobs":[{"id":7,"name":"shard 3/4","conclusion":"failure","steps":[{"name":"Build","conclusion":"success"},{"name":"cargo audit","conclusion":"failure"}]},{"id":8,"name":"ok","conclusion":"success","steps":[]},{"id":9,"name":"x86-main","conclusion":"timed_out","steps":[]}]}'
   r=$(printf '%s' "$j" | failed_rows)
   if [ "$(printf '%s\n' "$r" | wc -l)" != 2 ] \
-    || ! printf '%s\n' "$r" | grep -q $'^7\tshard 3/4\tcargo audit\tfailure$' \
-    || ! printf '%s\n' "$r" | grep -q $'^9\tx86-main\t(job-level, no failed step)\ttimed_out$'; then
+    || ! grep -q $'^7\tshard 3/4\tcargo audit\tfailure$' <<<"$r" \
+    || ! grep -q $'^9\tx86-main\t(job-level, no failed step)\ttimed_out$' <<<"$r"; then
     echo "FAIL: failed_rows"; return 1
   fi
 
@@ -75,13 +75,13 @@ EOF
   chmod +x "$stub"
 
   out=$(GH="$stub" bash "$0" --run 100) || { rm -rf "${d:?}"; echo "FAIL: --run 100"; return 1; }
-  printf '%s\n' "$out" | grep -q '"step":"cargo audit".*"first_error":"error: addr2line missing"' \
+  grep -q '"step":"cargo audit".*"first_error":"error: addr2line missing"' <<<"$out" \
     || { rm -rf "${d:?}"; echo "FAIL: measured row: $out"; return 1; }
-  printf '%s\n' "$out" | grep -q '"job":"x86-main","step":"Build","conclusion":"failure","first_error":"not_measured"' \
+  grep -q '"job":"x86-main","step":"Build","conclusion":"failure","first_error":"not_measured"' <<<"$out" \
     || { rm -rf "${d:?}"; echo "FAIL: unreadable log must yield not_measured: $out"; return 1; }
 
   rc=0; out=$(GH="$stub" bash "$0" --run 999 2>&1) || rc=$?
-  if [ "$rc" -eq 0 ] || ! printf '%s\n' "$out" | grep -q 'NOT_MEASURED'; then
+  if [ "$rc" -eq 0 ] || ! grep -q 'NOT_MEASURED' <<<"$out"; then
     rm -rf "${d:?}"; echo "FAIL: failed jobs read must exit non-zero with NOT_MEASURED (rc=$rc out=$out)"; return 1
   fi
 
