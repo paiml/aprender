@@ -69,7 +69,7 @@ stmt_ok() {
     case "$value" in *'[.'*|*'[='*|*'[:'*|*'[['*|*'[^'*|*'[!'*|*'[]'*) echo "FAIL  [R2-bracket] line $at: bracket form that bash and fnmatch read differently: '$value'"; return 1 ;; esac
     case "$value" in ''|*[!A-Za-z0-9._?*@,\[\]-]*) echo "FAIL  [R4-charset] line $at: list is empty or holds a character outside the allowlist (quote, \$, space, brace ...): '$value'"; return 1 ;; esac
     if ! [[ $after =~ $TAIL ]]; then echo "FAIL  [R1-form] line $at: tokens after the list are not exactly --results/--background-until: '$after'"; return 1; fi
-    local IFS=,
+    local IFS=,; set -f   # no pathname expansion: a part like * must stay a pattern, not become the repo-root file names
     for part in $value; do
         case "$part" in *@EXPR@*) case "$part" in workspace-test-shard?@EXPR@?@EXPR@?) part="${part//@EXPR@/?}" ;; *) echo "FAIL  [R9-expr] line $at: list part holds an expression and cannot be resolved: '$part'"; bad=1; continue ;; esac ;; esac
         # shellcheck disable=SC2053  # the unquoted right side is the point: fat_driver matches a section name with fnmatch
@@ -147,6 +147,8 @@ self_test() {
     mutant "shadow put back in a list" R5 "${A}--sections 'guard-tree,pr-review-shadow,pr-review-sign/"
     mutant "glob pr-review-* resolves to shadow" R5 "${A}--sections 'guard-tree,pr-review-*/"
     mutant "glob pr-review-s?a*" R5 "${A}--sections 'guard-tree,pr-review-s?a*/"
+    mutant "glob * matches a repo-root file name (no pathname expansion in the guard)" R5 "${A}--sections '*/"
+    mutant "glob [a-z]* with a comma list" R5 "${A}--sections 'guard-tree,[a-z]*/"
     mutant "value on the next line (folded block)" R5 "${A}--sections\n          'guard-tree,pr-review-shadow,pr-review-sign/"
     mutant "--sections=value form" R1 "${A}--sections='guard-tree,pr-review-shadow,pr-review-sign/"
     mutant "indirect \$VAR value" R4 "${A}--sections \"\$PR_SECS\" --x 'guard-tree,pr-review-sign/"
