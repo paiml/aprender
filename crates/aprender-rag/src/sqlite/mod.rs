@@ -254,6 +254,55 @@ impl SqliteIndex {
         fts::search_any(&conn, query, k)
     }
 
+    /// Chunks with `rowid > after`, ascending, as `(rowid, content)`; used by the embed job.
+    ///
+    /// # Errors
+    /// Returns an error if the query fails.
+    pub fn chunks_after(&self, after: i64, limit: usize) -> Result<Vec<(i64, String)>> {
+        let conn = self.conn.lock().map_err(|e| lock_err(&e))?;
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT rowid, content FROM chunks WHERE rowid > ?1 ORDER BY rowid LIMIT ?2",
+            )
+            .map_err(|e| crate::Error::Query(format!("prepare chunks_after: {e}")))?;
+        let rows = stmt
+            .query_map(rusqlite::params![after, limit as i64], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| crate::Error::Query(format!("chunks_after: {e}")))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| crate::Error::Query(format!("chunks_after rows: {e}")))?;
+        Ok(rows)
+    }
+
+    /// Fetch chunks by rowid (score 0), in the order requested; unknown rowids are skipped.
+    ///
+    /// # Errors
+    /// Returns an error if the query fails.
+    pub fn chunks_by_rowid(&self, rowids: &[i64]) -> Result<Vec<fts::FtsResult>> {
+        let conn = self.conn.lock().map_err(|e| lock_err(&e))?;
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT id, doc_id, content, position, metadata FROM chunks WHERE rowid = ?1",
+            )
+            .map_err(|e| crate::Error::Query(format!("prepare chunks_by_rowid: {e}")))?;
+        let mut out = Vec::with_capacity(rowids.len());
+        for rid in rowids {
+            let got = stmt
+                .query_row([rid], |row| {
+                    Ok(fts::FtsResult {
+                        chunk_id: row.get(0)?,
+                        doc_id: row.get(1)?,
+                        content: row.get(2)?,
+                        score: 0.0,
+                        position: row.get(3)?,
+                        metadata: row.get(4)?,
+                    })
+                })
+                .ok();
+            out.extend(got);
+        }
+        Ok(out)
+    }
+
     /// Get chunk content by ID.
     pub fn get_chunk(&self, chunk_id: &str) -> Result<Option<String>> {
         // Contract: configuration-v1.yaml precondition (pv codegen)

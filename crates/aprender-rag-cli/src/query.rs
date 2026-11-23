@@ -198,6 +198,7 @@ pub(crate) fn rank_docs(
     hits: &[aprender_rag::sqlite::fts::FtsResult],
     query: &str,
     k: usize,
+    cov_w: f64,
 ) -> Vec<aprender_rag::sqlite::fts::FtsResult> {
     use aprender_rag::sqlite::fts::is_stopword;
     let words: Vec<String> = query
@@ -224,7 +225,7 @@ pub(crate) fn rank_docs(
             let lower = h.content.to_lowercase();
             let cov = coverage(&lower, &terms);
             aprender_rag::sqlite::fts::FtsResult {
-                score: h.score * (1.0 + 6.0 * cov * cov),
+                score: h.score * (1.0 + cov_w * cov * cov),
                 ..h.clone()
             }
         })
@@ -266,6 +267,65 @@ pub(crate) fn rank_docs(
         .collect()
 }
 
+/// Fuse BM25 chunk hits with dense hits by reciprocal rank; each chunk's score becomes its RRF
+/// score. The union is returned (best first). Chunks only the dense side found come from `dense`.
+#[cfg(feature = "sqlite")]
+pub(crate) fn fuse_rrf(
+    bm25: &[aprender_rag::sqlite::fts::FtsResult],
+    dense: &[aprender_rag::sqlite::fts::FtsResult],
+    k0: f64,
+) -> Vec<aprender_rag::sqlite::fts::FtsResult> {
+    let ids = |v: &[aprender_rag::sqlite::fts::FtsResult]| -> Vec<String> {
+        v.iter().map(|h| h.chunk_id.clone()).collect()
+    };
+    let fused = aprender_rag::vecstore::rrf(&[ids(bm25), ids(dense)], k0);
+    let by_id: HashMap<&str, &aprender_rag::sqlite::fts::FtsResult> = dense
+        .iter()
+        .chain(bm25.iter())
+        .map(|h| (h.chunk_id.as_str(), h))
+        .collect();
+    fused
+        .into_iter()
+        .filter_map(|(id, s)| {
+            by_id
+                .get(id.as_str())
+                .map(|h| aprender_rag::sqlite::fts::FtsResult {
+                    score: s,
+                    ..(*h).clone()
+                })
+        })
+        .collect()
+}
+
+/// Dense top-`n` chunks for `query` from `<dir>/vectors.bin`; `None` when no vectors exist,
+/// dense search is disabled (`RAG_NO_DENSE`) or this build has no embeddings.
+#[cfg(all(feature = "sqlite", feature = "embeddings"))]
+fn dense_hits(
+    idx: &aprender_rag::SqliteIndex,
+    dir: &Path,
+    query: &str,
+    n: usize,
+) -> Option<Vec<aprender_rag::sqlite::fts::FtsResult>> {
+    let vp = dir.join("vectors.bin");
+    if std::env::var_os("RAG_NO_DENSE").is_some() || !vp.exists() {
+        return None;
+    }
+    let store = aprender_rag::vecstore::VecReader::open(&vp).ok()?;
+    let q = crate::embed::embed_query_vec(query).ok()?;
+    let rowids: Vec<i64> = store.top_k(&q, n).into_iter().map(|(r, _)| r).collect();
+    idx.chunks_by_rowid(&rowids).ok()
+}
+
+#[cfg(all(feature = "sqlite", not(feature = "embeddings")))]
+fn dense_hits(
+    _idx: &aprender_rag::SqliteIndex,
+    _dir: &Path,
+    _query: &str,
+    _n: usize,
+) -> Option<Vec<aprender_rag::sqlite::fts::FtsResult>> {
+    None
+}
+
 /// Query an `index.sqlite` with FTS5 BM25 (no index load: p95 stays flat as the corpus grows).
 #[cfg(feature = "sqlite")]
 fn run_query_sqlite(query: &str, dir: &Path, top_k: usize, format: &str) -> Result<()> {
@@ -274,7 +334,21 @@ fn run_query_sqlite(query: &str, dir: &Path, top_k: usize, format: &str) -> Resu
     let hits = idx
         .search_fts_any(query, top_k.max(1) * 80)
         .map_err(|e| anyhow::anyhow!("FTS5 search failed: {e}"))?;
-    let hits = rank_docs(&hits, query, top_k);
+    let env_f = |k: &str, d: f64| {
+        std::env::var(k)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(d)
+    };
+    let hits = match dense_hits(&idx, dir, query, 200) {
+        Some(dense) => rank_docs(
+            &fuse_rrf(&hits, &dense, env_f("RAG_RRF_K", 60.0)),
+            query,
+            top_k,
+            env_f("RAG_COV_HYBRID", 0.0),
+        ),
+        None => rank_docs(&hits, query, top_k, 6.0),
+    };
     let (scores, chunks) = fts_hits_to_chunks(&hits);
     format_query_results(query, &scores, &chunks, format)
 }

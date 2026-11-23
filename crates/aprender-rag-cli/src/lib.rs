@@ -28,8 +28,12 @@
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 
 mod discover;
+#[cfg(feature = "embeddings")]
+mod embed;
 mod eval_cmd;
 mod extract;
+#[cfg(feature = "embeddings")]
+mod glibc_shim;
 mod incremental;
 mod ingest;
 mod query;
@@ -178,6 +182,22 @@ pub enum Commands {
         /// Incremental mode: only re-index changed files (requires --sqlite)
         #[arg(long, default_value = "false")]
         incremental: bool,
+    },
+
+    /// Embed every chunk of an index.sqlite into vectors.bin (resumable; bge-small-en-v1.5)
+    #[cfg(feature = "embeddings")]
+    Embed {
+        /// Index directory holding index.sqlite
+        #[arg(short, long)]
+        index: String,
+
+        /// Chunks per model batch
+        #[arg(long, default_value = "32")]
+        batch: usize,
+
+        /// Stop after this many chunks (0 = all)
+        #[arg(long, default_value = "0")]
+        limit: usize,
     },
 
     /// Query the RAG pipeline
@@ -577,6 +597,12 @@ pub fn dispatch(command: Commands) -> Result<()> {
                 )?
             }
         }
+        #[cfg(feature = "embeddings")]
+        Commands::Embed {
+            index,
+            batch,
+            limit,
+        } => embed::run_embed(&index, batch.max(1), limit)?,
         Commands::Query {
             query,
             index,
@@ -1718,13 +1744,31 @@ mod tests {
             h("/a/noise.md", "cloud again", 4.0),
             h("/b/rust-gcp.json", "rust google cloud run", 4.0),
         ];
-        let out = crate::query::rank_docs(&hits, "rust google cloud?", 5);
+        let out = crate::query::rank_docs(&hits, "rust google cloud?", 5, 6.0);
         assert_eq!(out.len(), 2, "one hit per document");
         assert_eq!(out[0].doc_id, "/b/rust-gcp.json");
         assert_eq!(
-            crate::query::rank_docs(&hits, "rust google cloud", 1).len(),
+            crate::query::rank_docs(&hits, "rust google cloud", 1, 6.0).len(),
             1
         );
+    }
+
+    #[test]
+    fn test_fuse_rrf_unions_and_ranks_shared_hits_first() {
+        let h = |id: &str| aprender_rag::sqlite::fts::FtsResult {
+            chunk_id: id.into(),
+            doc_id: format!("/d/{id}"),
+            content: id.into(),
+            score: 0.0,
+            position: 0,
+            metadata: None,
+        };
+        let bm25 = vec![h("a"), h("b")];
+        let dense = vec![h("b"), h("c")];
+        let out = crate::query::fuse_rrf(&bm25, &dense, 60.0);
+        let ids: Vec<&str> = out.iter().map(|r| r.chunk_id.as_str()).collect();
+        assert_eq!(ids, vec!["b", "a", "c"]);
+        assert!(out[0].score > out[1].score);
     }
 
     #[test]
