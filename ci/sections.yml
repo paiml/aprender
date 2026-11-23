@@ -712,6 +712,7 @@ jobs:
           bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${RUNNER_TEMP}/yq-4.52.2/yq:/usr/local/bin/yq:ro" \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
