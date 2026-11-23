@@ -175,8 +175,9 @@ fn h027_cpu_device_temperature_value() {
     // Temperature may or may not be available depending on hardware/permissions
     match cpu.compute_temperature_c() {
         Ok(temp) => {
-            // Valid temperature range: 0 to 150 Celsius
-            assert!(temp >= 0.0, "Temperature should be non-negative");
+            // Sensors on some hosts report below 0 (offset/unwired zones), so only
+            // reject physically impossible values: -60 to 150 Celsius.
+            assert!(temp >= -60.0, "Temperature should be at least -60C");
             assert!(temp <= 150.0, "Temperature should be at most 150C");
         }
         Err(GpuError::NotSupported(_)) => {
