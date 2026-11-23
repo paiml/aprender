@@ -437,6 +437,10 @@ run_gate() {
   rc=$?
   rm -f "$basecsv"
 
+  # #7370: every cite must name a real file and in-range line, and a re-cited row
+  # must name its symbol on the cited line. Findings fail the gate like the rest.
+  bash "$root/scripts/check_surface_audit_cites.sh" --root "$root" --base "$ref" || rc=1
+
   if [ "$frc" -ne 0 ] || [ "$rc" -ne 0 ]; then
     printf '\nDOGFOOD COVERAGE GATE: FAIL\n'
     return 1
@@ -454,6 +458,8 @@ selftest_build_repo() {
   mkdir -p "$td/docs/audits" "$td/contracts" "$td/scripts/lib" "$td/crates/demo/src"
   cp "$SELF" "$td/scripts/check_dogfood_coverage.sh"
   cp "$REPO_ROOT/$GATE_PY" "$td/$GATE_PY"
+  cp "$REPO_ROOT/scripts/check_surface_audit_cites.sh" "$td/scripts/check_surface_audit_cites.sh"
+  chmod u+w "$td/scripts/check_surface_audit_cites.sh"
   cp "$REPO_ROOT/$IDGUARD" "$td/$IDGUARD"
   # cp keeps the source mode: from a read-only checkout (a review snapshot) the
   # later restore-after-mutant `cp` would fail and leak the mutant into every
