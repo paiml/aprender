@@ -113,7 +113,7 @@ pr_path() { # FILE -> 0 when the workflow can run on the PR / merge-queue / push
     local on
     on="$(awk '/^("on"|on|true):/{p=1;print;next} p&&/^[^-[:space:]#]/{p=0} p' "$1" | grep -v '^[[:space:]]*#' || true)"
     [ -z "$on" ] && return 0
-    printf '%s\n' "$on" | sed -E 's/cron:[[:space:]]*("[^"]*"|'"'"'[^'"'"']*'"'"'|[^,}]*)/cron:/' | grep -qE '[*&<]|pull_request|push|merge_group|workflow_call|workflow_run' && return 0
+    printf '%s\n' "$on" | sed -E 's/cron:[[:space:]]*("[^"]*"|'"'"'[^'"'"']*'"'"'|[^,}]*)/cron:/' | grep -qE '[*&<\\]|pull_request|push|merge_group|workflow_call|workflow_run' && return 0
     printf '%s\n' "$on" | grep -qE 'workflow_dispatch|schedule' || return 0
     return 1
 }
@@ -220,6 +220,8 @@ self_test() {
     if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: an aliased on: skipped the workflow"; fails=1; else echo "ok    red   MUTANT: aliased on: (*t) is still scanned"; fi
     printf 'name: x\non: {workflow_dispatch: {},\n  schedule: [{cron: "0 0 * * *"}], pull_request: {}}\njobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n' > "$td/w/new.yml"
     if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: cron on the same line as pull_request hid the trigger"; fails=1; else echo "ok    red   MUTANT: flow-mapping cron beside pull_request is still scanned"; fi
+    printf 'name: x\non:\n  workflow_dispatch:\n  "\\u0070ull_request":\njobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n' > "$td/w/new.yml"
+    if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: a YAML-escaped trigger key hid pull_request"; fails=1; else echo "ok    red   MUTANT: YAML-escaped trigger key is still scanned"; fi
     return "$fails"
 }
 
