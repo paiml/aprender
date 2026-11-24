@@ -544,6 +544,7 @@ selftest_run() {
   # DOGFOOD_RECEIPT points the T2 scan at the fixture's receipt, so the receipt
   # channel is exercised by every run and M9 has something to break.
   # SELFTEST_RELEASE arms DOGFOOD_RELEASE for the one mutation that needs it.
+  # shellcheck disable=SC2086  # SELFTEST_BASH_FLAGS is a word list on purpose
   out="$(DOGFOOD_GATE_ROOT="$td" DOGFOOD_BASE_REF=main \
          DOGFOOD_RECEIPT="$td/docs/audits/receipt.md" \
          DOGFOOD_RELEASE="${SELFTEST_RELEASE:-}" \
@@ -600,12 +601,13 @@ selftest_mutate() {
 
 if [ "${1:-}" = "--self-test" ]; then
   TD="$(mktemp -d)"
-  [ -n "${TD:-}" ] && [ -d "$TD" ] || fail "could not create a scratch dir"
+  if [ -z "${TD:-}" ] || [ ! -d "$TD" ]; then fail "could not create a scratch dir"; fi
   trap 'rm -rf "${TD:?}" "${TD:?}-shallow"' EXIT
   cd -- "$TD" || fail "cannot cd into the scratch dir"; export GIT_CEILING_DIRECTORIES="${TD%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
   FAILED=0
 
   printf 'check_dogfood_coverage.sh --self-test\n'
+  # shellcheck disable=SC2016  # literal text, not an expansion
   printf 'Scratch repo with a protected `main` carrying the ledger, so the ARMED\n'
   printf 'comparand path is what is under test.\n\n'
 
@@ -641,6 +643,7 @@ if [ "${1:-}" = "--self-test" ]; then
   #     cited line (edit or delete), or above it, moves or removes it.
   printf 'M1b G2.1 freshness — hunks after, at and above the last cited line\n'
   m3="$TD/crates/demo/src/m3.rs"
+  # shellcheck disable=SC2016  # literal text, not an expansion
   selftest_mutate "$m3" "append a helper after cited m3.rs:1-2" \
     sed -i '$a fn helper_below() {}' "$m3" \
     && selftest_run "$TD" "hunk at M+1 of a range cite" "GREEN" || FAILED=1
@@ -663,6 +666,7 @@ if [ "${1:-}" = "--self-test" ]; then
   git -C "$TD" mv crates/demo/src/m3_renamed.rs crates/demo/src/m3.rs
   git -C "$TD" checkout -q -- "crates/demo/src/m3.rs"
   # a cited file changed with no @@ hunk (binary content, mode-only) is material (lane A, #6094)
+  # shellcheck disable=SC2016  # literal text, not an expansion
   selftest_mutate "$m3" "make cited m3.rs binary" \
     sh -c 'printf "\\000\\001" >> "$1"' sh "$m3" \
     && selftest_run "$TD" "binary change of a cited file (no hunk)" "RED" || FAILED=1
@@ -684,6 +688,7 @@ if [ "${1:-}" = "--self-test" ]; then
   # the script must not abort under a caller that runs it with -e (the no-cited-change grep exits 1)
   SELFTEST_BASH_FLAGS=-e selftest_run "$TD" "run under bash -e, no cited file changed" "GREEN" || FAILED=1
   # fail closed: a git that cannot diff must not read as "nothing material"
+  # shellcheck disable=SC2016  # literal text, not an expansion
   selftest_mutate "$m3" "append a helper, then break the git diff" \
     sed -i '$a fn helper_below() {}' "$m3" || FAILED=1
   mkdir -p "$TD/.shim"
@@ -693,6 +698,7 @@ if [ "${1:-}" = "--self-test" ]; then
   printf '#!/bin/sh\ncase " $* " in *" diff "*"--name-only"*) exit 3;; esac\nexec /usr/bin/git "$@"\n' > "$TD/.shim/git"
   PATH="$TD/.shim:$PATH" selftest_run "$TD" "name-only diff fails (fail closed)" "RED" || FAILED=1
   # the first diff fails but prints "rc=0" text: the status, not the text, decides
+  # shellcheck disable=SC2016  # literal text, not an expansion
   printf '#!/bin/sh\nn=0\nfor a in "$@"; do [ "$a" = -- ] && break; n=$((n+1)); done\ncase " $* " in *" diff "*"-U0"*) [ "$n" -eq 7 ] && { printf "rc=0\\nrc=0\\n"; exit 128; };; esac\nexec /usr/bin/git "$@"\n' > "$TD/.shim/git"
   PATH="$TD/.shim:$PATH" selftest_run "$TD" "first diff fails, prints rc=0 text (fail closed)" "RED" || FAILED=1
   rm -f "${TD:?}/.shim/git"
@@ -896,6 +902,7 @@ if [ "${1:-}" = "--self-test" ]; then
     || fail "fixture commit failed"
   sed -i "s/PLACEHOLDER/$(git -C "$TD" rev-parse HEAD)/" "$TD/$CONTRACT"
   selftest_commit "$TD" 'record measured_commit' || fail "fixture commit failed"
+  # shellcheck disable=SC2016  # literal text, not an expansion
   printf '  committed on branch `attacker`; `main` still holds the original ledger\n'
   selftest_run "$TD" "floor edited in the same commit" "RED" || FAILED=1
   git -C "$TD" checkout -q main
@@ -984,6 +991,17 @@ if [ "${1:-}" = "--self-test" ]; then
     rm -f "${TD:?}/${FRENAMES:?}"
     selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   fi
+  printf '\n'
+
+  # --- M13 (#7370 wiring, #7437 lane 2): run_gate() must run the cite checker --
+  #     A cite to a file that does not exist is RED, attributed to the cite
+  #     checker's own finding text, so deleting its call line turns this MISSING.
+  printf 'M13 cites — re-point one cite at a file that does not exist\n'
+  sed -i 's|crates/demo/src/m1.rs:1|crates/demo/src/nosuch.rs:1|' "$TD/$LEDGER"
+  grep -q 'nosuch.rs:1' "$TD/$LEDGER" || { printf '  M13 FAIL: mutation did not engage\n' >&2; FAILED=1; }
+  selftest_run "$TD" "cite names a file that does not exist" "RED" "does not exist" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   printf '\n'
 
   if [ "$FAILED" -eq 0 ]; then

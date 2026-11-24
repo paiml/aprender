@@ -99,6 +99,10 @@ fi
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 HAVE_BASE=0
+if [ -n "$BASE" ] && ! git -C "$ROOT" rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null 2>&1; then
+  printf 'FAIL: --base %s does not resolve to a commit in %s (cannot judge re-cited rows)\n' "$BASE" "$ROOT" >&2
+  exit 2
+fi
 if [ -n "$BASE" ] && git -C "$ROOT" show "${BASE}:${LEDGER}" > "$TMP" 2>/dev/null; then
   HAVE_BASE=1
 fi
@@ -135,7 +139,9 @@ FNR == 1 { next }
   file = substr(ev, 1, RLENGTH); rest = substr(ev, RLENGTH + 1); sub(/ .*$/, "", rest)
   path = root "/" file
   if (!(file in lines)) {
-    if ((getline probe < path) < 0) lines[file] = -1
+    r = (getline probe < path)
+    if (r < 0) lines[file] = -1
+    else if (r == 0) lines[file] = 0
     else {
       n = 1; txt[file, 1] = probe
       while ((getline probe < path) > 0) { n++; txt[file, n] = probe }

@@ -28,14 +28,16 @@ HDR='binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_ski
   printf '    other_field: u8,\n'
 } > "$TD/crates/demo/src/cli.rs"
 printf 'a\nb\nc\nd\n' > "$TD/crates/demo/src/other.rs"
+: > "$TD/crates/demo/src/empty.rs"
 
 ledger() { # ledger <cite for alpha> <cite for the comma row> <cite for legacy row>
   printf '%s\n' "$HDR"
   printf 'demo,demo alpha,6,UNKNOWN,none,no,0,c,%s,high\n' "$1"
   printf 'demo,demo beta,6,UNKNOWN,none,no,0,c,crates/demo/src/cli.rs:3,high\n'
-  printf '"demo","GET /v1/models, with comma",6,UNKNOWN,none,no,0,c,"%s",high\n' "$2"
+  printf '"demo","GET /v1/models, list models",6,UNKNOWN,none,no,0,c,"%s",high\n' "$2"
   printf 'demo,demo gamma,6,UNKNOWN,none,no,0,c,%s,high\n' "$3"
   [ -z "${FLAGCITE:-}" ] || printf 'demo,demo --dump-config,6,UNKNOWN,none,no,0,c,%s,high\n' "$FLAGCITE"
+  [ -z "${EMPTYCITE:-}" ] || printf 'demo,demo hollow,6,UNKNOWN,none,no,0,c,%s,high\n' "$EMPTYCITE"
 }
 G_ALPHA=crates/demo/src/cli.rs:2
 G_COMMA='crates/demo/src/cli.rs:4 (routes 1,2 and 5)'
@@ -44,7 +46,7 @@ G_LEGACY=crates/demo/src/cli.rs:5   # names nothing called gamma: a legacy loose
 git -C "$TD" init -q -b main --template=
 git -C "$TD" config user.email t@t; git -C "$TD" config user.name t
 git -C "$TD" config commit.gpgsign false; git -C "$TD" config core.hooksPath /dev/null
-FLAGCITE=crates/demo/src/cli.rs:7 ledger "$G_ALPHA" "$G_COMMA" "$G_LEGACY" > "$TD/docs/audits/surface_audit.csv"
+EMPTYCITE=crates/demo/src/empty.rs:1 FLAGCITE=crates/demo/src/cli.rs:7 ledger "$G_ALPHA" "$G_COMMA" "$G_LEGACY" > "$TD/docs/audits/surface_audit.csv"
 git -C "$TD" add -A
 git -C "$TD" commit -q -m base
 
@@ -64,7 +66,7 @@ row() { # row <name> <GREEN|RED> <script> <alpha> <comma> <legacy>
 
 # must-pass rows
 row "clean ledger"                          GREEN "$CHECK" "$G_ALPHA" "$G_COMMA" "$G_LEGACY"
-row "re-cite to the correct line"           GREEN "$CHECK" "$G_ALPHA" "$G_COMMA" "$G_LEGACY"
+row "re-cite to the correct line"           GREEN "$CHECK" "crates/demo/src/cli.rs:2 (re-audited)" "$G_COMMA" "$G_LEGACY"
 row "comma-quoted field, valid"             GREEN "$CHECK" "$G_ALPHA" "$G_COMMA" "$G_LEGACY"
 row "unchanged legacy row that names nothing" GREEN "$CHECK" "$G_ALPHA" "$G_COMMA" "$G_LEGACY"
 row "range cite in bounds"                  GREEN "$CHECK" crates/demo/src/cli.rs:2-3 "$G_COMMA" "$G_LEGACY"
@@ -80,6 +82,12 @@ row "cited file missing"                    RED   "$CHECK" crates/demo/src/nope.
 row "malformed cite"                        RED   "$CHECK" crates/demo/src/cli.rs:2x "$G_COMMA" "$G_LEGACY"
 row "comma field: later list item OOB"      RED   "$CHECK" "$G_ALPHA" 'crates/demo/src/cli.rs:4,99999 (x)' "$G_LEGACY"
 row "comma field: shifted cite"             RED   "$CHECK" "$G_ALPHA" 'crates/demo/src/cli.rs:3 (routes 1,2)' "$G_LEGACY"
+row "comma field: same line, note edited"   GREEN "$CHECK" "$G_ALPHA" 'crates/demo/src/cli.rs:4 (routes 1,2)' "$G_LEGACY"
+EMPTYCITE=crates/demo/src/empty.rs:1 row "zero-byte cited file, :1 (unchanged legacy row)" RED "$CHECK" "$G_ALPHA" "$G_COMMA" "$G_LEGACY"
+row "zero-byte cited file, whole-file"      GREEN "$CHECK" "$G_ALPHA" "$G_COMMA" crates/demo/src/empty.rs
+base_row() { RC=0; OUT="$(bash "$CHECK" --root "$TD" --base nonexistent-ref 2>&1)" || RC=$?; rows=$((rows + 1)); if [ "$RC" -eq 2 ]; then printf 'ok    unresolvable --base fails closed (rc=2)\n'; else printf 'FAIL  unresolvable --base: want rc=2 got %s\n%s\n' "$RC" "$OUT" >&2; fails=$((fails + 1)); fi; }
+ledger "$G_ALPHA" "$G_COMMA" "$G_LEGACY" > "$TD/docs/audits/surface_audit.csv"
+base_row
 row "legacy row pushed out of range"        RED   "$CHECK" "$G_ALPHA" "$G_COMMA" crates/demo/src/other.rs:50
 
 # L1 (#7437 lane 1): a --flag feature names its flag, not the binary before it
@@ -101,6 +109,9 @@ mutant() { # mutant <name> <sed expr> <want-under-mutant> <row name> <alpha> <co
 # legacy rows are held to C2/C3 only, so each of these isolates one rule
 mutant "no range check" 's/hi > lines\[file\]/0/' GREEN "range ending out of bounds" crates/demo/src/cli.rs:2-99 "$G_COMMA" "$G_LEGACY"
 mutant "no symbol check" 's/index(norm(txt\[file, first\]), sym) == 0/0/' GREEN "line shift" crates/demo/src/cli.rs:3 "$G_COMMA" "$G_LEGACY"
+mutant "reject every changed cite" 's/index(norm(txt\[file, first\]), sym) == 0/1/' RED "re-cite to the correct line" "crates/demo/src/cli.rs:2 (re-audited)" "$G_COMMA" "$G_LEGACY"
+EMPTYCITE=crates/demo/src/empty.rs:1 mutant "empty file read as one line" 's/else if (r == 0) lines\[file\] = 0/else if (r == 0) lines[file] = 1/' GREEN "zero-byte cited file, :1" "$G_ALPHA" "$G_COMMA" "$G_LEGACY"
+FLAGCITE=crates/demo/src/cli.rs:6 mutant "no flag symbols" 's|t ~ /^\[:{<\]/|t ~ /^[:{<-]/|' RED "flag re-cite" "$G_ALPHA" "$G_COMMA" "$G_LEGACY"
 mutant "no existence check" 's/lines\[file\] < 0/0/' GREEN "legacy file missing, no line" "$G_ALPHA" "$G_COMMA" crates/demo/src/nope.rs
 mutant "naive comma split (no quote state)" 's/else if (c == "\\"") q = 1/else if (0) q = 1/' RED "valid comma-quoted field" "$G_ALPHA" "$G_COMMA" "$G_LEGACY"
 
@@ -129,10 +140,10 @@ caps "malformed cite fails closed (exit 2)" 2 '' "$CHECK" crates/demo/src/cli.rs
 caps "reversed range fails closed (exit 2)" 2 '' "$CHECK" "$G_ALPHA" 'crates/demo/src/other.rs:3-2,4 (x)' "$G_LEGACY"
 caps "leading-space cite is still capped" 0 \
   'crates/demo/src/cli.rs=5;crates/demo/src/other.rs=2;' "$CHECK" "$G_ALPHA" " crates/demo/src/other.rs:1-2" "$G_LEGACY"
-sed 's/else if (c == "\\"") q = 1/else if (0) q = 1/' "$CHECK" > "$TD/mutant.sh"
+sed 's/else if (c == "\\"") q = 1/else if (0) q = 1/' "$CHECK" > "$TD/mutant.sh"; cmp -s "$CHECK" "$TD/mutant.sh" && { printf "FAIL  caps mutant did not engage\n" >&2; fails=$((fails + 1)); }
 caps "mutant [naive comma split] loses the quoted row" 0 \
   'crates/demo/src/cli.rs=5;' "$TD/mutant.sh" "$G_ALPHA" "$Q_COMMA" "$G_LEGACY"
-sed 's/if (h > hi) hi = h/if (i == 1) hi = h/' "$CHECK" > "$TD/mutant.sh"
+sed 's/if (h > hi) hi = h/if (i == 1) hi = h/' "$CHECK" > "$TD/mutant.sh"; cmp -s "$CHECK" "$TD/mutant.sh" && { printf "FAIL  caps mutant did not engage\n" >&2; fails=$((fails + 1)); }
 caps "mutant [first list item only] under-reports the cap" 0 \
   'crates/demo/src/cli.rs=5;crates/demo/src/other.rs=2;' "$TD/mutant.sh" "$G_ALPHA" "$Q_COMMA" "$G_LEGACY"
 # the gate must read its caps from this parser, not from a second comma split
