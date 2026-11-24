@@ -1,7 +1,7 @@
 //! Published-docs Contract Enforcement — README.md, docs/BEATS.md, CLAUDE.md
 //!
 //! Enforces: contracts/apr-docs-v1.yaml
-//! FALSIFY-README-001..007 + FALSIFY-SVG-002/003
+//! FALSIFY-README-001..007 + 012..013 + FALSIFY-SVG-002/003
 //! FALSIFY-DOCS-BEATS-001..003, FALSIFY-DOCS-CLAUDE-001
 //!
 //! These tests prevent our *published* claims from drifting away from the tree
@@ -712,7 +712,7 @@ fn count_md(rel: &str) -> usize {
         .count()
 }
 
-/// FALSIFY-README-008: the CLI-command and book-chapter rows EQUAL what the tree
+/// FALSIFY-README-012: the CLI-command and book-chapter rows EQUAL what the tree
 /// holds (the contract count is gated by `scripts/check_readme_claims.sh`;
 /// `contracts/census.json` is a stale release snapshot, #3569, so it is not used).
 #[test]
@@ -734,17 +734,17 @@ fn test_readme_claims_table_equals_derived_counts() {
     assert_eq!(
         claims_row_number(&readme, "** CLI commands"),
         cmds,
-        "FALSIFY-README-008: CLI commands row != commands registry"
+        "FALSIFY-README-012: CLI commands row != commands registry"
     );
 
     assert_eq!(
         claims_row_number(&readme, "** chapters | `ls book/src/cli"),
         count_md("book/src/cli"),
-        "FALSIFY-README-008: Book CLI chapters row != book/src/cli/*.md"
+        "FALSIFY-README-012: Book CLI chapters row != book/src/cli/*.md"
     );
 }
 
-/// FALSIFY-README-009: a "planned for 0.N.M" promise must not name a release older
+/// FALSIFY-README-013: a "planned for 0.N.M" promise must not name a release older
 /// than the current tag line (0.75). A dated promise that nobody re-reads is how the
 /// "planned for 0.70.1" known-issue lines outlived five releases.
 #[test]
@@ -768,7 +768,7 @@ fn test_readme_has_no_overdue_planned_for_release() {
             if let Some(m) = minor {
                 assert!(
                     m > cur_minor,
-                    "FALSIFY-README-009: README line {} promises a release (0.{m}) at or before the current 0.{cur_minor}",
+                    "FALSIFY-README-013: README line {} promises a release (0.{m}) at or before the current 0.{cur_minor}",
                     i + 1
                 );
             }
