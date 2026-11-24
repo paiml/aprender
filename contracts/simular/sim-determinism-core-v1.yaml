@@ -12,27 +12,22 @@ equations:
     formula: 'draw(seed, entity, event, k) = mix(mix(mix(mix(seed) xor entity) xor event) xor k), with mix(x) = splitmix64 finalizer of (x + 0x9E3779B97F4A7C15): z=(z xor z>>30)*0xBF58476D1CE4E5B9; z=(z xor z>>27)*0x94D049BB133111EB; z xor z>>31, all arithmetic mod 2^64'
     domain: seed, entity, event, k ∈ u64
     codomain: u64
-    invariants:
-    - 'Pure: equal keys give equal values, no state advances'
-    - 'Keyed: changing any one key component changes the value'
+    invariants: []
   order_independence:
     formula: 'hash(run(order_a)) = hash(run(order_b)) for any permutations order_a, order_b'
     domain: order ∈ Perm(entities)
     codomain: hash
-    invariants:
-    - 'Each entity reads only the previous snapshot and writes a fresh buffer'
-    - 'The buffer is sorted by entity id before it is hashed'
+    invariants: []
     preconditions:
     - entity ids are unique
   hash_chain:
-    formula: 'h_k = H(STEP_DOMAIN, h_(k-1), k, t_k, n, states_k) with t_k = k * dt_ns (mod 2^64), H = BLAKE3, states_k sorted by entity id; base case h_(-1) = H(GENESIS_DOMAIN, seed) so h_0 is defined and depends on the seed'
+    formula: 't(k) = k * dt_ns; h_k = H(STEP_DOMAIN, h_(k-1), k, t_k, n, states_k) with t_k = t(k) (mod 2^64), H = BLAKE3, states_k sorted by entity id; base case h_(-1) = H(GENESIS_DOMAIN, seed) so h_0 is defined and depends on the seed'
     domain: k ∈ 0..steps (k = 0 uses the base case h_(-1)), dt_ns > 0
     codomain: 32 bytes
     invariants:
-    - 'h_(-1) is a function of the seed alone, so a different seed changes h_0'
-    - 'Same spec and seed twice give the same final hash'
-    - 'A different seed gives a different final hash'
-    - 'Changing one state word at step j changes every h_k for k >= j and no h_k for k < j'
+    - 't(0) = 0'
+    - 't(k + 1) - t(k) = dt_ns'
+    - 't(k + 1) > t(k)'
     preconditions:
     - dt_ns > 0
     - entity ids are unique
@@ -56,6 +51,26 @@ proof_obligations:
   type: invariant
   property: Seed sensitivity
   formal: 'seed1 ≠ seed2 ⇒ final_hash1 ≠ final_hash2'
+  applies_to: hash_chain
+- id: SDC-INV-005
+  type: invariant
+  property: Keyed draw key sensitivity
+  formal: 'changing any one of seed, entity, event, k changes draw(seed, entity, event, k) on the tested keys'
+  applies_to: keyed_draw
+- id: SDC-INV-006
+  type: invariant
+  property: Snapshot isolation and canonical order
+  formal: 'each entity reads only the previous snapshot and writes a fresh buffer; the buffer is sorted by entity id before it is hashed'
+  applies_to: order_independence
+- id: SDC-INV-007
+  type: invariant
+  property: Genesis base case
+  formal: 'h_(-1) = H(GENESIS_DOMAIN, seed) is a function of the seed alone, so seed1 ≠ seed2 ⇒ h_0(seed1) ≠ h_0(seed2)'
+  applies_to: hash_chain
+- id: SDC-INV-008
+  type: invariant
+  property: Chain linkage
+  formal: 'changing one state word at step j changes every h_k for k >= j and no h_k for k < j'
   applies_to: hash_chain
 enforcement:
   repeat_run_equal:

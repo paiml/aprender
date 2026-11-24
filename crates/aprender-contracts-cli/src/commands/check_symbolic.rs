@@ -13,6 +13,10 @@
 //! Arithmetic is `f64` with a relative tolerance of 1e-9, NOT exact rational: `sin`/`cos` are not
 //! rational, so the report names its arithmetic. A point where a definition has no matching clause or
 //! the value is not finite is skipped; an invariant with no evaluated point is `unparsed`, not `holds`.
+//!
+//! `pv check-symbolic <dir>` (aprender#7305) walks every `.yaml`/`.yml` under the directory, names a binding
+//! registry as skipped, and is strict: a violated OR an unparsed invariant, a file that is not a contract, or
+//! a directory with no contract file exits non-zero. The single-file form keeps its exit code (violated only).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -611,9 +615,10 @@ pub fn check_invariant(formula: &str, invariant: &str) -> Verdict {
     Verdict::Holds { points: pts }
 }
 
-/// Run the command: print every invariant's verdict; error if any is violated.
-#[allow(clippy::disallowed_methods)] // serde_json::json! expands to an unwrap
-pub fn run(path: &Path, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+/// One invariant's row: (equation id, invariant text, verdict).
+type Row = (String, String, Verdict);
+
+fn check_file(path: &Path) -> Result<Vec<Row>, Box<dyn std::error::Error>> {
     let contract = parse_contract(path)?;
     let mut rows = Vec::new();
     for (id, eq) in &contract.equations {
@@ -621,41 +626,178 @@ pub fn run(path: &Path, json: bool) -> Result<(), Box<dyn std::error::Error>> {
             rows.push((id.clone(), inv.clone(), check_invariant(&eq.formula, inv)));
         }
     }
+    Ok(rows)
+}
+
+/// (holds, violated, unparsed).
+fn counts(rows: &[Row]) -> (usize, usize, usize) {
     let n = |f: fn(&Verdict) -> bool| rows.iter().filter(|r| f(&r.2)).count();
-    let (h, v, u) = (
+    (
         n(|x| matches!(x, Verdict::Holds { .. })),
         n(|x| matches!(x, Verdict::Violated { .. })),
         n(|x| matches!(x, Verdict::Unparsed { .. })),
+    )
+}
+
+#[allow(clippy::disallowed_methods)] // serde_json::json! expands to an unwrap
+fn rows_json(rows: &[Row]) -> Vec<serde_json::Value> {
+    rows.iter()
+        .map(|(e, i, vd)| {
+            let (s, d) = match vd {
+                Verdict::Holds { points } => ("holds", format!("{points} points")),
+                Verdict::Violated { counterexample } => ("violated", counterexample.clone()),
+                Verdict::Unparsed { reason } => ("unparsed", reason.clone()),
+            };
+            serde_json::json!({"equation": e, "invariant": i, "verdict": s, "detail": d})
+        })
+        .collect()
+}
+
+fn print_rows(path: &Path, rows: &[Row]) {
+    println!(
+        "check-symbolic {} (f64, tol 1e-9; unparsed is NOT a pass)",
+        path.display()
     );
+    for (e, i, vd) in rows {
+        match vd {
+            Verdict::Holds { points } => println!("  holds     [{e}] {i}  ({points} points)"),
+            Verdict::Violated { counterexample } => {
+                println!("  VIOLATED  [{e}] {i}\n            {counterexample}")
+            }
+            Verdict::Unparsed { reason } => println!("  unparsed  [{e}] {i}  ({reason})"),
+        }
+    }
+    let (h, v, u) = counts(rows);
+    println!("holds {h}, violated {v}, unparsed {u}");
+}
+
+/// A binding registry (`bindings:` at the top level, no `equations:`) holds no invariants: the directory
+/// walk names it as skipped instead of failing on its missing `metadata`.
+fn is_binding_registry(text: &str) -> bool {
+    let top = |key: &str| {
+        text.lines()
+            .any(|l| l.trim_end() == key || l.starts_with(&format!("{key} ")))
+    };
+    top("bindings:") && !top("equations:")
+}
+
+/// Every `.yaml` / `.yml` under `dir`, recursively, sorted by path. A dot-directory (pv's own `.pv/` lint
+/// cache, `.git`) holds no contract and is not entered.
+fn contract_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> std::io::Result<()> {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)?
+        .map(|e| e.map(|e| e.path()))
+        .collect::<Result<_, _>>()?;
+    entries.sort();
+    for p in entries {
+        let hidden = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with('.'));
+        if p.is_dir() && hidden {
+            continue;
+        }
+        if p.is_dir() {
+            contract_files(&p, out)?;
+        } else if matches!(p.extension().and_then(|e| e.to_str()), Some("yaml" | "yml")) {
+            out.push(p);
+        }
+    }
+    Ok(())
+}
+
+/// What the directory walk found: each checked file's rows, and each skipped file with the reason.
+#[derive(Default)]
+struct DirReport {
+    files: Vec<(std::path::PathBuf, Vec<Row>)>,
+    skipped: Vec<(std::path::PathBuf, String)>,
+}
+
+fn walk_dir(dir: &Path) -> Result<DirReport, Box<dyn std::error::Error>> {
+    let mut paths = Vec::new();
+    contract_files(dir, &mut paths)?;
+    let mut rep = DirReport::default();
+    for p in paths {
+        if is_binding_registry(&std::fs::read_to_string(&p)?) {
+            rep.skipped
+                .push((p, "binding registry, no equations".to_string()));
+            continue;
+        }
+        let rows = check_file(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        rep.files.push((p, rows));
+    }
+    if rep.files.is_empty() {
+        return Err(format!(
+            "no contract file under {}: nothing was checked",
+            dir.display()
+        )
+        .into());
+    }
+    Ok(rep)
+}
+
+/// Directory form: every contract file is checked and every skipped file is named. Strict: a violated OR
+/// an unparsed invariant anywhere fails the directory, and so does a file that is not a contract.
+#[allow(clippy::disallowed_methods)] // serde_json::json! expands to an unwrap
+fn run_dir(dir: &Path, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let rep = walk_dir(dir)?;
+    let (mut h, mut v, mut u) = (0, 0, 0);
+    for (_, rows) in &rep.files {
+        let c = counts(rows);
+        (h, v, u) = (h + c.0, v + c.1, u + c.2);
+    }
     if json {
-        let items: Vec<serde_json::Value> = rows
+        let files: Vec<serde_json::Value> = rep
+            .files
             .iter()
-            .map(|(e, i, vd)| {
-                let (s, d) = match vd {
-                    Verdict::Holds { points } => ("holds", format!("{points} points")),
-                    Verdict::Violated { counterexample } => ("violated", counterexample.clone()),
-                    Verdict::Unparsed { reason } => ("unparsed", reason.clone()),
-                };
-                serde_json::json!({"equation": e, "invariant": i, "verdict": s, "detail": d})
+            .map(|(p, rows)| {
+                let c = counts(rows);
+                serde_json::json!({"file": p.display().to_string(), "holds": c.0, "violated": c.1, "unparsed": c.2, "invariants": rows_json(rows)})
             })
             .collect();
-        let out = serde_json::json!({"arithmetic": "f64, tol 1e-9", "holds": h, "violated": v, "unparsed": u, "invariants": items});
+        let skipped: Vec<serde_json::Value> = rep
+            .skipped
+            .iter()
+            .map(|(p, why)| serde_json::json!({"file": p.display().to_string(), "reason": why}))
+            .collect();
+        let out = serde_json::json!({"arithmetic": "f64, tol 1e-9", "holds": h, "violated": v, "unparsed": u, "files": files, "skipped": skipped});
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
-        println!(
-            "check-symbolic {} (f64, tol 1e-9; unparsed is NOT a pass)",
-            path.display()
-        );
-        for (e, i, vd) in &rows {
-            match vd {
-                Verdict::Holds { points } => println!("  holds     [{e}] {i}  ({points} points)"),
-                Verdict::Violated { counterexample } => {
-                    println!("  VIOLATED  [{e}] {i}\n            {counterexample}")
-                }
-                Verdict::Unparsed { reason } => println!("  unparsed  [{e}] {i}  ({reason})"),
-            }
+        for (p, rows) in &rep.files {
+            print_rows(p, rows);
         }
-        println!("holds {h}, violated {v}, unparsed {u}");
+        for (p, why) in &rep.skipped {
+            println!("skipped {} ({why})", p.display());
+        }
+        println!(
+            "total: {} file(s) checked, {} skipped; holds {h}, violated {v}, unparsed {u}",
+            rep.files.len(),
+            rep.skipped.len()
+        );
+    }
+    if v > 0 || u > 0 {
+        return Err(format!(
+            "{v} invariant(s) violated, {u} unparsed under {} (unparsed is not a pass)",
+            dir.display()
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// Run the command: print every invariant's verdict. A contract file fails if any invariant is violated;
+/// a directory is walked (`run_dir`) and also fails on any unparsed invariant.
+#[allow(clippy::disallowed_methods)] // serde_json::json! expands to an unwrap
+pub fn run(path: &Path, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if path.is_dir() {
+        return run_dir(path, json);
+    }
+    let rows = check_file(path)?;
+    let (h, v, u) = counts(&rows);
+    if json {
+        let out = serde_json::json!({"arithmetic": "f64, tol 1e-9", "holds": h, "violated": v, "unparsed": u, "invariants": rows_json(&rows)});
+        println!("{}", serde_json::to_string_pretty(&out)?);
+    } else {
+        print_rows(path, &rows);
     }
     if v > 0 {
         return Err(format!("{v} invariant(s) violated").into());
@@ -866,6 +1008,127 @@ mod tests {
                 invs.iter()
                     .any(|i| matches!(check_invariant(&bad, i), Verdict::Violated { .. })),
                 "{file}: planted formula not caught"
+            );
+        }
+    }
+
+    fn simular_dir() -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/simular")
+    }
+
+    #[test]
+    fn binding_registry_is_recognised_by_its_top_level_keys() {
+        for (text, want) in [
+            ("version: 1.0.0\nbindings:\n- contract: a.yaml\n", true),
+            ("bindings: []\n", true),
+            (
+                "metadata:\n  version: 1\nequations:\n  e:\n    formula: x\n",
+                false,
+            ),
+            // A contract that merely mentions bindings below the top level is still a contract.
+            ("metadata:\n  bindings:\n  - x\nequations: {}\n", false),
+            ("bindings:\n- x\nequations:\n  e: {}\n", false),
+            ("", false),
+        ] {
+            assert_eq!(is_binding_registry(text), want, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn directory_walk_checks_four_contracts_and_names_the_binding() {
+        let rep = walk_dir(&simular_dir()).expect("walk");
+        let names = |v: Vec<&std::path::PathBuf>| -> Vec<String> {
+            v.iter()
+                .map(|p| p.file_name().expect("name").to_string_lossy().into_owned())
+                .collect()
+        };
+        assert_eq!(
+            names(rep.files.iter().map(|f| &f.0).collect()),
+            [
+                "f64-dense-solve-v1.yaml",
+                "sim-determinism-core-v1.yaml",
+                "simulation-determinism-v1.yaml",
+                "simulation-step-v1.yaml"
+            ]
+        );
+        assert_eq!(
+            names(rep.skipped.iter().map(|f| &f.0).collect()),
+            ["binding.yaml"]
+        );
+        for (p, rows) in &rep.files {
+            assert!(!rows.is_empty(), "{}: no invariant checked", p.display());
+            assert_eq!(counts(rows), (rows.len(), 0, 0), "{}", p.display());
+        }
+    }
+
+    #[test]
+    fn directory_walk_of_nothing_is_an_error_not_a_pass() {
+        let tmp =
+            std::env::temp_dir().join(format!("pv-check-symbolic-empty-{}", std::process::id()));
+        // A dot-directory is not entered, so a contract-shaped file inside it is not "a contract file".
+        std::fs::create_dir_all(tmp.join(".pv")).expect("mkdir");
+        std::fs::write(tmp.join(".pv/cache.yaml"), "not: a contract\n").expect("write");
+        let r = walk_dir(&tmp);
+        std::fs::remove_dir_all(&tmp).expect("rmdir");
+        assert!(r.is_err_and(|e| e.to_string().contains("no contract file")));
+    }
+
+    /// No simular invariant is `a = a`: a comparison whose two sides are the same text cannot fail.
+    #[test]
+    fn simular_invariants_are_not_tautologies() {
+        let rep = walk_dir(&simular_dir()).expect("walk");
+        for (p, rows) in &rep.files {
+            for (_, inv, _) in rows {
+                for conj in strip_prose(inv).split(" and ") {
+                    let (parts, _) = split_chain(conj).expect("typed");
+                    for w in parts.windows(2) {
+                        assert_ne!(w[0].trim(), w[1].trim(), "{}: {inv}", p.display());
+                    }
+                }
+            }
+        }
+    }
+
+    /// (file, equation, mutation site, planted replacement) for the equations typed in #7305.
+    const TYPED_7305: [(&str, &str, &str, &str); 3] = [
+        (
+            "simular/f64-dense-solve-v1.yaml",
+            "cholesky_f64_fixed_order",
+            "l21(a, b) = b / l11(a)",
+            "l21(a, b) = b / a",
+        ),
+        (
+            "simular/f64-dense-solve-v1.yaml",
+            "cholesky_f64_fixed_order",
+            "sqrt(c - l21(a, b)^2)",
+            "sqrt(c + l21(a, b)^2)",
+        ),
+        (
+            "simular/sim-determinism-core-v1.yaml",
+            "hash_chain",
+            "t(k) = k * dt_ns",
+            "t(k) = k + dt_ns",
+        ),
+    ];
+
+    #[test]
+    fn simular_7305_invariants_hold_and_planted_formulas_are_violated() {
+        for (file, eq, from, to) in TYPED_7305 {
+            let (formula, invs) = typed_equation(file, eq);
+            assert_eq!(invs.len(), 3, "{file}");
+            for i in &invs {
+                let v = check_invariant(&formula, i);
+                assert!(
+                    matches!(v, Verdict::Holds { points } if points >= 4),
+                    "{file} {i}: {v:?}"
+                );
+            }
+            assert!(formula.contains(from), "{file}: mutation site missing");
+            let bad = formula.replacen(from, to, 1);
+            assert!(
+                invs.iter()
+                    .any(|i| matches!(check_invariant(&bad, i), Verdict::Violated { .. })),
+                "{file} {eq}: planted '{to}' not caught"
             );
         }
     }

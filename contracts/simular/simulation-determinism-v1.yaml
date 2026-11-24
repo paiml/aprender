@@ -12,7 +12,7 @@ equations:
     domain: S ∈ SimState, dt ∈ f64 where dt > 0
     codomain: SimState
     invariants:
-    - 'step_x(x, v, dt) = step_x(x, v, dt) and step_v(x, v, dt) = step_v(x, v, dt)'
+    - 'step_x(x, v, 0) = x and step_v(x, v, 0) = v'
     - 'abs(energy(step_x(x, v, dt), step_v(x, v, dt)) - energy(x, v)) <= 0.000000001 * (1 + abs(energy(x, v)))'
     - 'step_count(n + 1) = step_count(n) + 1'
     preconditions:

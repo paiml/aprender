@@ -37,6 +37,9 @@ fn planted(file: &str, from: &str, to: &str) -> tempfile::TempDir {
     let tmp = tempfile::tempdir().expect("tempdir");
     for entry in fs::read_dir(simular_dir()).expect("read simular dir") {
         let p = entry.expect("dir entry").path();
+        if !p.is_file() {
+            continue; // pv lint leaves a `.pv/` cache directory beside the contracts
+        }
         let name = p.file_name().expect("file name").to_owned();
         let mut text = fs::read_to_string(&p).expect("read contract");
         if name.to_str() == Some(file) {
