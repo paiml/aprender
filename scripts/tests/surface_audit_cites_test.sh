@@ -123,6 +123,7 @@ caps "mutant [first list item only] under-reports the cap" 0 \
   'crates/demo/src/cli.rs=5;crates/demo/src/other.rs=2;' "$TD/mutant.sh" "$G_ALPHA" "$Q_COMMA" "$G_LEGACY"
 # the gate must read its caps from this parser, not from a second comma split
 rows=$((rows + 1))
+# shellcheck disable=SC2016  # literal text searched for, not expanded
 if grep -q 'check_surface_audit_cites.sh" --root "$root" --caps' "$SRC/scripts/check_dogfood_coverage.sh" \
    && ! grep -q "awk -F, 'NR > 1 {" "$SRC/scripts/check_dogfood_coverage.sh"; then
   printf 'ok    caps: check_dogfood_coverage.sh reads --caps (no second comma split)\n'

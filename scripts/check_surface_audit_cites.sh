@@ -19,35 +19,33 @@
 #               old ledger cites the line of a field or attribute, not of the
 #               name, and a symbol rule over them would be red on main on day one.
 #
-# Usage: check_surface_audit_cites.sh [--root DIR] [--base REF]
+# Usage: check_surface_audit_cites.sh [--root DIR] [--base REF | --caps]
 #   --root   repo root holding docs/audits/surface_audit.csv (default: this repo)
 #   --base   ref whose ledger is the comparand for C4 (default: none = C2/C3 only)
+#   --caps   print "<file>TAB<last cited line>" per cited file and exit (no line =
+#            999999999, whole file); read by check_dogfood_coverage.sh G2.1.
+#            Exit 2 on a malformed cite: never a guessed line
 # Exit 0 clean, 1 findings (printed as `FAIL: ...`), 2 could not run.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE=""
+CAPS=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --root) ROOT="${2:?--root needs a dir}"; shift 2 ;;
     --base) BASE="${2:?--base needs a ref}"; shift 2 ;;
-    *) printf 'usage: %s [--root DIR] [--base REF]\n' "$0" >&2; exit 2 ;;
+    --caps) CAPS=1; shift ;;
+    *) printf 'usage: %s [--root DIR] [--base REF | --caps]\n' "$0" >&2; exit 2 ;;
   esac
 done
 LEDGER="docs/audits/surface_audit.csv"
 [ -f "$ROOT/$LEDGER" ] || { printf 'FAIL: cannot read %s\n' "$ROOT/$LEDGER" >&2; exit 2; }
 
-TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
-HAVE_BASE=0
-if [ -n "$BASE" ] && git -C "$ROOT" show "${BASE}:${LEDGER}" > "$TMP" 2>/dev/null; then
-  HAVE_BASE=1
-fi
-# awk needs a non-empty first file for the two-file NR==FNR idiom.
-[ -s "$TMP" ] || printf 'header\n' > "$TMP"
-
-rc=0
-awk -v root="$ROOT" -v have_base="$HAVE_BASE" '
+# One quote-aware CSV reader for both modes: a second, comma-splitting reader in
+# check_dogfood_coverage.sh is what dropped ledger row 76 from the freshness caps.
+# shellcheck disable=SC2016  # awk source, not a shell expansion
+CSV_FN='
 function csv(line, out,    n, i, c, q, cur) {
   n = 0; cur = ""; q = 0
   for (i = 1; i <= length(line); i++) {
@@ -62,7 +60,53 @@ function csv(line, out,    n, i, c, q, cur) {
   }
   out[++n] = cur
   return n
-}
+}'
+
+if [ "$CAPS" -eq 1 ]; then
+  # evidence_path is the second-to-last field (confidence is last) in every
+  # ledger schema. The cite must be "", ":N", ":N-M" or a comma list of those
+  # (N <= M); anything else fails closed (exit 2) rather than guess a line. A
+  # trailing " (note ...)" annotation is not part of the cite.
+  # shellcheck disable=SC2016
+  awk "$CSV_FN"'
+  FNR == 1 { next }
+  {
+    delete f
+    nf = csv($0, f)
+    if (nf < 2) next
+    p = f[nf - 1]
+    if (!match(p, /^[^ :]+\.(rs|toml|yml|yaml|md|sh|py)/)) next
+    file = substr(p, 1, RLENGTH); rest = substr(p, RLENGTH + 1); hi = 0
+    sub(/ .*$/, "", rest)
+    if (rest != "") {
+      if (rest !~ /^:[0-9]+(-[0-9]+)?(,[0-9]+(-[0-9]+)?)*$/) { print "malformed cite: " p > "/dev/stderr"; rc = 2; next }
+      np = split(substr(rest, 2), parts, ",")
+      for (i = 1; i <= np; i++) {
+        m = split(parts[i], se, "-"); lo = se[1] + 0; h = (m == 2 ? se[2] + 0 : lo)
+        if (lo > h) { print "reversed range: " p > "/dev/stderr"; rc = 2; next }
+        if (h > hi) hi = h
+      }
+    }
+    if (hi == 0) hi = 999999999
+    if (hi > best[file]) best[file] = hi
+  }
+  END { if (rc) exit rc; for (k in best) print k "\t" best[k] }
+  ' "$ROOT/$LEDGER" || exit 2
+  exit 0
+fi
+
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+HAVE_BASE=0
+if [ -n "$BASE" ] && git -C "$ROOT" show "${BASE}:${LEDGER}" > "$TMP" 2>/dev/null; then
+  HAVE_BASE=1
+fi
+# awk needs a non-empty first file for the two-file NR==FNR idiom.
+[ -s "$TMP" ] || printf 'header\n' > "$TMP"
+
+rc=0
+# shellcheck disable=SC2016
+awk -v root="$ROOT" -v have_base="$HAVE_BASE" "$CSV_FN"'
 function norm(s) { s = tolower(s); gsub(/[^a-z0-9]/, "", s); return s }
 function symbol(feat,    t, n, a, i) {
   sub(/[ ]*\(.*$/, "", feat)

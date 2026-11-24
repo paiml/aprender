@@ -170,25 +170,12 @@ PY
 # Reads the files to judge from the list file $3; prints the ones that are material.
 material_cited_changes() {
   local root="$1" base="$2" list="$3" caps f cap out
-  # evidence_path is the second-to-last CSV field (confidence is last); it is a
-  # repo path and never holds a comma. Last cited line per file; no line = whole file.
-  caps="$(awk -F, 'NR > 1 {
-      p = $(NF - 1); gsub(/"/, "", p)
-      if (!match(p, /^[^ :]+\.(rs|toml|yml|yaml|md|sh|py)/)) next
-      f = substr(p, RSTART, RLENGTH); rest = substr(p, RLENGTH + 1); hi = 0
-      # the cite must be exactly "", ":N" or ":N-M" (N <= M); anything else is a
-      # malformed cite and the whole check fails closed rather than guess a line
-      # (a trailing " (note ...)" annotation, as the real ledger has, is not part of the cite)
-      sub(/ .*$/, "", rest)
-      if (rest != "") {
-        if (rest !~ /^:[0-9]+(-[0-9]+)?$/) { print "!\t" p; next }
-        rest = substr(rest, 2); n = split(rest, a, "-"); hi = a[n] + 0
-        if (n == 2 && a[1] + 0 > hi) { print "!\t" p; next }
-      }
-      if (hi == 0) hi = 999999999
-      if (hi > best[f]) best[f] = hi
-    } END { for (f in best) print f "\t" best[f] }' "$root/$LEDGER")" || return 2
-  case "$caps" in "!"$'\t'* | *$'\n!'$'\t'*) return 2 ;; esac
+  # Last cited line per file; no line = whole file. Read by the ONE quote-aware
+  # ledger parser (#7370): a comma split here dropped every row whose quoted
+  # evidence_path holds commas (ledger row 76), so a hunk inside that row's cited
+  # range could be judged "after the last cited line". A malformed cite or an
+  # unreadable ledger exits 2 there and the whole check fails closed here.
+  caps="$(bash "$root/scripts/check_surface_audit_cites.sh" --root "$root" --caps)" || return 2
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     cap="$(awk -F'\t' -v f="$f" '$1 == f { print $2 }' <<<"$caps")"
