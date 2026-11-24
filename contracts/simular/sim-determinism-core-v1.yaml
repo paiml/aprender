@@ -55,12 +55,12 @@ proof_obligations:
 - id: SDC-INV-005
   type: invariant
   property: Keyed draw key sensitivity
-  formal: 'changing any one of seed, entity, event, k changes draw(seed, entity, event, k) on the tested keys'
+  formal: 's1 ≠ s2 ⇒ draw(s1, e, v, k) ≠ draw(s2, e, v, k), and likewise for e, v and k alone, on the tested keys'
   applies_to: keyed_draw
 - id: SDC-INV-006
   type: invariant
   property: Snapshot isolation and canonical order
-  formal: 'each entity reads only the previous snapshot and writes a fresh buffer; the buffer is sorted by entity id before it is hashed'
+  formal: '∀ entity i, step k: buffer_k[i] = f(snapshot_(k-1), i) ∧ hashed_k = sort_by_entity_id(buffer_k)'
   applies_to: order_independence
 - id: SDC-INV-007
   type: invariant
@@ -70,7 +70,7 @@ proof_obligations:
 - id: SDC-INV-008
   type: invariant
   property: Chain linkage
-  formal: 'changing one state word at step j changes every h_k for k >= j and no h_k for k < j'
+  formal: 'states_j ≠ states′_j ⇒ (∀ k ≥ j: h_k ≠ h′_k) ∧ (∀ k < j: h_k = h′_k)'
   applies_to: hash_chain
 enforcement:
   repeat_run_equal:
