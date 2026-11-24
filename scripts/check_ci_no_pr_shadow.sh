@@ -24,6 +24,9 @@
 #   R9 expr      a ${{ }} expression other than the workspace-test shard index
 #   R10 comment  a comment that names the driver and `sections`, `--s` or carries code-looking syntax
 #   R11 orphan   a `--se...` option on a line that is not part of a driver statement
+#   R14 unreadable  a construct the line scanner cannot read soundly (fail-closed): \x/\u/\U escape in a double-quoted scalar; flow
+#                mapping/sequence at jobs/strategy/matrix/steps, at a line start or spanning lines; `? ` explicit key; a quote that
+#                does not close on its line
 #   R12 unread   a workflow file that cannot be read, or a grep that exits >=2 (fail closed, never "no match")
 # SCOPE. ci.yml (must hold >=1 list) and every other .github/workflows/*.yml that names the driver AND can run on the PR or
 # merge-queue path (its `on:` block names pull_request, pull_request_target, merge_group or workflow_call, or has no `on:` block).
@@ -89,12 +92,67 @@ stmt_ok() {
     return "$bad"
 }
 
+# R14 unreadable: FAIL-CLOSED on YAML this line scanner cannot read soundly (replaces per-bypass patching of R13). Outside block
+# scalars and comments a line is refused when it holds (a) a \x \u \U escape inside a double-quoted scalar, (b) a flow mapping or
+# sequence at a jobs/strategy/matrix/steps key, at a line start (a `- {..}` list item is allowed, as real workflows use it), or one that does not close on its line, (c) a YAML explicit key
+# (`? `), or (d) a quoted scalar that does not close on its line. Prints FAIL lines; nothing when the file is readable.
+R14_AWK=$(cat <<'R14EOF'
+function ind(s) { match(s, /^ */); return RLENGTH }
+function fail(tag, why, s) { printf "FAIL  [R14-unreadable] line %d: %s: %s\n", NR, why, s }
+BEGIN { bs = -1 }
+{
+    line = $0
+    if (bs >= 0) { if (line ~ /^[ \t]*$/) next; if (ind(line) > bs) next; bs = -1 }
+    if (line ~ /^[ \t]*#/) next
+    bad = 0
+    if (line ~ /^[ \t]*(- +)*\?([ \t]|$)/) { fail("c", "YAML explicit key (? ...) is not read by the line scanner", line); bad = 1 }
+    if (line ~ /^[ \t]*(- +)*(jobs|strategy|matrix|steps|"jobs"|"strategy"|"matrix"|"steps"|'jobs'|'strategy'|'matrix'|'steps')[ \t]*:[ \t]*[[{]/ || line ~ /^[ \t]*[[{]/) { fail("b", "flow-style mapping/sequence where the line scanner reads block structure", line); bad = 1 }
+    depth = 0; last = ""; L = length(line); i = 1; prevsp = 1
+    while (i <= L) {
+        c = substr(line, i, 1)
+        if (c == " " || c == "\t") { prevsp = 1; i++; continue }
+        if (c == "#" && prevsp) break
+        start = (last == "" || last == "-" || last == ":" || last == "?" || last == "," || last == "[" || last == "{")
+        if ((c == "\"" || c == "'") && start) {
+            q = c; j = i + 1; closed = 0
+            while (j <= L) {
+                d = substr(line, j, 1)
+                if (q == "\"" && d == "\\") {
+                    e = substr(line, j + 1, 1)
+                    if (e == "x" || e == "u" || e == "U") { fail("a", "backslash escape (\\x \\u \\U) inside a double-quoted scalar", line); bad = 1 }
+                    j += 2; continue
+                }
+                if (d == q) {
+                    if (q == "'" && substr(line, j + 1, 1) == "'") { j += 2; continue }
+                    closed = 1; break
+                }
+                j++
+            }
+            if (!closed) { fail("d", "quoted scalar does not close on the same line", line); bad = 1; break }
+            i = j + 1; last = q; prevsp = 0; continue
+        }
+        if ((c == "[" || c == "{") && start) depth++
+        else if ((c == "]" || c == "}") && depth > 0) depth--
+        last = c; prevsp = 0; i++
+    }
+    if (depth > 0) { fail("b", "flow collection does not close on the same line", line); bad = 1 }
+    if (!bad && (line ~ /(:|-)[ \t]+[|>][-+0-9]*[ \t]*(#.*)?$/ || line ~ /^[ \t]*(- +)*[|>][-+0-9]*[ \t]*(#.*)?$/)) {
+        if (line ~ /^[ \t]*(- +)*[|>][-+0-9]*[ \t]*(#.*)?$/) bs = ind(line)
+        else { match(line, /^[ \t]*(- +)*/); bs = RLENGTH }
+    }
+}
+R14EOF
+)
+r14_unreadable() { LC_ALL=C awk "$R14_AWK" "$1"; }
+
 check_file() { # FILE REQUIRE(1|0) [R11-ON-UNNAMED-FILES(1|0), default 1] -> FAIL lines; rc 1 when any
     local f="$1" need="$2" scan_all="${3:-1}" bad=0 i j total start cur nxt line named matrixx
     local -a L=()
     if ! [ -f "$f" ] || ! [ -r "$f" ]; then echo "FAIL  [R12-unread] cannot read workflow file: $f"; return 1; fi
     if ! mapfile -t L < "$f"; then echo "FAIL  [R12-unread] mapfile failed on: $f"; return 1; fi
     total="${#L[@]}"; N_LISTS=0
+    local r14; r14="$(r14_unreadable "$f")" || { echo "FAIL  [R14-unreadable] awk failed on: $f"; return 1; }
+    if [ -n "$r14" ]; then printf '%s\n' "$r14"; bad=1; fi
     named=0; matrixx=0
     for ((i = 0; i < total; i++)); do
         line="${L[i]}"
@@ -365,11 +423,33 @@ jobs:
   pull_request:' "'pr-review-shadow'"
     if got="$(check "$td/m/ci.yml")"; then echo "FAIL  mutant: unclosed cron quote hid pull_request (F3)"; fails=1
     elif grep -qE '\(sib.yml\).*\[R5-' <<<"$got"; then echo "ok    red   MUTANT [R5]: unclosed cron quote does not hide pull_request"; else echo "FAIL  F3 wrong reason: $got"; fails=1; fi
+    # --- round-5 (lane 1 of #7417): R14 fail-closed rows. Each repro is the receipt's, each must be refused for its own R14 reason ---
+    r14row() { # LABEL WHY-PHRASE YAML (printf format, no args)
+        printf "$3" > "$td/r14.yml"
+        if got="$(check_file "$td/r14.yml" 0)"; then echo "FAIL  mutant stayed green: $1"; fails=1
+        elif grep -qE "\[R14-unreadable\].*$2" <<<"$got"; then echo "ok    red   MUTANT [R14]: $1"; else echo "FAIL  R14 row wrong reason ($1): $(printf '%s' "$got" | head -n 2)"; fails=1; fi
+    }
+    local HD='name: x\non:\n  pull_request:\njobs:\n'
+    local RUNL="python3 scripts/ci/fat_driver.py run --sections 'workspace-test-shard-\${{ matrix.shard }}-\${{ matrix.shards }}-'"
+    r14row "L1-1 multi-line double-quoted scalar inside a flow mapping" "does not close" "${HD}  t: {\n    strategy: {matrix: {shard: [\"1,pr-review-shadow,1\"], shards: [1]}},\n    steps: [{run: \"true;\n      $RUNL\n    \"}]\n  }\n"
+    r14row "L1-2 double-quoted \\\\u0073 escape spells a matrix key" "escape" "${HD}  t:\n    strategy:\n      matrix:\n        \"\\\\u0073hard\": [\"1,pr-review-shadow,1\"]\n        \"\\\\u0073hards\": [1]\n    steps:\n      - run: |\n          $RUNL\n"
+    r14row "L1-3 explicit keys (? shard / : [...])" "explicit key" "${HD}  t:\n    strategy:\n      matrix:\n        ? shard\n        : [\"1,pr-review-shadow,1\"]\n        ? shards\n        : [1]\n    steps:\n      - run: |\n          $RUNL\n"
+    r14row "L1-4 \\\\x74 / \\\\x73 escapes hide fat_driver and --sections" "escape" "${HD}  t:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections 'guard-tree'\n      - run: \"python3 scripts/ci/fa\\\\x74_driver.py run --\\\\x73ections pr-review-shadow\"\n"
+    r14row "flow mapping right after jobs:" "flow" "name: x\non:\n  pull_request:\njobs: {t: {runs-on: x}}\n"
+    r14row "multi-line flow sequence" "flow collection does not close" "${HD}  t:\n    strategy:\n      matrix:\n        shard: [1,\n          2]\n"
+    r14row "flow mapping on its own line under matrix:" "flow-style" "${HD}  t:\n    strategy:\n      matrix:\n        {shard: [1]}\n"
+    r14row "single-quoted scalar that does not close" "does not close" "${HD}  t:\n    steps:\n      - run: 'a\n          b'\n"
+    # green controls from REAL workflows: the guard's own ci.yml sibling files must read as sound (no R14 line)
+    local rw
+    for rw in book.yml ci-unwedge.yml; do
+        if ! [ -f "$(dirname "$src")/$rw" ]; then echo "FAIL  real-workflow control missing: $rw"; fails=1
+        elif got="$(r14_unreadable "$(dirname "$src")/$rw")" && [ -z "$got" ]; then echo "ok    green control: real workflow $rw is readable (no R14)"; else echo "FAIL  real workflow $rw tripped R14: $(printf '%s' "$got" | head -n 2)"; fails=1; fi
+    done
     return "$fails"
 }
 
 case "${1:-}" in
-    -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --self-test) self_test "${2:-.github/workflows/ci.yml}"; exit $? ;;
     *)
         if [ -n "${1:-}" ]; then check_file "$1" 1 && echo "ok    no --sections list resolves to pr-review-shadow"
