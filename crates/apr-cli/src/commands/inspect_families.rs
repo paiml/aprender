@@ -26,6 +26,8 @@ pub(crate) struct FamilyReport {
     pub num_experts: Option<u64>,
     pub total_size_bytes: Option<u64>,
     pub tensor_count: usize,
+    /// Distinct language-model layer indices the index names.
+    pub layers_in_index: usize,
     pub families: Vec<FamilyEntry>,
     pub unnamed: Vec<String>,
 }
@@ -156,6 +158,7 @@ pub(crate) fn report(config: &str, index: &str) -> Result<FamilyReport, CliError
             .and_then(|m| m.get("total_size"))
             .and_then(serde_json::Value::as_u64),
         tensor_count: weight_map.len(),
+        layers_in_index: 0,
         families: fam
             .into_iter()
             .map(|(family, (count, example))| FamilyEntry {
@@ -176,6 +179,7 @@ pub(crate) fn render_json(r: &FamilyReport) -> serde_json::Value {
         "num_experts": r.num_experts,
         "total_size_bytes": r.total_size_bytes,
         "tensor_count": r.tensor_count,
+        "layers_in_index": r.layers_in_index,
         "families": r.families.iter().map(|f| serde_json::json!({
             "family": f.family, "count": f.count, "example": f.example,
         })).collect::<Vec<_>>(),
@@ -204,6 +208,15 @@ pub(crate) fn render_text(r: &FamilyReport) -> String {
         }
     }
     s
+}
+
+/// Where `--no-weights` reads its two files from (RED stub: the argument, as on main).
+pub(crate) fn no_weights_dir(
+    path: &Path,
+    _cache_dir: &dyn Fn(&str) -> Result<std::path::PathBuf, CliError>,
+    _fetch: &dyn Fn(&str, &Path) -> Result<(), CliError>,
+) -> Result<std::path::PathBuf, CliError> {
+    Ok(path.to_path_buf())
 }
 
 /// `apr inspect DIR --no-weights`: `DIR` holds `config.json` and
