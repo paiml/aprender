@@ -46,7 +46,8 @@ SELFF='^[[:space:]]*run: setsid --wait bash scripts/ci/fixture_quiet\.sh "fat_dr
 TEARF='^[[:space:]]*run: if \[ -f scripts/ci/fat_teardown\.sh \]; then bash scripts/ci/fat_teardown\.sh "\$GITHUB_RUN_ID" "\$RUNNER_TEMP"; fi$'
 WAITF='^[[:space:]]*run: python3 scripts/ci/fat_driver\.py wait --results "\$RUNNER_TEMP/fat/results\.json"$'
 N_LISTS=0
-
+MD='[0-9]+(,[0-9]+)*'
+MATRIXOK="^[[:space:]]*-?[[:space:]]*(shards?:[[:space:]]*(\\[[ 0-9,]*\\]|[0-9]+|\\\$\\{\\{ fromJSON\\(github\\.event_name == 'merge_group' && '\\[$MD\\]' \\|\\| '\\[$MD\\]'\\) \\}\\})|matrix:)[[:space:]]*(#.*)?\$"
 has() { # ERE FILE -> 0 match, 1 no match, 2 grep failed (callers treat 2 as RED, never as no match)
     local rc=0; LC_ALL=C grep -qE -- "$1" "$2" 2>/dev/null || rc=$?
     [ "$rc" -lt 2 ] || return 2
@@ -61,7 +62,8 @@ stmt_ok() {
     case "$stmt" in *\\*) echo "FAIL  [R3-escape] line $at: backslash escape left in a driver statement: $stmt"; return 1 ;; esac
     if [[ $stmt =~ $NAMEF || $stmt =~ $SELFF || $stmt =~ $WAITF || $stmt =~ $TEARF ]]; then return 0; fi
     if [[ $stmt =~ ^[[:space:]]*# ]]; then
-        case "$stmt" in *--s*|*"sections '"*|*'sections "'*) echo "FAIL  [R10-comment] line $at: comment names the driver and a sections option: $stmt"; return 1 ;; esac
+        local unq="${stmt//[\'\"]/}"   # quoting inside the option name (--''sections) must not hide it from the test below
+        case "$stmt$unq" in *--s*|*"sections '"*|*'sections "'*) echo "FAIL  [R10-comment] line $at: comment names the driver and a sections option: $stmt"; return 1 ;; esac
         return 0
     fi
     stmt="$(printf '%s' "$stmt" | sed -E 's/\$\{\{ matrix\.(shard|shards) \}\}/@EXPR@/g')"   # only these two exact matrix expressions are pinned; any other ${{ }} stays and fails R4 (it can evaluate to commas and new parts)
@@ -87,12 +89,27 @@ stmt_ok() {
     return "$bad"
 }
 
-check_file() { # FILE REQUIRE(1|0) -> FAIL lines; rc 1 when any
-    local f="$1" need="$2" bad=0 i j total start cur nxt line
+check_file() { # FILE REQUIRE(1|0) [R11-ON-UNNAMED-FILES(1|0), default 1] -> FAIL lines; rc 1 when any
+    local f="$1" need="$2" scan_all="${3:-1}" bad=0 i j total start cur nxt line named matrixx
     local -a L=()
     if ! [ -f "$f" ] || ! [ -r "$f" ]; then echo "FAIL  [R12-unread] cannot read workflow file: $f"; return 1; fi
     if ! mapfile -t L < "$f"; then echo "FAIL  [R12-unread] mapfile failed on: $f"; return 1; fi
     total="${#L[@]}"; N_LISTS=0
+    named=0; matrixx=0
+    for ((i = 0; i < total; i++)); do
+        line="${L[i]}"
+        [[ $line =~ $TRIG ]] && named=1
+        [[ $line =~ \$\{\{[[:space:]]*matrix\.shards?[[:space:]]*\}\} ]] && matrixx=1
+    done
+    if [ "$matrixx" = 1 ]; then   # the shard expressions are pinned to digits only if the file's own matrix values are digits (GitHub inlines them textually)
+        for ((i = 0; i < total; i++)); do
+            line="${L[i]}"
+            [[ $line =~ ^[[:space:]]*# ]] && continue
+            if [[ $line =~ ^[[:space:]]*(-[[:space:]]*)?[{\"\']?[[:space:]]*shards?[\"\']?[[:space:]]*: || $line =~ ^[[:space:]]*matrix:[[:space:]]*[^[:space:]#] || $line =~ (^|[[:space:]{,])include:[[:space:]]*[^[:space:]#] ]]; then
+                if ! [[ $line =~ $MATRIXOK ]]; then echo "FAIL  [R13-matrix] line $((i + 1)): a matrix shard value the guard cannot prove is digits-only (it is inlined into --sections): $line"; bad=1; fi
+            fi
+        done
+    fi
     for ((i = 0; i < total; i++)); do
         line="${L[i]}"
         if ! [[ $line =~ $TRIG ]]; then
@@ -101,7 +118,7 @@ check_file() { # FILE REQUIRE(1|0) -> FAIL lines; rc 1 when any
                 while [[ $nxt =~ [^[:space:]]\\$ ]] && ((j + 1 < total)); do nxt="${nxt%\\}$(trim "${L[j + 1]}")"; j=$((j + 1)); done
                 if [[ $nxt =~ $TRIG ]]; then echo "FAIL  [R6-glued] line $((i + 1)): a backslash-newline splits the driver name: $line"; bad=1; continue; fi
             fi
-            if [[ $line =~ (^|[[:space:]\'\"])--s(e|ec|ect|ecti|ectio|ection|ections)?([^a-z-]|$) && ! $line =~ ^[[:space:]]*# ]]; then echo "FAIL  [R11-orphan] line $((i + 1)): a --se... option outside a driver statement: $line"; bad=1; fi
+            if { [ "$named" = 1 ] || [ "$scan_all" != 0 ]; } && [[ $line =~ (^|[[:space:]\'\"])--s(e|ec|ect|ecti|ectio|ection|ections)?([^a-z-]|$) && ! $line =~ ^[[:space:]]*# ]]; then echo "FAIL  [R11-orphan] line $((i + 1)): a --se... option outside a driver statement: $line"; bad=1; fi
             continue
         fi
         start=$((i + 1)); cur="$line"
@@ -133,7 +150,7 @@ pr_path() { # FILE -> 0 when the workflow can run on the PR / merge-queue / push
     grep -qvE '^(name|run-name):[[:space:]]*[^"'"'"'&*!|>{[%@`#:]+$|^(on|jobs|permissions|concurrency|env|defaults):[[:space:]]*(#.*)?$' < <(grep -vE '^[[:space:]]|^#|^$' "$1") && return 0
     [ "$n" = 1 ] || return 0
     grep -qE '^on:[[:space:]]*(#.*)?$' "$1" || return 0
-    grep -q BAD < <(awk 'BEGIN{b=-1} /^on:/{p=1;next} p&&/^[^-[:space:]#]/{p=0} p&&!/^[[:space:]]*(#.*)?$/{match($0,/^ */);i=RLENGTH;t=substr($0,i+1);if(b<0)b=i;if(i<b){print "BAD";next}if(i==b&&t!~/^-/){if(t ~ /^workflow_dispatch:[[:space:]]*(#.*)?$/)c="d";else if(t ~ /^schedule:[[:space:]]*(#.*)?$/)c="s";else print "BAD";next}if(c=="d"){if(t ~ /["\047\[{]/)print "BAD";next}if(c=="s"&&t ~ /^-[[:space:]]+cron:[[:space:]]*["\047]?[-0-9*\/, ]+["\047]?[[:space:]]*(#.*)?$/)next;print "BAD"}' "$1") && return 0
+    grep -q BAD < <(awk 'BEGIN{b=-1} /^on:/{p=1;next} p&&/^[^-[:space:]#]/{p=0} p&&!/^[[:space:]]*(#.*)?$/{match($0,/^ */);i=RLENGTH;t=substr($0,i+1);if(b<0)b=i;if(i<b){print "BAD";next}if(i==b&&t!~/^-/){if(t ~ /^workflow_dispatch:[[:space:]]*(#.*)?$/)c="d";else if(t ~ /^schedule:[[:space:]]*(#.*)?$/)c="s";else print "BAD";next}if(c=="d"){if(t ~ /^[A-Za-z0-9_-]+:[[:space:]]*("[^"\\]*"|\047[^\047]*\047)[[:space:]]*(#.*)?$/)next;if(t ~ /["\047\[{]/)print "BAD";next}if(c=="s"&&t ~ /^-[[:space:]]+cron:[[:space:]]*("[-0-9*\/, ]+"|\047[-0-9*\/, ]+\047|[-0-9*\/, ]+)[[:space:]]*(#.*)?$/)next;print "BAD"}' "$1") && return 0
     return 1
 }
 
@@ -146,7 +163,7 @@ check() { # FILE-or-DIR-anchor -> ci.yml (required) plus PR-path siblings
         [ "$w" -ef "$ci" ] && continue
         if ! [ -f "$w" ] || ! [ -r "$w" ]; then echo "FAIL  ($(basename "$w")) [R12-unread] cannot read workflow file: $w"; bad=1; continue; fi
         pr_path "$w" || continue
-        if out="$(check_file "$w" 0)"; then :; else printf "%s\n" "$out" | sed "s|^FAIL  |FAIL  ($(basename "$w")) |"; bad=1; fi
+        if out="$(check_file "$w" 0 0)"; then :; else printf "%s\n" "$out" | sed "s|^FAIL  |FAIL  ($(basename "$w")) |"; bad=1; fi
     done
     return "$bad"
 }
@@ -299,6 +316,37 @@ self_test() {
     printf 'name: x\non:\n  pull_request:\njobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fa\\\nt_driver.py run --sections pr-review-shadow\n' > "$td/s/sib.yml"
     if got="$(check "$td/s/ci.yml")"; then echo "FAIL  mutant: split driver name in a sibling stayed green"; fails=1
     elif grep -qE '\(sib.yml\).*\[R6-' <<<"$got"; then echo "ok    red   MUTANT [R6]: split driver name in a sibling workflow"; else echo "FAIL  sibling wrong reason: $got"; fails=1; fi
+    # --- round-2 findings (lane 2 of #7417): matrix injection, quoted R10 bypass, R11 false positive, pr_path quoting ---
+    mkdir "$td/m"; cp "$src" "$td/m/ci.yml"
+    sibwf() { printf 'name: lab\non:\n%s\njobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections %s\n' "$1" "$2" > "$td/m/sib.yml"; }
+    # F1: a literal matrix value that carries a section name is textually inlined into --sections
+    printf 'name: x\non:\n  pull_request:\njobs:\n  t:\n    strategy:\n      matrix:\n        shard: ["1,pr-review-shadow,1"]\n        shards: ["2"]\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections '"'"'workspace-test-shard-${{ matrix.shard }}-${{ matrix.shards }}-'"'"'\n' > "$td/mx.yml"
+    if got="$(check_file "$td/mx.yml" 1)"; then echo "FAIL  mutant: matrix shard value naming a section stayed green (F1)"; fails=1
+    elif grep -qE '\[R13-' <<<"$got"; then echo "ok    red   MUTANT [R13]: matrix shard value that is not digits"; else echo "FAIL  F1 wrong reason: $got"; fails=1; fi
+    printf 'name: x\non:\n  pull_request:\njobs:\n  t:\n    strategy:\n      matrix:\n        shard: [1, 2]\n        shards: 2\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections '"'"'workspace-test-shard-${{ matrix.shard }}-${{ matrix.shards }}-'"'"'\n' > "$td/mxg.yml"
+    if got="$(check_file "$td/mxg.yml" 1)"; then echo "ok    green control: digit-only literal matrix"; else echo "FAIL  digit matrix flagged: $got"; fails=1; fi
+    # F2: R10 comment test must see through quoting inside the option name
+    printf '  - run: |\n      sed s/^#// <<EOF | bash\n      # python3 scripts/ci/fat_driver.py run --%ssections pr-review-shadow\n' "''" > "$td/r10q.yml"
+    if got="$(check_file "$td/r10q.yml" 0)"; then echo "FAIL  mutant: --''sections on a comment line stayed green (F2)"; fails=1
+    elif grep -qE '\[R10-' <<<"$got"; then echo "ok    red   MUTANT [R10]: quoted option name on a #-prefixed line"; else echo "FAIL  F2 wrong reason: $got"; fails=1; fi
+    # F4: a tool's own --sections flag in a sibling that never names the driver is not ours to judge
+    printf 'name: elf\non:\n  pull_request:\njobs:\n  e:\n    steps:\n      - run: readelf --sections target/release/app\n      - run: objdump --section=.text target/release/app\n' > "$td/m/sib.yml"
+    if got="$(check "$td/m/ci.yml")"; then echo "ok    green control: readelf --sections in a sibling that does not name the driver"; else echo "FAIL  readelf --sections flagged: $got"; fails=1; fi
+    # F5: quoted one-line scalars under workflow_dispatch do not make a LAB workflow look like a PR path
+    sibwf '  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch to test"
+        default: "main"' "'pr-review-shadow'"
+    if got="$(check "$td/m/ci.yml")"; then echo "ok    green control: dispatch-only LAB workflow with quoted one-line inputs is skipped"; else echo "FAIL  quoted dispatch inputs: LAB workflow wrongly scanned: $got"; fails=1; fi
+    # F3: an unclosed quote in a cron item must keep the workflow on the scanned path
+    sibwf '  schedule:
+    - cron: "0 0 * * *
+jobs:
+      "
+  pull_request:' "'pr-review-shadow'"
+    if got="$(check "$td/m/ci.yml")"; then echo "FAIL  mutant: unclosed cron quote hid pull_request (F3)"; fails=1
+    elif grep -qE '\(sib.yml\).*\[R5-' <<<"$got"; then echo "ok    red   MUTANT [R5]: unclosed cron quote does not hide pull_request"; else echo "FAIL  F3 wrong reason: $got"; fails=1; fi
     return "$fails"
 }
 
