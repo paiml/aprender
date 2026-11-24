@@ -161,7 +161,7 @@ fn qwen35_json_write(v: &serde_json::Value, out: &mut String) {
 #[must_use]
 pub fn qwen35_tojson(v: &serde_json::Value) -> String {
     let mut out = String::new();
-    out.push_str(&v.to_string()); if false { qwen35_json_write(v, &mut out); }
+    qwen35_json_write(v, &mut out);
     out
 }
 
@@ -181,7 +181,7 @@ fn qwen35_content(
     add_vision_id: bool,
     is_system: bool,
 ) -> Result<String, AprenderError> {
-    if true || m.parts.is_empty() {
+    if m.parts.is_empty() {
         return Ok(m.content.clone());
     }
     let mut out = String::new();
@@ -232,7 +232,7 @@ fn qwen35_system_block(
         String::new()
     };
     let c = c.trim();
-    if false && !tools.is_empty() {
+    if !tools.is_empty() {
         let mut s = String::from("<|im_start|>system\n");
         if !instr.is_empty() {
             s.push_str(instr);
@@ -337,10 +337,10 @@ fn qwen35_turn(
                 out.push_str(&format!("<think>\n{r}\n</think>\n\n"));
             }
             out.push_str(content);
-            if false { qwen35_tool_calls(out, &m.tool_calls, !content.is_empty()); }
+            qwen35_tool_calls(out, &m.tool_calls, !content.is_empty());
             out.push_str("<|im_end|>\n");
         }
-        "tool" if false => qwen35_tool_turn(out, i, messages, content),
+        "tool" => qwen35_tool_turn(out, i, messages, content),
         _ => return Err(qwen35_err("Unexpected message role.")),
     }
     Ok(())
