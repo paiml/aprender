@@ -1,4 +1,232 @@
 //! Receipt of a determinism-kernel run (PMAT-7288): what was run and what came out.
+//!
+//! A [`Receipt`] names the spec bytes (SHA-256, what `sha256sum <spec>` prints), the kernel
+//! source (BLAKE3), the seed, the step count, the last hash of the chain and one verdict per
+//! invariant [`Monitor`]. [`Receipt::to_canonical_json`] writes it in the closed shape of
+//! `contracts/sim3d-receipt-v1.yaml`; pv grades that output in
+//! `crates/aprender-contracts-cli/tests/sim3d_kernel_receipt.rs`.
+//!
+//! The step itself is not defined here: every run goes through [`super::run_observed`].
+
+use super::{run_observed, Entity, Spec, SpecError};
+use std::fmt::Write as _;
+
+/// An invariant checked on the canonical snapshot after every step.
+pub trait Monitor {
+    /// Stable name, recorded in the receipt. The pv shape admits only `INV-nnn`.
+    fn name(&self) -> &str;
+    /// `true` when the snapshot of step `step` (time `t_ns`, sorted by entity id) satisfies it.
+    fn holds(&self, step: u64, t_ns: u64, state: &[Entity]) -> bool;
+}
+
+/// Verdict of one monitor over a run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MonitorVerdict {
+    /// Monitor name.
+    pub name: String,
+    /// Steps on which the monitor was evaluated.
+    pub steps_checked: u64,
+    /// First step at which it failed, if any.
+    pub first_violation: Option<u64>,
+}
+
+/// The hash-chained trajectory: `hashes[k]` is `h_k`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Trajectory {
+    /// Chain of 32-byte hashes, one per step.
+    pub hashes: Vec<[u8; 32]>,
+}
+
+impl Trajectory {
+    /// The last hash in the chain, if any.
+    #[must_use]
+    pub fn final_hash(&self) -> Option<[u8; 32]> {
+        self.hashes.last().copied()
+    }
+}
+
+/// Receipt of a run: what was run and what came out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Receipt {
+    /// SHA-256 of the spec bytes the caller supplied (hex); `sha256sum <spec>` prints the same.
+    pub spec_sha256: String,
+    /// BLAKE3 of this kernel's source (hex, 64 chars), see [`kernel_sha`].
+    pub kernel_sha: String,
+    /// The seed.
+    pub seed: u64,
+    /// Steps run.
+    pub steps: u64,
+    /// Hex of the last chain hash.
+    pub final_hash: String,
+    /// One verdict per monitor, sorted by name.
+    pub verdicts: Vec<MonitorVerdict>,
+}
+
+/// Why no receipt was written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReceiptError {
+    /// The kernel refused the spec.
+    Spec(SpecError),
+    /// `steps == 0`: there is no final hash to state.
+    ZeroSteps,
+    /// No monitor: a run nothing judged proves nothing (SIM-RCPT-INV-002).
+    NoMonitors,
+    /// Two monitors share a name, so a verdict would not name one invariant.
+    DuplicateMonitor,
+}
+
+impl std::fmt::Display for ReceiptError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Spec(e) => write!(f, "spec refused by the kernel: {e:?}"),
+            Self::ZeroSteps => f.write_str("zero steps: no final hash to state"),
+            Self::NoMonitors => f.write_str("no monitor: a receipt needs at least one verdict"),
+            Self::DuplicateMonitor => f.write_str("two monitors share a name"),
+        }
+    }
+}
+
+impl std::error::Error for ReceiptError {}
+
+/// Lower-case hex of `bytes`.
+#[must_use]
+pub fn hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{b:02x}");
+    }
+    s
+}
+
+/// SHA-256 of the spec bytes as hex; equals what `sha256sum` prints for the same bytes.
+#[must_use]
+pub fn spec_sha256(spec_bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex(&Sha256::digest(spec_bytes))
+}
+
+/// BLAKE3 of the kernel's own source (the step in `determinism.rs` and this file, each without
+/// its test module) as hex. Embedding the source means a changed kernel changes its receipts.
+#[must_use]
+pub fn kernel_sha() -> String {
+    fn body(src: &str) -> &str {
+        src.split("\n#[cfg(test)]").next().unwrap_or(src)
+    }
+    let mut h = blake3::Hasher::new();
+    h.update(body(include_str!("../determinism.rs")).as_bytes());
+    h.update(body(include_str!("receipt.rs")).as_bytes());
+    hex(h.finalize().as_bytes())
+}
+
+/// Run `spec` under `monitors` with evaluation order `order` and state the receipt.
+/// `spec_bytes` are the bytes of the spec document the run answers.
+///
+/// # Errors
+/// [`ReceiptError`] when the kernel refuses the spec, or when the run could not state a receipt
+/// the shape accepts (no steps, no monitor, a repeated monitor name).
+pub fn run_receipt_with(
+    spec_bytes: &[u8],
+    spec: &Spec,
+    monitors: &[&dyn Monitor],
+    order: impl FnMut(u64, usize) -> Vec<usize>,
+) -> Result<(Trajectory, Receipt), ReceiptError> {
+    if spec.steps == 0 {
+        return Err(ReceiptError::ZeroSteps);
+    }
+    if monitors.is_empty() {
+        return Err(ReceiptError::NoMonitors);
+    }
+    let mut verdicts: Vec<MonitorVerdict> = monitors
+        .iter()
+        .map(|m| MonitorVerdict {
+            name: m.name().to_owned(),
+            steps_checked: 0,
+            first_violation: None,
+        })
+        .collect();
+    let hashes = run_observed(spec, None, order, |k, t_ns, state| {
+        for (m, v) in monitors.iter().zip(verdicts.iter_mut()) {
+            v.steps_checked += 1;
+            if v.first_violation.is_none() && !m.holds(k, t_ns, state) {
+                v.first_violation = Some(k);
+            }
+        }
+    })
+    .map_err(ReceiptError::Spec)?;
+    verdicts.sort_by(|a, b| a.name.cmp(&b.name));
+    if verdicts.windows(2).any(|w| w[0].name == w[1].name) {
+        return Err(ReceiptError::DuplicateMonitor);
+    }
+    let trajectory = Trajectory { hashes };
+    let receipt = Receipt {
+        spec_sha256: spec_sha256(spec_bytes),
+        kernel_sha: kernel_sha(),
+        seed: spec.seed,
+        steps: spec.steps,
+        final_hash: trajectory.final_hash().map(|h| hex(&h)).unwrap_or_default(),
+        verdicts,
+    };
+    Ok((trajectory, receipt))
+}
+
+/// [`run_receipt_with`] in natural order.
+///
+/// # Errors
+/// As [`run_receipt_with`].
+pub fn run_receipt(
+    spec_bytes: &[u8],
+    spec: &Spec,
+    monitors: &[&dyn Monitor],
+) -> Result<(Trajectory, Receipt), ReceiptError> {
+    run_receipt_with(spec_bytes, spec, monitors, |_, n| (0..n).collect())
+}
+
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if u32::from(c) < 0x20 => {
+                let _ = write!(out, "\\u{:04x}", u32::from(c));
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+impl Receipt {
+    /// Canonical JSON in the shape of `contracts/sim3d-receipt-v1.yaml`: keys sorted at every
+    /// level, no whitespace, integers only. `kernel_sha` is the first 40 hex chars of the
+    /// kernel's BLAKE3 (the shape's 40-hex width); the full digest stays in
+    /// [`Receipt::kernel_sha`]. Byte-stable across hosts.
+    #[must_use]
+    pub fn to_canonical_json(&self) -> String {
+        let mut s = String::new();
+        let kernel40 = self.kernel_sha.get(..40).unwrap_or(&self.kernel_sha);
+        let _ = write!(
+            s,
+            "{{\"final_hash\":\"{}\",\"kernel_sha\":\"{kernel40}\",\"schema\":\"sim3d-receipt/v1\",\"seed\":{},\"spec_sha256\":\"{}\",\"steps\":{},\"verdicts\":[",
+            self.final_hash, self.seed, self.spec_sha256, self.steps
+        );
+        for (i, v) in self.verdicts.iter().enumerate() {
+            if i > 0 {
+                s.push(',');
+            }
+            let name = json_escape(&v.name);
+            let _ = match v.first_violation {
+                Some(step) => write!(
+                    s,
+                    "{{\"first_bad_step\":{step},\"holds\":false,\"invariant\":\"{name}\"}}"
+                ),
+                None => write!(s, "{{\"holds\":true,\"invariant\":\"{name}\"}}"),
+            };
+        }
+        s.push_str("]}");
+        s
+    }
+}
 
 #[cfg(test)]
 mod tests {

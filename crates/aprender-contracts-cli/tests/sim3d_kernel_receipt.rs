@@ -148,3 +148,31 @@ fn planted_defects_on_the_kernels_receipt_go_red_naming_the_path() {
         );
     }
 }
+
+/// `sha256sum <spec>` equals the receipt's `spec_sha256`, for a real spec file on main.
+#[test]
+fn sha256sum_of_the_spec_file_equals_the_receipts_spec_sha256() {
+    let spec_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/ont/sim3d/mm1-littles-law.sim.yaml");
+    let bytes = std::fs::read(&spec_path).expect("spec fixture readable");
+    assert!(!bytes.is_empty());
+    let out = Command::new("sha256sum")
+        .arg(&spec_path)
+        .output()
+        .expect("spawn sha256sum");
+    assert!(out.status.success(), "sha256sum failed: {out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let want = stdout.split_whitespace().next().expect("a digest");
+    assert_eq!(want.len(), 64, "{stdout}");
+    let spec = Spec {
+        seed: 42,
+        dt_ns: 1_000_000,
+        steps: 4,
+        entities: vec![Entity { id: 1, state: 0 }],
+    };
+    let always = Cap("INV-001", u64::MAX);
+    let (_, receipt) = run_receipt(&bytes, &spec, &[&always]).expect("run");
+    assert_eq!(receipt.spec_sha256, want);
+    let v: Value = serde_json::from_str(&receipt.to_canonical_json()).expect("json");
+    assert_eq!(v["spec_sha256"].as_str(), Some(want));
+}

@@ -43,6 +43,7 @@ zstd = { version = "0.14", optional = true }
 
 # Hashing
 blake3 = "1.5"
+sha2 = { workspace = true }
 
 # Memory mapping
 memmap2 = "0.9"

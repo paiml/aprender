@@ -94,7 +94,22 @@ fn step_hash(prev: &[u8; 32], k: u64, t_ns: u64, sorted: &[Entity]) -> [u8; 32] 
 pub fn run_with(
     spec: &Spec,
     tamper: Option<Tamper>,
+    order: impl FnMut(u64, usize) -> Vec<usize>,
+) -> Result<Vec<[u8; 32]>, SpecError> {
+    run_observed(spec, tamper, order, |_, _, _| {})
+}
+
+/// [`run_with`], showing `observe(k, t_k, states_k)` the canonical (sorted by id) snapshot that
+/// `h_k` was computed over. This is the one definition of the step; [`run_with`] and the receipt
+/// ([`receipt::run_receipt_with`]) both go through it.
+///
+/// # Errors
+/// As [`run_with`].
+pub fn run_observed(
+    spec: &Spec,
+    tamper: Option<Tamper>,
     mut order: impl FnMut(u64, usize) -> Vec<usize>,
+    mut observe: impl FnMut(u64, u64, &[Entity]),
 ) -> Result<Vec<[u8; 32]>, SpecError> {
     if spec.dt_ns == 0 {
         return Err(SpecError::ZeroDt);
@@ -125,7 +140,9 @@ pub fn run_with(
                 fresh[t.index].state ^= 1u64 << (t.bit % 64);
             }
         }
-        prev = step_hash(&prev, k, k.wrapping_mul(spec.dt_ns), &fresh);
+        let t_ns = k.wrapping_mul(spec.dt_ns);
+        prev = step_hash(&prev, k, t_ns, &fresh);
+        observe(k, t_ns, &fresh);
         chain.push(prev);
         snapshot = fresh;
     }

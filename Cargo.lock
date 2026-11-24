@@ -1524,6 +1524,7 @@ dependencies = [
  "serde-wasm-bindgen",
  "serde_json",
  "serde_norway",
+ "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
