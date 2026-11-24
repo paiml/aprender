@@ -1262,6 +1262,15 @@ EOF
   out="$(PARITY_WORKFLOWS="$d/emptydir" PARITY_EXEMPT="$d/ex" bash "$0" 2>&1)"; rc=$?
   case "$out" in *"ENV: no workflow file"*) ;; *) rc="no-ENV-msg-$rc" ;; esac
   [ "$rc" = 2 ] && echo "ok   empty workflow dir fails closed (rc 2)" || { echo "FAIL empty workflow dir (rc $rc, want 2)"; fails=1; }
+  bash "$0" --help >"$d/help" 2>&1; rc=$?
+  if [ "$rc" = 0 ] \
+    && grep -qF -- '--self-test' "$d/help" \
+    && ! grep -qE '^(#|!|set |command |[A-Za-z_][A-Za-z0-9_]*=|ENV:|OK:|RED:|STALE:|[A-Za-z_][A-Za-z0-9_]*\(\)|[{}]|eval_if |SHORTCUT_AWK:|rows:)' "$d/help"; then
+    echo "ok   --help prints usage including --self-test and no non-usage lines"
+  else
+    echo "FAIL --help prints usage including --self-test and no non-usage lines (rc $rc)"
+    fails=1
+  fi
   rm -rf "${d:?}"
   return "$fails"
 }
@@ -1270,6 +1279,6 @@ case "${1:-}" in
   --self-test) self_test; exit $? ;;
   --live) scan; exit $? ;;
   --eval-if) eval_if "${2:-}"; exit $? ;;
-  -h|--help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help) awk 'NR == 1 && /^#!/ { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0" ;;
   *) scan; exit $? ;;
 esac
