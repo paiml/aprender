@@ -26,7 +26,7 @@
 name: deep-nightly
 
 on:
-  workflow_call:   # #5082: release-rehearsal-nightly.yml calls this at its pick C
+  workflow_call:   # kept for a caller that passes its pick C. No workflow calls this today (#7312; measured 2026-11-24: grep -rn deep-nightly .github/workflows names only this file)
     inputs:
       ref:
         description: C, the 40-hex commit every job checks out and asserts
