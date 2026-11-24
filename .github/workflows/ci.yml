@@ -216,20 +216,19 @@ jobs:
 
   # Noah 15:09Z (#5955): what a ready PR runs instead of x86-main. Text-only cheap checks (the x86-main steps that run
   # before "install the toolchain") and the fat_driver self-test; clean-room X64 runner, no section, no cargo build.
-  pr-light:
+  # #7307: the sub-5-minute steps that used to open pr-light (pins, the pull_request_target guard, cheap checks, case tables,
+  # release_lanes). On a pull_request x86-main, workspace-test-shard and determinism start only after this job is green, so a
+  # tree already known red does not take the heavy seats. pull_request only: push and merge_group skip it and those jobs start
+  # as before. Same steps and pass conditions as when they ran in pr-light; gate, ci / gate and workspace-test read its result.
+  # Guard: scripts/check_pr_cheap_gates_heavy.sh.
+  pr-cheap:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
-    # Noah 12:36Z: pr-x64 is an OPTION for PR quick-tier jobs, never merge_group, never release. A runs-on label list is an AND, so
-    # "either pool" is not expressible; the option is a repo variable instead. Unset (the default) or anything but 'pr-x64' keeps the
-    # X64 clean-room pool; PR_LIGHT_POOL=pr-x64 (and unsetting it) is the reversible switch. NO fallback: with the variable set and
-    # both pr-x64 runners offline, pr-light queues until it is unset. pull_request only, so no merge_group or release path reads it.
+    # same pool switch, wall, token and permissions as pr-light (see there), where these steps ran until #7307
     runs-on: ${{ vars.PR_LIGHT_POOL == 'pr-x64' && fromJSON('["self-hosted","Linux","X64","pr-x64"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 60
-    # The PR-only sections (guard-tree, pr-review-sign) carry their own permissions blocks; one job token covers all.
     permissions: write-all
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      FAT_VARS_JSON: ${{ toJSON(vars) }}
-      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
     steps:
       # Both arches get the pinned jq 1.8.2 (guard_tree_test needs 1.8.x; gx10-pool3 ships jq 1.7). Any other arch fails closed.
       - name: Pin jq 1.8.2 (x86_64 and aarch64; sha256-verified, fail closed)
@@ -315,6 +314,45 @@ jobs:
         run: |
           setsid --wait bash scripts/ci/pr_release_lanes_gate.sh --self-test
           setsid --wait bash scripts/ci/pr_release_lanes_gate.sh origin/${{ github.base_ref }}
+
+  pr-light:
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
+    # Noah 12:36Z: pr-x64 is an OPTION for PR quick-tier jobs, never merge_group, never release. A runs-on label list is an AND, so
+    # "either pool" is not expressible; the option is a repo variable instead. Unset (the default) or anything but 'pr-x64' keeps the
+    # X64 clean-room pool; PR_LIGHT_POOL=pr-x64 (and unsetting it) is the reversible switch. NO fallback: with the variable set and
+    # both pr-x64 runners offline, pr-light queues until it is unset. pull_request only, so no merge_group or release path reads it.
+    runs-on: ${{ vars.PR_LIGHT_POOL == 'pr-x64' && fromJSON('["self-hosted","Linux","X64","pr-x64"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    timeout-minutes: 60
+    # The PR-only sections (guard-tree, pr-review-sign) carry their own permissions blocks; one job token covers all.
+    permissions: write-all
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
+    steps:
+      # Both arches get the pinned jq 1.8.2 (guard_tree_test needs 1.8.x; gx10-pool3 ships jq 1.7). Any other arch fails closed.
+      - name: Pin jq 1.8.2 (x86_64 and aarch64; sha256-verified, fail closed)
+        env:
+          JQ_BASE: https://github.com/jqlang/jq/releases/download/jq-1.8.2
+          JQ_SHA256_AMD64: b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f
+          JQ_SHA256_ARM64: 8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) JQ_URL="$JQ_BASE/jq-linux-amd64"; JQ_SHA256="$JQ_SHA256_AMD64" ;;
+            aarch64 | arm64) JQ_URL="$JQ_BASE/jq-linux-arm64"; JQ_SHA256="$JQ_SHA256_ARM64" ;;
+            *) echo "::error::no pinned jq for arch $(uname -m)"; exit 1 ;;
+          esac
+          d="$RUNNER_TEMP/jq-1.8.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/jq" "$JQ_URL"
+          printf '%s  %s\n' "$JQ_SHA256" "$d/jq" | sha256sum -c -
+          chmod +x "$d/jq"
+          [ "$("$d/jq" --version)" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$("$d/jq" --version)'"; exit 1; }
+          echo "$d" >> "$GITHUB_PATH"
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: install the toolchain rust-toolchain.toml pins
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
       # Noah 15:09Z (#5955), Opus-A on #5964: the sections that exist ONLY for a pull request (guard-tree with its
@@ -341,10 +379,10 @@ jobs:
           if-no-files-found: ignore
 
   x86-main:
-    needs: [mg-reuse]
+    needs: [mg-reuse, pr-cheap]
     # One check set per repo (decision: #7272 issuecomment-7007305270): every job that runs on a push to main also runs on a pull_request,
     # on the same runner pool, matrix and features. A draft owes nothing until ready_for_review.
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || needs.pr-cheap.result == 'success') }}
     # every event, merge_group included, takes the certified clean-room seats: [self-hosted, Linux, X64, clean-room]
     runs-on: [self-hosted, Linux, X64, clean-room]
     # merge_group: 2 x p95 (8.9 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull (the Set-up-runner pull has measured 20 min, sections.yml:94); the 240 stays for push.
@@ -695,11 +733,11 @@ jobs:
   # yoga in perf-yoga). scripts/tests/ci_gpu_touched_test.sh pins that shape.
 
   determinism:
-    needs: [mg-reuse, x86-main]
+    needs: [mg-reuse, x86-main, pr-cheap]
     # One check set per repo (decision: #7272 issuecomment-7007305270): determinism runs on a pull_request exactly
     # as on a push to main, so a red determinism-compare is found before the merge. This reverses the 2026-10-17 rule that
     # kept it off PR heads; the gate reads DET:determinism-compare on every event (scripts/check_determinism_wait.sh W10).
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event.pull_request.draft != true }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || needs.pr-cheap.result == 'success') }}
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
     # T42: start only once x86-main has concluded. The ARM64 raster takes about a minute; before
@@ -791,8 +829,8 @@ jobs:
       - run: echo "this run owes and runs the test suite"
   workspace-test-shard:
     # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them
-    needs: [mg-reuse-wt]
-    if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}
+    needs: [mg-reuse-wt, pr-cheap]
+    if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || needs.pr-cheap.result == 'success') }}
     # same lane as x86-main: the plain clean-room seats on every event
     runs-on: [self-hosted, Linux, X64, clean-room]
     # pull_request/push: >= section 150 (sections.yml:112) + the untimed ~20-min image pull on the full-tier fallback. merge_group is DELIBERATELY
@@ -862,7 +900,7 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 10
-    needs: [workspace-test-shard, mg-reuse-wt, pr-light]
+    needs: [workspace-test-shard, mg-reuse-wt, pr-light, pr-cheap]
     if: always()
     steps:
       - name: Every shard passed (or the whole set was reused from an identical-tree green PR run)
@@ -873,6 +911,7 @@ jobs:
           DRAFT: ${{ github.event.pull_request.draft }}
           EVT: ${{ github.event_name }}
           PRL: ${{ needs.pr-light.result }}
+          PRC: ${{ needs.pr-cheap.result }}
         run: |
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "draft PR: the shards are not owed until ready_for_review"; exit 0; }
@@ -885,6 +924,13 @@ jobs:
             echo "pull_request: pr-light passed; the heavy jobs are checked below, exactly as on a push"
           fi
           # --- PR-LIGHT-VERDICT-END ---
+          # --- PR-CHEAP-VERDICT-BEGIN (#7307; scripts/check_pr_cheap_gates_heavy.sh runs this block) ---
+          # A pull_request also owes pr-cheap. A red, cancelled, skipped or missing pr-cheap is RED here whatever the heavy jobs
+          # report (they are skipped behind it). push and merge_group do not run pr-cheap and are not read.
+          if [ "${EVT:-}" = pull_request ]; then
+            [ "${PRC:-}" = success ] || { echo "::error::pull_request: pr-cheap is '${PRC:-}', not success"; exit 1; }
+          fi
+          # --- PR-CHEAP-VERDICT-END ---
           echo "workspace-test-shard matrix result: $SHARD_RESULT (reuse key wt='${WT_REUSE:-}')"
           if [ "${WT_REUSE:-}" = 1 ]; then
             # T43b: the shards are skipped ONLY under the key; a shard that ran anyway is a contradiction, never a pass
@@ -948,7 +994,7 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 10
-    needs: [x86-main, mg-reuse, x86-main-advisories, pr-light]
+    needs: [x86-main, mg-reuse, x86-main-advisories, pr-light, pr-cheap]
     if: always()
     steps:
       - name: The sovereign-ci gate section's result
@@ -961,6 +1007,7 @@ jobs:
           MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
           ADV: ${{ needs.x86-main-advisories.result }}
           PRL: ${{ needs.pr-light.result }}
+          PRC: ${{ needs.pr-cheap.result }}
           DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
@@ -974,6 +1021,13 @@ jobs:
             echo "pull_request: pr-light passed; the heavy jobs are checked below, exactly as on a push"
           fi
           # --- PR-LIGHT-VERDICT-END ---
+          # --- PR-CHEAP-VERDICT-BEGIN (#7307; scripts/check_pr_cheap_gates_heavy.sh runs this block) ---
+          # A pull_request also owes pr-cheap. A red, cancelled, skipped or missing pr-cheap is RED here whatever the heavy jobs
+          # report (they are skipped behind it). push and merge_group do not run pr-cheap and are not read.
+          if [ "${EVT:-}" = pull_request ]; then
+            [ "${PRC:-}" = success ] || { echo "::error::pull_request: pr-cheap is '${PRC:-}', not success"; exit 1; }
+          fi
+          # --- PR-CHEAP-VERDICT-END ---
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
           # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
@@ -1000,7 +1054,7 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 22
-    needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]
+    needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light, pr-cheap]
     if: always()
     steps:
       - name: Check required sections
@@ -1018,6 +1072,7 @@ jobs:
           ADV: ${{ needs.x86-main-advisories.result }}
           MST: ${{ needs.mg-reuse-self-test.result }}
           PRL: ${{ needs.pr-light.result }}
+          PRC: ${{ needs.pr-cheap.result }}
           DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
@@ -1039,6 +1094,13 @@ jobs:
             echo "pull_request: pr-light passed; the heavy jobs are checked below, exactly as on a push"
           fi
           # --- PR-LIGHT-VERDICT-END ---
+          # --- PR-CHEAP-VERDICT-BEGIN (#7307; scripts/check_pr_cheap_gates_heavy.sh runs this block) ---
+          # A pull_request also owes pr-cheap. A red, cancelled, skipped or missing pr-cheap is RED here whatever the heavy jobs
+          # report (they are skipped behind it). push and merge_group do not run pr-cheap and are not read.
+          if [ "${EVT:-}" = pull_request ]; then
+            [ "${PRC:-}" = success ] || { echo "::error::pull_request: pr-cheap is '${PRC:-}', not success"; exit 1; }
+          fi
+          # --- PR-CHEAP-VERDICT-END ---
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
           # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
