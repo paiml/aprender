@@ -46,6 +46,7 @@ LEDGER="docs/audits/surface_audit.csv"
 # check_dogfood_coverage.sh is what dropped ledger row 76 from the freshness caps.
 # shellcheck disable=SC2016  # awk source, not a shell expansion
 CSV_FN='
+function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
 function csv(line, out,    n, i, c, q, cur) {
   n = 0; cur = ""; q = 0
   for (i = 1; i <= length(line); i++) {
@@ -74,7 +75,7 @@ if [ "$CAPS" -eq 1 ]; then
     delete f
     nf = csv($0, f)
     if (nf < 2) next
-    p = f[nf - 1]
+    p = trim(f[nf - 1])
     if (!match(p, /^[^ :]+\.(rs|toml|yml|yaml|md|sh|py)/)) next
     file = substr(p, 1, RLENGTH); rest = substr(p, RLENGTH + 1); hi = 0
     sub(/ .*$/, "", rest)
@@ -113,7 +114,7 @@ function symbol(feat,    t, n, a, i) {
   n = split(feat, a, /[ \/]+/)
   for (i = n; i >= 1; i--) {
     t = a[i]
-    if (t ~ /^[:{<-]/) continue
+    if (t ~ /^[:{<]/) continue
     t = norm(t)
     if (length(t) >= 3) return t
   }
@@ -121,7 +122,7 @@ function symbol(feat,    t, n, a, i) {
 }
 function bad(msg) { print "FAIL: ledger line " FNR " (" f[1] " / " f[2] "): " msg; rc = 1 }
 NR == FNR {
-  if (FNR > 1 && csv($0, g) == 10) base[g[1] SUBSEP g[2]] = g[9]
+  if (FNR > 1 && csv($0, g) == 10) base[g[1] SUBSEP g[2]] = trim(g[9])
   next
 }
 FNR == 1 { next }
@@ -129,7 +130,7 @@ FNR == 1 { next }
   delete f
   nf = csv($0, f)
   if (nf != 10) { bad("expected 10 CSV fields, read " nf); next }
-  ev = f[9]
+  ev = trim(f[9])
   if (!match(ev, /^[^ :]+\.(rs|toml|yml|yaml|md|sh|py)/)) next
   file = substr(ev, 1, RLENGTH); rest = substr(ev, RLENGTH + 1); sub(/ .*$/, "", rest)
   path = root "/" file

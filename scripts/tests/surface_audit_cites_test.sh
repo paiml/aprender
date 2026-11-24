@@ -24,6 +24,8 @@ HDR='binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_ski
   printf 'Beta {\n'
   printf '.route("/v1/models", get(models))\n'
   printf 'fn legacy_field_line() {}\n'
+  printf '    dump_config: bool,\n'
+  printf '    other_field: u8,\n'
 } > "$TD/crates/demo/src/cli.rs"
 printf 'a\nb\nc\nd\n' > "$TD/crates/demo/src/other.rs"
 
@@ -33,6 +35,7 @@ ledger() { # ledger <cite for alpha> <cite for the comma row> <cite for legacy r
   printf 'demo,demo beta,6,UNKNOWN,none,no,0,c,crates/demo/src/cli.rs:3,high\n'
   printf '"demo","GET /v1/models, with comma",6,UNKNOWN,none,no,0,c,"%s",high\n' "$2"
   printf 'demo,demo gamma,6,UNKNOWN,none,no,0,c,%s,high\n' "$3"
+  [ -z "${FLAGCITE:-}" ] || printf 'demo,demo --dump-config,6,UNKNOWN,none,no,0,c,%s,high\n' "$FLAGCITE"
 }
 G_ALPHA=crates/demo/src/cli.rs:2
 G_COMMA='crates/demo/src/cli.rs:4 (routes 1,2 and 5)'
@@ -41,7 +44,7 @@ G_LEGACY=crates/demo/src/cli.rs:5   # names nothing called gamma: a legacy loose
 git -C "$TD" init -q -b main --template=
 git -C "$TD" config user.email t@t; git -C "$TD" config user.name t
 git -C "$TD" config commit.gpgsign false; git -C "$TD" config core.hooksPath /dev/null
-ledger "$G_ALPHA" "$G_COMMA" "$G_LEGACY" > "$TD/docs/audits/surface_audit.csv"
+FLAGCITE=crates/demo/src/cli.rs:7 ledger "$G_ALPHA" "$G_COMMA" "$G_LEGACY" > "$TD/docs/audits/surface_audit.csv"
 git -C "$TD" add -A
 git -C "$TD" commit -q -m base
 
@@ -79,6 +82,15 @@ row "comma field: later list item OOB"      RED   "$CHECK" "$G_ALPHA" 'crates/de
 row "comma field: shifted cite"             RED   "$CHECK" "$G_ALPHA" 'crates/demo/src/cli.rs:3 (routes 1,2)' "$G_LEGACY"
 row "legacy row pushed out of range"        RED   "$CHECK" "$G_ALPHA" "$G_COMMA" crates/demo/src/other.rs:50
 
+# L1 (#7437 lane 1): a --flag feature names its flag, not the binary before it
+FLAGCITE=crates/demo/src/cli.rs:6 row "flag feature: re-cite to the line naming the flag" GREEN "$CHECK" "$G_ALPHA" "$G_COMMA" "$G_LEGACY"
+FLAGCITE=crates/demo/src/cli.rs:5 row "flag feature: re-cite to a wrong line" RED "$CHECK" "$G_ALPHA" "$G_COMMA" "$G_LEGACY"
+# L2 (#7437 lane 2): leading space in evidence_path must not skip C2/C3/C4
+row "leading-space cite, file missing" RED "$CHECK" " crates/demo/src/nope.rs:1" "$G_COMMA" "$G_LEGACY"
+row "leading-space cite, out of range" RED "$CHECK" " crates/demo/src/cli.rs:99999" "$G_COMMA" "$G_LEGACY"
+row "leading-space cite, shifted line" RED "$CHECK" " crates/demo/src/cli.rs:3" "$G_COMMA" "$G_LEGACY"
+row "leading-space cite, valid" GREEN "$CHECK" " $G_ALPHA" "$G_COMMA" "$G_LEGACY"
+
 # mutants: break one rule in a copy of the checker; a row the rule guards must flip
 mutant() { # mutant <name> <sed expr> <want-under-mutant> <row name> <alpha> <comma> <legacy>
   local m="$TD/mutant.sh"
@@ -115,6 +127,8 @@ caps "range cite: the end line is the cap" 0 \
   'crates/demo/src/cli.rs=5;crates/demo/src/other.rs=3;' "$CHECK" "$G_ALPHA" 'crates/demo/src/other.rs:2-3 (a, b)' "$G_LEGACY"
 caps "malformed cite fails closed (exit 2)" 2 '' "$CHECK" crates/demo/src/cli.rs:2x "$G_COMMA" "$G_LEGACY"
 caps "reversed range fails closed (exit 2)" 2 '' "$CHECK" "$G_ALPHA" 'crates/demo/src/other.rs:3-2,4 (x)' "$G_LEGACY"
+caps "leading-space cite is still capped" 0 \
+  'crates/demo/src/cli.rs=5;crates/demo/src/other.rs=2;' "$CHECK" "$G_ALPHA" " crates/demo/src/other.rs:1-2" "$G_LEGACY"
 sed 's/else if (c == "\\"") q = 1/else if (0) q = 1/' "$CHECK" > "$TD/mutant.sh"
 caps "mutant [naive comma split] loses the quoted row" 0 \
   'crates/demo/src/cli.rs=5;' "$TD/mutant.sh" "$G_ALPHA" "$Q_COMMA" "$G_LEGACY"
