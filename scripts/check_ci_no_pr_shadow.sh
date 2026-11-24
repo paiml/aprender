@@ -24,11 +24,13 @@
 #   R9 expr      a ${{ }} expression other than the workspace-test shard index
 #   R10 comment  a comment that names the driver and `sections`, `--s` or carries code-looking syntax
 #   R11 orphan   a `--se...` option on a line that is not part of a driver statement
+#   R12 unread   a workflow file that cannot be read, or a grep that exits >=2 (fail closed, never "no match")
 # SCOPE. ci.yml (must hold >=1 list) and every other .github/workflows/*.yml that names the driver AND can run on the PR or
 # merge-queue path (its `on:` block names pull_request, pull_request_target, merge_group or workflow_call, or has no `on:` block).
 # A schedule/workflow_dispatch-only LAB workflow may carry the section.
 #
-# Not covered, stated plainly: a driver reference that hides every `fat_d`/`ci/fat_` substring (`fa""t_driver`).
+# A backslash-newline inside the driver name (fa\<newline>t_driver) is joined before the trigger test (R6).
+# Not covered, stated plainly: a driver reference that hides every `fat_d`/`ci/fat_` substring by quoting (`fa""t_driver`).
 #
 # Usage:  bash scripts/check_ci_no_pr_shadow.sh [--self-test] [WORKFLOW_FILE]
 #         WORKFLOW_FILE given: only that file (>=1 list required). Default: ci.yml plus every PR-path workflow beside it.
@@ -44,6 +46,11 @@ TEARF='^[[:space:]]*run: if \[ -f scripts/ci/fat_teardown\.sh \]; then bash scri
 WAITF='^[[:space:]]*run: python3 scripts/ci/fat_driver\.py wait --results "\$RUNNER_TEMP/fat/results\.json"$'
 N_LISTS=0
 
+has() { # ERE FILE -> 0 match, 1 no match, 2 grep failed (callers treat 2 as RED, never as no match)
+    local rc=0; LC_ALL=C grep -qE -- "$1" "$2" 2>/dev/null || rc=$?
+    [ "$rc" -lt 2 ] || return 2
+    return "$rc"
+}
 trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
 
 # stmt_ok LINENO STATEMENT -> prints FAIL lines, returns 1 on any
@@ -81,12 +88,18 @@ stmt_ok() {
 
 check_file() { # FILE REQUIRE(1|0) -> FAIL lines; rc 1 when any
     local f="$1" need="$2" bad=0 i j total start cur nxt line
-    local -a L
-    mapfile -t L < "$f"
+    local -a L=()
+    if ! [ -f "$f" ] || ! [ -r "$f" ]; then echo "FAIL  [R12-unread] cannot read workflow file: $f"; return 1; fi
+    if ! mapfile -t L < "$f"; then echo "FAIL  [R12-unread] mapfile failed on: $f"; return 1; fi
     total="${#L[@]}"; N_LISTS=0
     for ((i = 0; i < total; i++)); do
         line="${L[i]}"
         if ! [[ $line =~ $TRIG ]]; then
+            if [[ $line =~ \\$ ]]; then # backslash-newline splitting the driver name: join (bash drops both) and test again
+                nxt="$line"; j=$i
+                while [[ $nxt =~ \\$ ]] && ((j + 1 < total)); do nxt="${nxt%\\}$(trim "${L[j + 1]}")"; j=$((j + 1)); done
+                if [[ $nxt =~ $TRIG ]]; then echo "FAIL  [R6-glued] line $((i + 1)): a backslash-newline splits the driver name: $line"; bad=1; continue; fi
+            fi
             if [[ $line =~ (^|[[:space:]\'\"])--s(e|ec|ect|ecti|ectio|ection|ections)?([^a-z-]|$) && ! $line =~ ^[[:space:]]*# ]]; then echo "FAIL  [R11-orphan] line $((i + 1)): a --se... option outside a driver statement: $line"; bad=1; fi
             continue
         fi
@@ -124,13 +137,16 @@ pr_path() { # FILE -> 0 when the workflow can run on the PR / merge-queue / push
 }
 
 check() { # FILE-or-DIR-anchor -> ci.yml (required) plus PR-path siblings
-    local ci="$1" bad=0 d w out
+    local ci="$1" bad=0 d w out rc
     check_file "$ci" 1 || bad=1
     d="$(dirname "$ci")"
     for w in "$d"/*.yml "$d"/*.yaml; do
-        [ -f "$w" ] || continue
+        [ -e "$w" ] || [ -L "$w" ] || continue   # an unmatched glob stays literal; a dangling link is -L and is RED below
         [ "$w" -ef "$ci" ] && continue
-        grep -qE "$TRIG" "$w" || continue
+        if ! [ -f "$w" ] || ! [ -r "$w" ]; then echo "FAIL  ($(basename "$w")) [R12-unread] cannot read workflow file: $w"; bad=1; continue; fi
+        rc=0; has "$TRIG" "$w" || rc=$?
+        if [ "$rc" -ge 2 ]; then echo "FAIL  ($(basename "$w")) [R12-unread] grep failed (exit $rc) on: $w"; bad=1; continue; fi
+        [ "$rc" -eq 0 ] || continue
         pr_path "$w" || continue
         if out="$(check_file "$w" 0)"; then :; else printf "%s\n" "$out" | sed "s|^FAIL  |FAIL  ($(basename "$w")) |"; bad=1; fi
     done
@@ -138,7 +154,7 @@ check() { # FILE-or-DIR-anchor -> ci.yml (required) plus PR-path siblings
 }
 
 self_test() {
-    local src="$1" td fails=0 got
+    local src="$1" td fails=0 got rc
     td="$(mktemp -d)"; trap 'rm -rf "${td:?}"' RETURN
     if got="$(check "$src")"; then echo "ok    green the workflow as committed"; else echo "FAIL  green: committed workflow is RED: $got"; fails=1; fi
     local anchor="--sections 'guard-tree,pr-review-sign"
@@ -247,6 +263,34 @@ self_test() {
         printf '%b' "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
         if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: $lbl skipped the workflow"; fails=1; else echo "ok    red   MUTANT: $lbl is still scanned"; fi
     done
+    # R8 and R11 in isolation: the rule must be the ONLY thing that can turn these red
+    printf 'name: x\njobs:\n  j:\n    steps:\n      - run: echo hi\n' > "$td/v.yml"
+    if got="$(check_file "$td/v.yml" 1)"; then echo "FAIL  mutant: a workflow with no list stayed green (R8)"; fails=1
+    elif [ "$(grep -c '^FAIL' <<<"$got")" = 1 ] && grep -qE '\[R8-' <<<"$got"; then echo "ok    red   MUTANT [R8]: no accepted list, nothing else wrong"; else echo "FAIL  R8 not isolated: $got"; fails=1; fi
+    if got="$(check_file "$td/v.yml" 0)"; then echo "ok    green control: need=0 does not demand a list"; else echo "FAIL  need=0 demanded a list: $got"; fails=1; fi
+    printf '  - run: |\n      SECS="--sections pr-review-shadow"\n' > "$td/r11.yml"
+    if got="$(check_file "$td/r11.yml" 0)"; then echo "FAIL  mutant: a lone --sections variable stayed green (R11)"; fails=1
+    elif [ "$(grep -c '^FAIL' <<<"$got")" = 1 ] && grep -qE '\[R11-' <<<"$got"; then echo "ok    red   MUTANT [R11]: orphan --sections, nothing else wrong"; else echo "FAIL  R11 not isolated: $got"; fails=1; fi
+    # R12: unreadable or missing files fail closed
+    if got="$(check_file "$td/none.yml" 1)"; then echo "FAIL  mutant: a missing file stayed green"; fails=1
+    elif grep -qE '\[R12-' <<<"$got" && ! grep -q 'unbound' <<<"$got"; then echo "ok    red   MUTANT [R12]: missing file is named, not an unbound variable"; else echo "FAIL  missing file: $got"; fails=1; fi
+    rc=0; has x "$td/none.yml" 2>/dev/null || rc=$?
+    if [ "$rc" = 2 ]; then echo "ok    grep failure surfaces as exit 2 (not as no-match)"; else echo "FAIL  has() on a missing file returned $rc, want 2"; fails=1; fi
+    mkdir "$td/u"; cp "$src" "$td/u/ci.yml"; ln -s "$td/u/gone.yml" "$td/u/dangling.yml"
+    if got="$(check "$td/u/ci.yml")"; then echo "FAIL  mutant: a dangling workflow link stayed green"; fails=1
+    elif grep -qE '\[R12-' <<<"$got"; then echo "ok    red   MUTANT [R12]: dangling workflow link"; else echo "FAIL  dangling link wrong reason: $got"; fails=1; fi
+    rm -f "${td:?}/u/dangling.yml"
+    printf 'name: x\non:\n  pull_request:\njobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n' > "$td/u/bad.yml"; chmod 000 "$td/u/bad.yml"
+    if [ -r "$td/u/bad.yml" ]; then echo "skip  chmod 000 mutant (reader can still read it, e.g. root)"
+    elif got="$(check "$td/u/ci.yml")"; then echo "FAIL  mutant: an unreadable shadow workflow stayed green"; fails=1
+    elif grep -qE '\[R12-' <<<"$got"; then echo "ok    red   MUTANT [R12]: chmod 000 workflow"; else echo "FAIL  chmod 000 wrong reason: $got"; fails=1; fi
+    chmod 600 "$td/u/bad.yml"; rm -f "${td:?}/u/bad.yml"
+    # backslash-newline inside the driver name (fa\<newline>t_driver)
+    printf '  - run: |\n      python3 scripts/ci/fa\\\nt_driver.py run --sections pr-review-shadow\n' > "$td/bn.yml"
+    if got="$(check_file "$td/bn.yml" 0)"; then echo "FAIL  mutant: backslash-newline in the driver name hid the line"; fails=1
+    elif grep -qE '\[R6-' <<<"$got"; then echo "ok    red   MUTANT [R6]: backslash-newline inside the driver name"; else echo "FAIL  wrong reason: $got"; fails=1; fi
+    printf '  - run: |\n      echo a\\\n      echo b\n' > "$td/bn2.yml"
+    if got="$(check_file "$td/bn2.yml" 0)"; then echo "ok    green control: an unrelated backslash continuation"; else echo "FAIL  unrelated continuation flagged: $got"; fails=1; fi
     return "$fails"
 }
 
