@@ -190,7 +190,7 @@ self_test() {
     # bypass 3: YAML double-quoted escape
     mutant "YAML escape --\\x73ections" R3 "${A}--\\\\x73ections 'guard-tree,pr-review-shadow,pr-review-sign/"
     mutant "unicode escape \\u0073" R3 "${A}--\\\\u0073ections 'guard-tree,pr-review-shadow,pr-review-sign/"
-    mutant "here-doc on the driver line" R7 "${A}--sections 'guard-tree,pr-review-sign' <<EOF #/"
+    mutant "here-doc on the driver line" R7 "${A}--sections 'guard-tree,pr-review-sign' <<EOF/"
     # code in a comment-looking line, with and without a here-doc
     printf '  - run: |\n      cat <<EOF\n      # python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n      EOF\n' > "$td/h.yml"
     if got="$(check_file "$td/h.yml" 0)"; then echo "FAIL  mutant: #-prefixed here-doc data line hid code"; fails=1
@@ -229,22 +229,22 @@ self_test() {
     if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: a YAML-escaped trigger key hid pull_request"; fails=1; else echo "ok    red   MUTANT: YAML-escaped trigger key is still scanned"; fi
     for case_ in 'flow on: continued at column 0|name: x\non: {workflow_dispatch: {},\npull_request: {}}\n' 'decoy true: plus spaced on :|name: x\non : pull_request\ntrue: workflow_dispatch\n' 'complex key ? on plus decoy true:|name: x\n? on\n: pull_request\ntrue: workflow_dispatch\n' 'trigger nested under schedule list|name: x\non:\n  schedule:\n    - cron: "0 0 * * *"\n    - pull_request\n'; do
         lbl="${case_%%|*}"; body="${case_#*|}"
-        printf "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
+        printf '%b' "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
         if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: $lbl skipped the workflow"; fails=1; else echo "ok    red   MUTANT: $lbl is still scanned"; fi
     done
     for case_ in 'quoted-scalar decoy plus anchored real on|name: "x\non:\n  workflow_dispatch:\nz"\n&a on:\n  pull_request:\n' 'tagged real on key|name: x\non:\n  workflow_dispatch:\n!!str on:\n  pull_request:\n'; do
         lbl="${case_%%|*}"; body="${case_#*|}"
-        printf "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
+        printf '%b' "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
         if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: $lbl skipped the workflow"; fails=1; else echo "ok    red   MUTANT: $lbl is still scanned"; fi
     done
     for case_ in 'bare CR inside a comment|name: x\non:\n  workflow_dispatch:\n  # c\r  pull_request:\n' 'vertical tab line break|name: x\non:\n  workflow_dispatch:\n  # c\v  pull_request:\n'; do
         lbl="${case_%%|*}"; body="${case_#*|}"
-        printf "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
+        printf '%b' "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
         if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: $lbl skipped the workflow"; fails=1; else echo "ok    red   MUTANT: $lbl is still scanned"; fi
     done
     for case_ in 'quoted multi-line scalar hides jobs: under workflow_dispatch|name: x\non:\n  workflow_dispatch:\n    inputs:\n      x:\n        default: "hello\njobs:\n        world"\n  pull_request:\n'; do
         lbl="${case_%%|*}"; body="${case_#*|}"
-        printf "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
+        printf '%b' "${body}jobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections pr-review-shadow\n" > "$td/w/new.yml"
         if got="$(check "$td/w/ci.yml")"; then echo "FAIL  mutant: $lbl skipped the workflow"; fails=1; else echo "ok    red   MUTANT: $lbl is still scanned"; fi
     done
     return "$fails"
