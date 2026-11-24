@@ -18,7 +18,9 @@
 #      (1-5 are the runner's own --list parser: the CI step refuses the same trees)
 #   6. no workflow EXECUTING the runner on the directory (a `#` comment is a
 #      mention, not wiring) -- every fragment would be dark;
-#   7. any workflow line chaining two cargo commands with `&&` -- the mega-line.
+#   7. any workflow line chaining two cargo commands with `&&` -- the mega-line;
+#   8. a fragment that needs yq (its command, or a scripts/*.sh it names, calls yq):
+#      the fragments run inside the build image, which has no yq.
 #
 # --equivalence OLD_CI_YML [DIR]: the representation change added, dropped and
 #   reordered nothing. Extracts the ONE `&&`-chained cargo line from OLD_CI_YML,
@@ -48,6 +50,11 @@ is_wiring() {
         *"ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d"*) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+# needs_yq < TEXT -- rc 0 when a non-comment line of TEXT invokes yq as a command word.
+needs_yq() {
+    grep -vE '^[[:space:]]*#' | grep -qE '(^|[^A-Za-z0-9_./-])yq([[:space:]]|$)'
 }
 
 workflow_files() { # workflow_files ROOT -> one path per line
@@ -89,6 +96,25 @@ check() {
     else
         printf 'ok    %s workflow invocation(s) run the directory\n' "$wired"
     fi
+    # 8. image tools (#7273 follow-up). The step runs every fragment INSIDE the build image, and the
+    # image has no yq: fragments 877/878 exited 2 ("ENV: yq missing") on every full-tier run from
+    # 2026-11-23, and the PR that added them never ran them (it was quick tier).
+    local frag cmd s hit yqs=0
+    for frag in "$root/$DIR_REL"/*.cmd; do
+        [ -f "$frag" ] || continue
+        cmd=$(grep -vE '^[[:space:]]*(#|$)' "$frag" || true)
+        hit=""
+        if needs_yq <<< "$cmd"; then hit="the command itself"; fi
+        for s in $(grep -oE 'scripts/[A-Za-z0-9_./-]+\.sh' <<< "$cmd" | sort -u || true); do
+            [ -f "$root/$s" ] || continue
+            if needs_yq < "$root/$s"; then hit="$s"; fi
+        done
+        [ -n "$hit" ] || continue
+        yqs=$((yqs + 1))
+        printf 'FAIL  %s/%s needs yq (%s calls it), and the build image the fragments run in has none\n' "$DIR_REL" "${frag##*/}" "$hit"
+        printf '      A guard that needs yq runs on the host: name it scripts/check_*.sh and scripts/guard_tree.sh runs it in the guard lane.\n'
+    done
+    if [ "$yqs" -gt 0 ]; then rc=1; else printf 'ok    no fragment needs yq (absent from the build image)\n'; fi
     [ "$rc" -eq 0 ] && printf 'PASS  check_explicit_test_commands\n'
     return "$rc"
 }
@@ -284,6 +310,17 @@ TABLE
     row 1 "check: a fragment with two commands -> RED" 'holds 2 command' bash "$T" --check "$td/multi"
     mk "$td/badname" "$wire" '010-a-x.cmd=cargo test -p a --test x\n' '020_b.cmd=cargo test -p b --test y\n'
     row 1 "check: a badly named fragment -> RED" 'not a regular file named' bash "$T" --check "$td/badname"
+
+    # ── rule 8: a fragment may not need yq (the build image has none) ────
+    mk "$td/yqs" "$wire" '010-a-x.cmd=cargo test -p a --test x\n' '020-g.cmd=bash scripts/g.sh --self-test\n'
+    printf 'command -v yq >/dev/null || { echo "ENV: yq missing"; exit 2; }\n' > "$td/yqs/scripts/g.sh"
+    row 1 "check: a fragment running a script that calls yq -> RED, named" '020-g.cmd needs yq \(scripts/g.sh calls it\)' bash "$T" --check "$td/yqs"
+    printf '# yq is not needed here\necho ok | tr a-z A-Z\n' > "$td/yqs/scripts/g.sh"
+    row 0 "check: ...the same script naming yq only in a comment -> PASS" '^PASS' bash "$T" --check "$td/yqs"
+    mk "$td/yqd" "$wire" '010-a-x.cmd=yq -o=json . .github/workflows/ci.yml\n'
+    row 1 "check: a fragment calling yq directly -> RED" '010-a-x.cmd needs yq \(the command itself' bash "$T" --check "$td/yqd"
+    mk "$td/yqn" "$wire" '010-a-x.cmd=cargo test -p a --test tokyq_x\n'
+    row 0 "check: yq inside a longer word is not a yq call -> PASS" '^PASS' bash "$T" --check "$td/yqn"
 
     # ── equivalence ──────────────────────────────────────────────────────
     printf "jobs:\n  t:\n    steps:\n      - run: |\n          docker run img \\\\\n            bash -c 'cargo test -p a --lib f && cargo test -p b --test y --test z --no-fail-fast && cargo build --examples'\n" > "$td/old.yml"
