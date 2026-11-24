@@ -8,6 +8,9 @@
 //!   snapshot and writes a fresh buffer, which is sorted by entity id before it is hashed.
 //! * a BLAKE3 hash chain over the sorted snapshots, linked to the previous step.
 
+/// The receipt of a run (spec sha, kernel sha, seed, final hash, monitor verdicts).
+pub mod receipt;
+
 /// Domain tag for the per-step chain hash.
 const STEP_DOMAIN: &[u8] = b"simular.determinism.step.v1";
 /// Domain tag for the genesis value `h_(-1)`.

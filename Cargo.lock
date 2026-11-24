@@ -536,6 +536,7 @@ dependencies = [
  "aprender-build-sha",
  "aprender-common",
  "aprender-contracts",
+ "aprender-simulate",
  "aprender-update",
  "clap",
  "serde",
