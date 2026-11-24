@@ -101,13 +101,22 @@ check_file() { # FILE REQUIRE(1|0) [R11-ON-UNNAMED-FILES(1|0), default 1] -> FAI
         [[ $line =~ $TRIG ]] && named=1
         [[ $line =~ \$\{\{[[:space:]]*matrix\.shards?[[:space:]]*\}\} ]] && matrixx=1
     done
+    local bsind=-1
     if [ "$matrixx" = 1 ]; then   # the shard expressions are pinned to digits only if the file's own matrix values are digits (GitHub inlines them textually)
         for ((i = 0; i < total; i++)); do
             line="${L[i]}"
             [[ $line =~ ^[[:space:]]*# ]] && continue
-            if [[ $line =~ ^[[:space:]]*(-[[:space:]]*)?[{\"\']?[[:space:]]*shards?[\"\']?[[:space:]]*: || $line =~ ^[[:space:]]*matrix:[[:space:]]*[^[:space:]#] || $line =~ (^|[[:space:]{,])include:[[:space:]]*[^[:space:]#] ]]; then
-                if ! [[ $line =~ $MATRIXOK ]]; then echo "FAIL  [R13-matrix] line $((i + 1)): a matrix shard value the guard cannot prove is digits-only (it is inlined into --sections): $line"; bad=1; fi
+            if [ "$bsind" -ge 0 ]; then   # inside a block scalar (run: |): string content, never YAML structure
+                if [[ $line =~ ^[[:space:]]*$ ]]; then continue; fi
+                [[ $line =~ ^([[:space:]]*) ]]; if [ "${#BASH_REMATCH[1]}" -gt "$bsind" ]; then continue; fi
+                bsind=-1
             fi
+            # structural fail-closed: ANY key token shard/shards/matrix/include anywhere on a line (block, flow mapping, quoted, list item)
+            # must be the whole line in one allowlisted form (MATRIXOK); every other occurrence is RED, whatever surrounds it
+            if [[ $line =~ (^|[^A-Za-z0-9_.\$-])[\"\']?(shards?|matrix|include)[\"\']?[[:space:]]*: ]]; then
+                if ! [[ $line =~ $MATRIXOK ]]; then echo "FAIL  [R13-matrix] line $((i + 1)): a matrix shard/matrix/include key the guard cannot prove is digits-only (it is inlined into --sections): $line"; bad=1; fi
+            fi
+            if [[ $line =~ ^([[:space:]]*(-[[:space:]]+)?)[A-Za-z_][A-Za-z0-9_-]*:[[:space:]]+[\|\>][-+0-9]*[[:space:]]*(\#.*)?$ ]]; then bsind="${#BASH_REMATCH[1]}"; fi   # a block scalar opens: its body is indented deeper than this key's column
         done
     fi
     for ((i = 0; i < total; i++)); do
@@ -325,6 +334,15 @@ self_test() {
     elif grep -qE '\[R13-' <<<"$got"; then echo "ok    red   MUTANT [R13]: matrix shard value that is not digits"; else echo "FAIL  F1 wrong reason: $got"; fails=1; fi
     printf 'name: x\non:\n  pull_request:\njobs:\n  t:\n    strategy:\n      matrix:\n        shard: [1, 2]\n        shards: 2\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections '"'"'workspace-test-shard-${{ matrix.shard }}-${{ matrix.shards }}-'"'"'\n' > "$td/mxg.yml"
     if got="$(check_file "$td/mxg.yml" 1)"; then echo "ok    green control: digit-only literal matrix"; else echo "FAIL  digit matrix flagged: $got"; fails=1; fi
+    # round-3 (lane 1 of #7417): flow-mapping matrix definitions must fail closed
+    printf 'name: x\non:\n  pull_request:\njobs:\n  t:\n    strategy:\n      matrix:\n        shard: [1]\n        shards: 1\n        include:\n          - { os: x, shard: "1,pr-review-shadow,1" }\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections '"'"'workspace-test-shard-${{ matrix.shard }}-${{ matrix.shards }}-'"'"'\n' > "$td/mxi.yml"
+    if got="$(check_file "$td/mxi.yml" 1)"; then echo "FAIL  mutant: include list item flow mapping stayed green (L1-1a)"; fails=1
+    elif grep -qE '\[R13-' <<<"$got"; then echo "ok    red   MUTANT [R13]: include item as a flow mapping"; else echo "FAIL  L1-1a wrong reason: $got"; fails=1; fi
+    printf 'name: x\non:\n  pull_request:\njobs:\n  t:\n    strategy: { matrix: { shard: ["1,pr-review-shadow,1"], shards: [1] } }\n    steps:\n      - run: |\n          python3 scripts/ci/fat_driver.py run --sections '"'"'workspace-test-shard-${{ matrix.shard }}-${{ matrix.shards }}-'"'"'\n' > "$td/mxf.yml"
+    if got="$(check_file "$td/mxf.yml" 1)"; then echo "FAIL  mutant: strategy flow mapping stayed green (L1-1b)"; fails=1
+    elif grep -qE '\[R13-' <<<"$got"; then echo "ok    red   MUTANT [R13]: strategy as a flow mapping"; else echo "FAIL  L1-1b wrong reason: $got"; fails=1; fi
+    # L1-2: R9-expr isolated (charset-clean, so only the expression rule can catch it)
+    mutant "matrix expression outside the workspace-test-shard part" R9 "${A}--sections 'guard-tree,pr-review-\${{ matrix.shard }},pr-review-sign/"
     # F2: R10 comment test must see through quoting inside the option name
     printf '  - run: |\n      sed s/^#// <<EOF | bash\n      # python3 scripts/ci/fat_driver.py run --%ssections pr-review-shadow\n' "''" > "$td/r10q.yml"
     if got="$(check_file "$td/r10q.yml" 0)"; then echo "FAIL  mutant: --''sections on a comment line stayed green (F2)"; fails=1
