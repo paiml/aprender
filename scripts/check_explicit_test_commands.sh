@@ -53,8 +53,28 @@ is_wiring() {
 }
 
 # needs_yq < TEXT -- rc 0 when a non-comment line of TEXT invokes yq as a command word.
+# One awk process: no producer to SIGPIPE (a pipe into grep -q fails open on a script over the pipe buffer).
+# yq is a word: not inside a longer name (tokyq, yq_x, yq.yml); a path (/usr/bin/yq) or a delimiter after it
+# (`command -v yq;`, `yq>/dev/null`, `$(command -v yq)`) counts.
 needs_yq() {
-    grep -vE '^[[:space:]]*#' | grep -qE '(^|[^A-Za-z0-9_./-])yq([[:space:]]|$)'
+    awk '!/^[[:space:]]*#/ && /(^|[^A-Za-z0-9_.-])yq([^A-Za-z0-9_.-]|$)/ { f = 1; exit } END { exit !f }'
+}
+
+# script_needs_yq ROOT SCRIPT -- rc 0 when SCRIPT, or a scripts/*.sh it sources or runs (a line led by
+# source, `.`, bash or sh; transitively), calls yq. A mere mention of a path does not count.
+# Prints the script that does. Bounded: each script is read once.
+script_needs_yq() {
+    local root="$1" seen=" " queue t h
+    queue=("$2")
+    while [ "${#queue[@]}" -gt 0 ]; do
+        t="${queue[0]}"; queue=("${queue[@]:1}")
+        case "$seen" in *" $t "*) continue ;; esac
+        seen="$seen$t "
+        [ -f "$root/$t" ] || continue
+        if needs_yq < "$root/$t"; then printf '%s' "$t"; return 0; fi
+        for h in $(grep -E '^[[:space:]]*(source|\.|bash|sh)[[:space:]]' "$root/$t" | grep -oE 'scripts/[A-Za-z0-9_./-]+\.sh' | sort -u || true); do queue+=("$h"); done
+    done
+    return 1
 }
 
 workflow_files() { # workflow_files ROOT -> one path per line
@@ -99,15 +119,14 @@ check() {
     # 8. image tools (#7273 follow-up). The step runs every fragment INSIDE the build image, and the
     # image has no yq: fragments 877/878 exited 2 ("ENV: yq missing") on every full-tier run from
     # 2026-11-23, and the PR that added them never ran them (it was quick tier).
-    local frag cmd s hit yqs=0
+    local frag cmd s h hit yqs=0
     for frag in "$root/$DIR_REL"/*.cmd; do
         [ -f "$frag" ] || continue
         cmd=$(grep -vE '^[[:space:]]*(#|$)' "$frag" || true)
         hit=""
         if needs_yq <<< "$cmd"; then hit="the command itself"; fi
         for s in $(grep -oE 'scripts/[A-Za-z0-9_./-]+\.sh' <<< "$cmd" | sort -u || true); do
-            [ -f "$root/$s" ] || continue
-            if needs_yq < "$root/$s"; then hit="$s"; fi
+            if h=$(script_needs_yq "$root" "$s"); then hit="$h"; fi
         done
         [ -n "$hit" ] || continue
         yqs=$((yqs + 1))
@@ -321,6 +340,18 @@ TABLE
     row 1 "check: a fragment calling yq directly -> RED" '010-a-x.cmd needs yq \(the command itself' bash "$T" --check "$td/yqd"
     mk "$td/yqn" "$wire" '010-a-x.cmd=cargo test -p a --test tokyq_x\n'
     row 0 "check: yq inside a longer word is not a yq call -> PASS" '^PASS' bash "$T" --check "$td/yqn"
+
+    # a script over the 64 KiB pipe buffer calling yq on line 2 must still be caught (SIGPIPE fail-open, PR 7436)
+    mk "$td/yqbig" "$wire" '010-a-x.cmd=bash scripts/big.sh\n'
+    { printf 'command -v yq >/dev/null || exit 2\n'; for _ in $(seq 1 3000); do printf 'echo pad_line_for_pipe_buffer_test_xxxxxxxxxxxx\n'; done; } > "$td/yqbig/scripts/big.sh"
+    row 1 "check: a >64 KiB script calling yq on line 2 -> RED (no SIGPIPE fail-open)" '010-a-x.cmd needs yq \(scripts/big.sh calls it\)' bash "$T" --check "$td/yqbig"
+    mk "$td/yqdel" "$wire" '010-a-x.cmd=bash scripts/d.sh\n'
+    printf 'x=$(command -v yq)\n' > "$td/yqdel/scripts/d.sh"
+    row 1 "check: yq as \$(command -v yq) -> RED" 'needs yq' bash "$T" --check "$td/yqdel"
+    printf '/usr/local/bin/yq -o=json . f.yml\n' > "$td/yqdel/scripts/d.sh"
+    row 1 "check: path-qualified yq -> RED" 'needs yq' bash "$T" --check "$td/yqdel"
+    printf 'bash scripts/h.sh\n' > "$td/yqdel/scripts/d.sh"; printf 'yq . x.yml\n' > "$td/yqdel/scripts/h.sh"
+    row 1 "check: yq in a helper script the fragment's script runs -> RED, helper named" 'scripts/h.sh calls it' bash "$T" --check "$td/yqdel"
 
     # ── equivalence ──────────────────────────────────────────────────────
     printf "jobs:\n  t:\n    steps:\n      - run: |\n          docker run img \\\\\n            bash -c 'cargo test -p a --lib f && cargo test -p b --test y --test z --no-fail-fast && cargo build --examples'\n" > "$td/old.yml"
