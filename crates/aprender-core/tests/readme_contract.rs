@@ -698,6 +698,7 @@ fn claims_row_number(readme: &str, label: &str) -> usize {
         let digits: String = cell
             .trim()
             .chars()
+            .filter(|c| *c != ',')
             .take_while(char::is_ascii_digit)
             .collect();
         return digits
@@ -755,11 +756,41 @@ fn parse_semver_prefix(s: &str) -> Option<(u32, u32, u32)> {
     let end = s
         .find(|c: char| !c.is_ascii_digit() && c != '.')
         .unwrap_or(s.len());
-    let mut it = s[..end].trim_end_matches('.').split('.');
+    let core = s[..end].trim_end_matches('.');
+    // A 4th dotted segment is not a semver prefix: refuse rather than truncate.
+    if core.split('.').count() > 3 {
+        return None;
+    }
+    let mut it = core.split('.');
     let major = it.next()?.parse().ok()?;
     let minor = it.next()?.parse().ok()?;
     let patch = it.next().map_or(Some(0), |p| p.parse().ok())?;
     Some((major, minor, patch))
+}
+
+/// `version = "X.Y.Z[-pre]"` inside `[workspace.package]` only (stops at the next header).
+fn workspace_package_version(manifest: &str) -> Option<String> {
+    let mut inside = false;
+    for l in manifest.lines() {
+        let t = l.trim();
+        if t.starts_with('[') {
+            inside = t == "[workspace.package]";
+            continue;
+        }
+        if inside {
+            if let Some(rest) = t.strip_prefix("version") {
+                let rest = rest.trim_start().strip_prefix('=')?.trim();
+                return Some(rest.trim_matches('"').to_string());
+            }
+        }
+    }
+    None
+}
+
+/// True when `s` carries a prerelease suffix (`0.75.0-rc.1`): such a build precedes
+/// its own release, so a promise of that same X.Y.Z is not yet overdue.
+fn has_prerelease(s: &str) -> bool {
+    s.split('+').next().unwrap_or(s).contains('-')
 }
 
 /// Every `planned for <version>` promise in `text` (case-insensitive; the phrase may
@@ -773,12 +804,32 @@ fn planned_for_promises(text: &str) -> Vec<(usize, (u32, u32, u32))> {
     while let Some(off) = lower[from..].find("planned") {
         let start = from + off;
         from = start + "planned".len();
+        if lower[..start]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
+            continue;
+        }
         let after = lower[from..].trim_start_matches(SKIP);
         let Some(after) = after.strip_prefix("for") else {
             continue;
         };
-        let after = after.trim_start_matches(SKIP);
+        let mut after = after.trim_start_matches(SKIP);
+        // Qualifier words ("release", "version", "the") may precede the number.
+        for q in ["the", "release", "version", "tag"] {
+            if let Some(r) = after.strip_prefix(q) {
+                if r.starts_with(|c: char| c.is_whitespace()) {
+                    after = r.trim_start_matches(SKIP);
+                }
+            }
+        }
+        // Link/quote/paren openers, then an optional `v` (possibly spaced).
+        let after = after.trim_start_matches(|c: char| {
+            SKIP.contains(&c) || "[(\"'\u{201c}\u{2018}<".contains(c)
+        });
         let after = after.strip_prefix('v').unwrap_or(after);
+        let after = after.trim_start_matches(SKIP);
         if let Some(v) = parse_semver_prefix(after) {
             out.push((lower[..start].matches('\n').count() + 1, v));
         }
@@ -794,15 +845,13 @@ fn test_readme_has_no_overdue_planned_for_release() {
     let readme = read_readme();
     let manifest =
         std::fs::read_to_string(workspace_root().join("Cargo.toml")).expect("Cargo.toml");
-    let cur = manifest
-        .lines()
-        .skip_while(|l| !l.starts_with("[workspace.package]"))
-        .find_map(|l| l.strip_prefix("version = \""))
-        .and_then(parse_semver_prefix)
-        .expect("workspace version");
+    let cur_s = workspace_package_version(&manifest).expect("workspace version");
+    let cur = parse_semver_prefix(&cur_s).expect("workspace version parses");
     for (line, v) in planned_for_promises(&readme) {
+        // A prerelease of X.Y.Z precedes X.Y.Z, so a promise of X.Y.Z is still ahead.
+        let ok = v > cur || (v == cur && has_prerelease(&cur_s));
         assert!(
-            v > cur,
+            ok,
             "FALSIFY-README-013: README line {line} promises {v:?}, not strictly after the current {cur:?}"
         );
     }
@@ -825,4 +874,103 @@ fn test_planned_for_parser_case_table() {
     );
     assert_eq!(p("planned for the next release"), vec![]);
     assert!(parse_semver_prefix("0.75.0").unwrap() < parse_semver_prefix("1.0.0").unwrap());
+    // finding 4: word boundary before "planned"
+    assert_eq!(p("unplanned for 0.70 (#3715)"), vec![]);
+    assert_eq!(p("re-planned for 0.70"), vec![]);
+    // finding 5: links, quotes, parens, qualifiers
+    assert_eq!(
+        p("planned for [0.70.1](https://x/releases/tag/v0.70.1)"),
+        vec![(0, 70, 1)]
+    );
+    assert_eq!(p("planned for \"0.70.1\""), vec![(0, 70, 1)]);
+    assert_eq!(p("planned for (0.70.1)"), vec![(0, 70, 1)]);
+    assert_eq!(p("planned for release 0.70.1"), vec![(0, 70, 1)]);
+    assert_eq!(p("planned for v 0.70.1"), vec![(0, 70, 1)]);
+    assert_eq!(p("planned for the release v0.70.1"), vec![(0, 70, 1)]);
+    // line numbers are asserted, not dropped
+    let lines: Vec<usize> = planned_for_promises("a\nplanned\n> for 1.0.0")
+        .into_iter()
+        .map(|x| x.0)
+        .collect();
+    assert_eq!(lines, vec![2]);
+    // finding 6: 4-part and prerelease handling, section boundary
+    assert_eq!(parse_semver_prefix("0.75.0.1"), None);
+    assert_eq!(parse_semver_prefix("0.75.0-rc.1"), Some((0, 75, 0)));
+    assert_eq!(parse_semver_prefix(".1.2"), None);
+    assert!(has_prerelease("0.75.0-rc.1") && !has_prerelease("0.75.0+build-1"));
+    assert_eq!(
+        workspace_package_version("[workspace.package]\nversion = \"0.75.0-rc.1\"\n"),
+        Some("0.75.0-rc.1".to_string())
+    );
+    assert_eq!(
+        workspace_package_version(
+            "[workspace.package]\nedition = \"2021\"\n[package]\nversion = \"9.9.9\"\n"
+        ),
+        None
+    );
+}
+
+/// Finding 3: comma-formatted claims parse like scripts/check_readme_claims.sh.
+#[test]
+fn test_claims_row_number_parses_comma_numbers() {
+    assert_eq!(
+        claims_row_number("| CLI commands | **1,150** CLI commands |", "CLI commands"),
+        1150
+    );
+    assert_eq!(claims_row_number("| X | 42 things |", "X"), 42);
+}
+
+/// Finding 1: the frontmatter `contract_count` equals the claims-table row (which
+/// FALSIFY-README-002 holds equal to the tree).
+#[test]
+fn test_readme_frontmatter_contract_count_matches_table() {
+    let readme = read_readme();
+    let fm = readme
+        .lines()
+        .skip(1)
+        .take_while(|l| *l != "---")
+        .find_map(|l| l.strip_prefix("contract_count:"))
+        .expect("frontmatter contract_count")
+        .trim()
+        .parse::<usize>()
+        .expect("numeric contract_count");
+    assert_eq!(fm, claims_row_number(&readme, "Provable contracts"));
+}
+
+/// Finding 2: every `aprender* = "X.Y"` dependency snippet tracks the workspace
+/// version's MAJOR.MINOR (a 0.x line is breaking per minor).
+#[test]
+fn test_readme_dependency_snippets_track_workspace_version() {
+    let manifest =
+        std::fs::read_to_string(workspace_root().join("Cargo.toml")).expect("Cargo.toml");
+    let cur_s = workspace_package_version(&manifest).expect("workspace version");
+    let (maj, min, _) = parse_semver_prefix(&cur_s).expect("parse");
+    let want = format!("{maj}.{min}");
+    let mut seen = 0;
+    for (i, l) in read_readme().lines().enumerate() {
+        let t = l.replace('`', "");
+        let mut rest = t.as_str();
+        while let Some(p) = rest.find("aprender") {
+            let tail = &rest[p..];
+            let name_end = tail
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+                .unwrap_or(tail.len());
+            let after = tail[name_end..].trim_start();
+            if let Some(v) = after.strip_prefix("= \"") {
+                let v = v.split('"').next().unwrap_or("");
+                if v.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                    seen += 1;
+                    assert_eq!(
+                        v,
+                        want,
+                        "README line {}: `{}` pins {v}, workspace is {cur_s}",
+                        i + 1,
+                        &tail[..name_end]
+                    );
+                }
+            }
+            rest = &tail[name_end.max(1)..];
+        }
+    }
+    assert!(seen >= 5, "expected the dependency snippets, saw {seen}");
 }

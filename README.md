@@ -2,7 +2,7 @@
 schema_version: "1.0"
 kind: library
 entrypoints: [crates/aprender-contracts-cli]
-contract_count: 1837
+contract_count: 1741
 ---
 
 <p align="center">
@@ -326,7 +326,7 @@ gotchas (NDJSON commits, LFS batch sizing, Q4_K stride constraints).
 
 ```toml
 [dependencies]
-aprender = "0.35"
+aprender = "0.75"
 ```
 
 ```rust
@@ -411,10 +411,10 @@ tokenization, model formats, CLI safety — and this README itself.
 
 | Old | New | Status |
 |-----|-----|--------|
-| `trueno = "0.18"` | `aprender-compute = "0.33"` | Shim available |
-| `entrenar = "0.7"` | `aprender-train = "0.33"` | Shim available |
-| `realizar = "0.8"` | `aprender-serve = "0.33"` | Shim available |
-| `batuta = "0.7"` | `aprender-orchestrate = "0.33"` | Shim available |
+| `trueno = "0.18"` | `aprender-compute = "0.75"` | Shim available |
+| `entrenar = "0.7"` | `aprender-train = "0.75"` | Shim available |
+| `realizar = "0.8"` | `aprender-serve = "0.75"` | Shim available |
+| `batuta = "0.7"` | `aprender-orchestrate = "0.75"` | Shim available |
 
 Old repositories are archived. All development happens here.
 
