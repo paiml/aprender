@@ -680,3 +680,98 @@ fn ladder_doc_copies_carry_the_enum_block() {
         );
     }
 }
+
+/// Pull the integer in the README claims-table row whose text contains `needle`
+/// (after stripping the generated-block markers and `**`).
+fn claims_row_number(readme: &str, needle: &str) -> usize {
+    let clean = readme
+        .replace("<!-- CONTRACT_COUNT_START -->", "")
+        .replace("<!-- CONTRACT_COUNT_END -->", "");
+    let idx = clean
+        .find(needle)
+        .unwrap_or_else(|| panic!("README claims row `{needle}` missing"));
+    let digits: String = clean[..idx]
+        .trim_end()
+        .chars()
+        .rev()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    digits
+        .chars()
+        .rev()
+        .collect::<String>()
+        .parse()
+        .unwrap_or_else(|_| panic!("no number before `{needle}`"))
+}
+
+fn count_md(rel: &str) -> usize {
+    std::fs::read_dir(workspace_root().join(rel))
+        .unwrap_or_else(|e| panic!("{rel}: {e}"))
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "md"))
+        .count()
+}
+
+/// FALSIFY-README-008: the CLI-command and book-chapter rows EQUAL what the tree
+/// holds (the contract count is gated by `scripts/check_readme_claims.sh`;
+/// `contracts/census.json` is a stale release snapshot, #3569, so it is not used).
+#[test]
+fn test_readme_claims_table_equals_derived_counts() {
+    let readme = read_readme();
+    let root = workspace_root();
+
+    let yaml = std::fs::read_to_string(root.join("contracts/apr-cli-commands-v1.yaml"))
+        .expect("apr-cli-commands-v1.yaml");
+    let section = yaml
+        .split("\ncommands:\n")
+        .nth(1)
+        .and_then(|s| s.split("\nfalsification:").next())
+        .expect("commands section");
+    let cmds = section
+        .lines()
+        .filter(|l| l.starts_with("  - name:"))
+        .count();
+    assert_eq!(
+        claims_row_number(&readme, "** CLI commands"),
+        cmds,
+        "FALSIFY-README-008: CLI commands row != commands registry"
+    );
+
+    assert_eq!(
+        claims_row_number(&readme, "** chapters | `ls book/src/cli"),
+        count_md("book/src/cli"),
+        "FALSIFY-README-008: Book CLI chapters row != book/src/cli/*.md"
+    );
+}
+
+/// FALSIFY-README-009: a "planned for 0.N.M" promise must not name a release older
+/// than the current tag line (0.75). A dated promise that nobody re-reads is how the
+/// "planned for 0.70.1" known-issue lines outlived five releases.
+#[test]
+fn test_readme_has_no_overdue_planned_for_release() {
+    let readme = read_readme();
+    let manifest =
+        std::fs::read_to_string(workspace_root().join("Cargo.toml")).expect("Cargo.toml");
+    let cur_minor: u32 = manifest
+        .lines()
+        .skip_while(|l| !l.starts_with("[workspace.package]"))
+        .find_map(|l| l.strip_prefix("version = \""))
+        .and_then(|v| v.split('.').nth(1)?.parse().ok())
+        .expect("workspace version minor");
+    for (i, line) in readme.lines().enumerate() {
+        if let Some(rest) = line.split("planned for ").nth(1) {
+            let minor: Option<u32> = rest
+                .trim_start_matches("0.")
+                .split('.')
+                .next()
+                .and_then(|m| m.parse().ok());
+            if let Some(m) = minor {
+                assert!(
+                    m > cur_minor,
+                    "FALSIFY-README-009: README line {} promises a release (0.{m}) at or before the current 0.{cur_minor}",
+                    i + 1
+                );
+            }
+        }
+    }
+}
