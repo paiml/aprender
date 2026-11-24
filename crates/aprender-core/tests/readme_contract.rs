@@ -681,27 +681,30 @@ fn ladder_doc_copies_carry_the_enum_block() {
     }
 }
 
-/// Pull the integer in the README claims-table row whose text contains `needle`
-/// (after stripping the generated-block markers and `**`).
-fn claims_row_number(readme: &str, needle: &str) -> usize {
+/// Pull the integer from the README claims-table ROW whose first cell is `label`
+/// (row = a line starting with `|`; count = leading digits of the second cell after
+/// stripping the generated-block markers and `**`). Anchoring on the row means a
+/// prose mention of the same words elsewhere in the file cannot satisfy it.
+fn claims_row_number(readme: &str, label: &str) -> usize {
     let clean = readme
         .replace("<!-- CONTRACT_COUNT_START -->", "")
         .replace("<!-- CONTRACT_COUNT_END -->", "");
-    let idx = clean
-        .find(needle)
-        .unwrap_or_else(|| panic!("README claims row `{needle}` missing"));
-    let digits: String = clean[..idx]
-        .trim_end()
-        .chars()
-        .rev()
-        .take_while(char::is_ascii_digit)
-        .collect();
-    digits
-        .chars()
-        .rev()
-        .collect::<String>()
-        .parse()
-        .unwrap_or_else(|_| panic!("no number before `{needle}`"))
+    for line in clean.lines().filter(|l| l.trim_start().starts_with('|')) {
+        let cells: Vec<&str> = line.trim().trim_matches('|').split('|').collect();
+        if cells.len() < 2 || cells[0].trim().replace('*', "") != label {
+            continue;
+        }
+        let cell = cells[1].replace('*', "");
+        let digits: String = cell
+            .trim()
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        return digits
+            .parse()
+            .unwrap_or_else(|_| panic!("claims row `{label}`: no leading number in `{cell}`"));
+    }
+    panic!("README claims-table row `{label}` missing");
 }
 
 fn count_md(rel: &str) -> usize {
@@ -712,11 +715,13 @@ fn count_md(rel: &str) -> usize {
         .count()
 }
 
-/// FALSIFY-README-012: the CLI-command and book-chapter rows EQUAL what the tree
-/// holds (the contract count is gated by `scripts/check_readme_claims.sh`;
-/// `contracts/census.json` is a stale release snapshot, #3569, so it is not used).
+/// FALSIFY-README-012: the CLI-command and book-chapter rows never OVERSTATE what
+/// the tree holds. Same G-11 ratchet as FALSIFY-README-005/007 and
+/// `scripts/check_readme_claims.sh` `compare_count` (claimed <= measured; the README
+/// may lag until the orchestrator docs commit regenerates it, `--exact` there).
+/// The contract count is gated by `scripts/check_readme_claims.sh`.
 #[test]
-fn test_readme_claims_table_equals_derived_counts() {
+fn test_readme_claims_table_never_overstates_derived_counts() {
     let readme = read_readme();
     let root = workspace_root();
 
@@ -731,47 +736,93 @@ fn test_readme_claims_table_equals_derived_counts() {
         .lines()
         .filter(|l| l.starts_with("  - name:"))
         .count();
-    assert_eq!(
-        claims_row_number(&readme, "** CLI commands"),
-        cmds,
-        "FALSIFY-README-012: CLI commands row != commands registry"
+    let claimed_cmds = claims_row_number(&readme, "CLI commands");
+    assert!(
+        claimed_cmds <= cmds,
+        "FALSIFY-README-012: CLI commands row claims {claimed_cmds}, registry holds {cmds} (may lag, never overstate)"
     );
 
-    assert_eq!(
-        claims_row_number(&readme, "** chapters | `ls book/src/cli"),
-        count_md("book/src/cli"),
-        "FALSIFY-README-012: Book CLI chapters row != book/src/cli/*.md"
+    let claimed_ch = claims_row_number(&readme, "Book CLI chapters");
+    let ch = count_md("book/src/cli");
+    assert!(
+        claimed_ch <= ch,
+        "FALSIFY-README-012: Book CLI chapters row claims {claimed_ch}, book/src/cli/*.md holds {ch} (may lag, never overstate)"
     );
 }
 
-/// FALSIFY-README-013: a "planned for 0.N.M" promise must not name a release older
-/// than the current tag line (0.75). A dated promise that nobody re-reads is how the
+/// Parse `MAJOR.MINOR[.PATCH]` at the start of `s` (a missing patch reads as 0).
+fn parse_semver_prefix(s: &str) -> Option<(u32, u32, u32)> {
+    let end = s
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(s.len());
+    let mut it = s[..end].trim_end_matches('.').split('.');
+    let major = it.next()?.parse().ok()?;
+    let minor = it.next()?.parse().ok()?;
+    let patch = it.next().map_or(Some(0), |p| p.parse().ok())?;
+    Some((major, minor, patch))
+}
+
+/// Every `planned for <version>` promise in `text` (case-insensitive; the phrase may
+/// wrap across lines or sit behind blockquote/emphasis marks; the version may be
+/// backticked or `v`-prefixed). Returns (1-based line, promised version) per occurrence.
+fn planned_for_promises(text: &str) -> Vec<(usize, (u32, u32, u32))> {
+    const SKIP: &[char] = &[' ', '\t', '\r', '\n', '>', '*', '_', '`'];
+    let lower = text.to_ascii_lowercase();
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(off) = lower[from..].find("planned") {
+        let start = from + off;
+        from = start + "planned".len();
+        let after = lower[from..].trim_start_matches(SKIP);
+        let Some(after) = after.strip_prefix("for") else {
+            continue;
+        };
+        let after = after.trim_start_matches(SKIP);
+        let after = after.strip_prefix('v').unwrap_or(after);
+        if let Some(v) = parse_semver_prefix(after) {
+            out.push((lower[..start].matches('\n').count() + 1, v));
+        }
+    }
+    out
+}
+
+/// FALSIFY-README-013: a "planned for X.Y[.Z]" promise must name a release strictly
+/// newer than the workspace version. A dated promise that nobody re-reads is how the
 /// "planned for 0.70.1" known-issue lines outlived five releases.
 #[test]
 fn test_readme_has_no_overdue_planned_for_release() {
     let readme = read_readme();
     let manifest =
         std::fs::read_to_string(workspace_root().join("Cargo.toml")).expect("Cargo.toml");
-    let cur_minor: u32 = manifest
+    let cur = manifest
         .lines()
         .skip_while(|l| !l.starts_with("[workspace.package]"))
         .find_map(|l| l.strip_prefix("version = \""))
-        .and_then(|v| v.split('.').nth(1)?.parse().ok())
-        .expect("workspace version minor");
-    for (i, line) in readme.lines().enumerate() {
-        if let Some(rest) = line.split("planned for ").nth(1) {
-            let minor: Option<u32> = rest
-                .trim_start_matches("0.")
-                .split('.')
-                .next()
-                .and_then(|m| m.parse().ok());
-            if let Some(m) = minor {
-                assert!(
-                    m > cur_minor,
-                    "FALSIFY-README-013: README line {} promises a release (0.{m}) at or before the current 0.{cur_minor}",
-                    i + 1
-                );
-            }
-        }
+        .and_then(parse_semver_prefix)
+        .expect("workspace version");
+    for (line, v) in planned_for_promises(&readme) {
+        assert!(
+            v > cur,
+            "FALSIFY-README-013: README line {line} promises {v:?}, not strictly after the current {cur:?}"
+        );
     }
+}
+
+#[test]
+fn test_planned_for_parser_case_table() {
+    let p = |s: &str| {
+        planned_for_promises(s)
+            .into_iter()
+            .map(|x| x.1)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(p("planned for 0.70 (#3715)"), vec![(0, 70, 0)]);
+    assert_eq!(p("Planned for `v0.75.1`"), vec![(0, 75, 1)]);
+    assert_eq!(p("planned\n> for 1.0.0"), vec![(1, 0, 0)]);
+    assert_eq!(
+        p("planned for 0.76 and planned for 0.70.1"),
+        vec![(0, 76, 0), (0, 70, 1)]
+    );
+    assert_eq!(p("planned for the next release"), vec![]);
+    assert!(parse_semver_prefix("0.75.0").unwrap() < parse_semver_prefix("1.0.0").unwrap());
 }
