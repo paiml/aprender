@@ -291,7 +291,13 @@ pub fn census_of(dir: &Path) -> Result<Census, Box<dyn std::error::Error>> {
 /// ONT-4d: `concept → instances` over the closed graph (see [`Census::by_concept`]).
 fn by_concept(dir: &Path) -> BTreeMap<String, usize> {
     use provable_contracts::ontology::{extract, rdf::ont};
-    let (Some(sigma), Ok(x)) = (extract::sigma_of(dir), extract::all(dir)) else {
+    // Σ first, and ONLY then the extraction: a tuple pattern evaluates both calls eagerly, so a corpus with no
+    // ontology.yaml still ran `extract::all`, whose extractors root at `dir.parent()` and walk it (#7430: a test
+    // corpus under a shared /tmp read every worktree there, 21h44m at load 408).
+    let Some(sigma) = extract::sigma_of(dir) else {
+        return BTreeMap::new();
+    };
+    let Ok(x) = extract::all(dir) else {
         return BTreeMap::new();
     };
     sigma
@@ -600,6 +606,29 @@ mod tests {
         let c = census_of(tmp.path()).expect("censuses");
         assert_eq!(c.by_kind.get("pattern"), Some(&1));
         assert_eq!(c.by_kind.get("kernel"), Some(&1), "kind defaults to kernel");
+    }
+
+    #[test]
+    fn a_corpus_without_sigma_never_reads_its_parent_dir() {
+        // #7430: a FIFO named like a receipt blocks any read of it. The old eager `extract::all` read
+        // <parent>/evidence/dogfood/models/*.json and hung; the census must finish without touching it.
+        let outer = tempfile::tempdir().expect("temp dir is creatable");
+        let models = outer.path().join("evidence/dogfood/models");
+        std::fs::create_dir_all(&models).expect("mkdir");
+        let fifo = models.join("blocked.json");
+        let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+        if !matches!(made, Ok(s) if s.success()) {
+            return; // no mkfifo on this host: nothing to prove here
+        }
+        let corpus = outer.path().join("contracts");
+        std::fs::create_dir_all(&corpus).expect("mkdir");
+        write_valid(&corpus, "a.yaml");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(census_of(&corpus).map(|c| c.n_files).ok());
+        });
+        let got = rx.recv_timeout(std::time::Duration::from_secs(20));
+        assert_eq!(got, Ok(Some(1)), "census touched the parent dir");
     }
 
     #[test]

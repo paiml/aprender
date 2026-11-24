@@ -28,7 +28,7 @@ live_has_merge_queue() {
     raw=$(cat "$json_file") || return 2
   else
     command -v gh >/dev/null 2>&1 || { echo "one-gate: --live requires gh" >&2; return 2; }
-    raw=$(gh api "repos/${repo}/rulesets" 2>/dev/null) || { echo "one-gate: gh api repos/${repo}/rulesets failed" >&2; return 2; }
+    raw=$(gh api --paginate "repos/${repo}/rulesets" 2>/dev/null) || { echo "one-gate: gh api repos/${repo}/rulesets failed" >&2; return 2; }
     ids=$(jq -r '.[] | select(.enforcement == "active" and .target == "branch") | .id' <<< "$raw" 2>/dev/null) || { echo "one-gate: invalid rulesets list json" >&2; return 2; }
     for id in $ids; do
       item=$(gh api "repos/${repo}/rulesets/${id}" 2>/dev/null) || { echo "one-gate: gh api repos/${repo}/rulesets/${id} failed" >&2; return 2; }
@@ -282,6 +282,17 @@ case_live "L3 --live passes when active ruleset has merge_queue" 0 $'allow mg-on
 case_live "L4 --live fails when merge_queue ruleset is disabled" 1 "" "s/^  shard:\$/  shard:\n    if: github.event_name != ${Q}pull_request${Q}/" "$RS_DIS"
 case_live "L5 allow live-mq-off in allow-list is refused" 1 $'allow live-mq-off ci.yml shard - -- cannot suppress\n' "s/^  shard:\$/  shard:\n    if: github.event_name != ${Q}pull_request${Q}/" "$RS_ON"
 case_live "V3 --live fails closed on invalid rulesets json" 2 "" "" "not-json"
+RS_EXC='[{"id":1,"enforcement":"active","target":"branch","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":["refs/heads/main"]}},"rules":[{"type":"merge_queue"}]}]'
+RS_TAG='[{"id":1,"enforcement":"active","target":"tag","conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},"rules":[{"type":"merge_queue"}]}]'
+RS_REL='[{"id":1,"enforcement":"active","target":"branch","conditions":{"ref_name":{"include":["refs/heads/release/*"],"exclude":[]}},"rules":[{"type":"merge_queue"}]}]'
+case_live "L6 --live fails when merge_queue ruleset excludes main" 1 "" "s/^  shard:\$/  shard:\\n    if: github.event_name != ${Q}pull_request${Q}/" "$RS_EXC"
+case_live "L7 --live fails when merge_queue ruleset targets tags" 1 "" "s/^  shard:\$/  shard:\\n    if: github.event_name != ${Q}pull_request${Q}/" "$RS_TAG"
+case_live "L8 --live fails when merge_queue ruleset does not include main" 1 "" "s/^  shard:\$/  shard:\\n    if: github.event_name != ${Q}pull_request${Q}/" "$RS_REL"
+rm -rf -- "${st:?}/wf"; mkdir -p "$st/wf"; base_ci >"$st/wf/ci.yml"
+sed -i "s/^  gate:\$/  guards:\n    if: github.event_name == ${Q}merge_group${Q}\n    runs-on: [self-hosted, Linux, X64, clean-room]\n    steps: [{name: g, run: echo g}]\n  gate:/; s/^    needs: \\[build, shard\\]\$/    needs: [build, shard, guards]/" "$st/wf/ci.yml"
+printf 'required ci.yml gate\nallow mg-only ci.yml guards - -- t\n' >"$st/allow.txt"
+rc=0; (cd "$st" && "$root/scripts/check_one_gate_parity.sh" --workflows wf --allow ./allow.txt) >"$st/out" 2>&1 || rc=$?
+[ "$rc" -eq 0 ] && printf 'ok   A4 relative allow path matches alfile (rc=%s)\n' "$rc" || { printf 'FAIL A4: want rc=0 got rc=%s\n' "$rc"; sed 's/^/     /' "$st/out"; fail=1; }
 rm -rf -- "${st:?}/wf"; mkdir -p "$st/wf"; base_ci >"$st/wf/ci.yml"; : >"$st/empty.txt"
 rc=0; "$0" --workflows "$st/wf" --allow "$st/empty.txt" >"$st/out" 2>&1 || rc=$?
 [ "$rc" -eq 1 ] && grep -q '^RED not-required: ci.yml build:' "$st/out" && ! grep -q '^RED allow-list' "$st/out" && printf 'ok   M22 empty allow-list fails without misreading workflow (rc=%s)\n' "$rc" || { printf 'FAIL M22: want rc=1 got rc=%s\n' "$rc"; sed 's/^/     /' "$st/out"; fail=1; }

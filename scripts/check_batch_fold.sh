@@ -143,6 +143,9 @@ table() {
 
 case "${1:-}" in -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;; esac
 [ -f "$SUBJECT" ] || { printf 'ENV   %s is missing -- cannot judge, not a pass\n' "$SUBJECT" >&2; exit 2; }
+# The table runs batch_fold.sh (git merge --no-ff) outside mkfixture; a runner with no global
+# git identity ("Committer identity unknown") must not turn every row into an ERROR.
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 
 if [ "${1:-}" = "--self-test" ]; then
     echo "=== check_batch_fold.sh --self-test: each wrong folder must turn the table RED ==="
