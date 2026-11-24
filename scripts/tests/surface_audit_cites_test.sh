@@ -92,5 +92,41 @@ mutant "no symbol check" 's/index(norm(txt\[file, first\]), sym) == 0/0/' GREEN 
 mutant "no existence check" 's/lines\[file\] < 0/0/' GREEN "legacy file missing, no line" "$G_ALPHA" "$G_COMMA" crates/demo/src/nope.rs
 mutant "naive comma split (no quote state)" 's/else if (c == "\\"") q = 1/else if (0) q = 1/' RED "valid comma-quoted field" "$G_ALPHA" "$G_COMMA" "$G_LEGACY"
 
+
+# --- last cited line per file (--caps), read by check_dogfood_coverage.sh G2.1 ---
+# The freshness check used to split the ledger with `awk -F,`: a quoted
+# evidence_path holding commas lost its row, so a hunk inside its cited range
+# could be judged "after the last cited line". One quote-aware parser now.
+caps() { # caps <name> <want rc> <want sorted "file=cap;..."> <script> <alpha> <comma> <legacy>
+  local name=$1 wantrc=$2 want=$3 script=$4 got rc=0
+  ledger "$5" "$6" "$7" > "$TD/docs/audits/surface_audit.csv"
+  got="$(bash "$script" --root "$TD" --caps 2>/dev/null | sort | tr '\t\n' '=;')" || rc=$?
+  [ "$wantrc" -eq 0 ] || got=""
+  rows=$((rows + 1))
+  if [ "$rc" -eq "$wantrc" ] && [ "$got" = "$want" ]; then printf 'ok    caps: %s\n' "$name"
+  else printf 'FAIL  caps: %s: want rc=%s %s got rc=%s %s\n' "$name" "$wantrc" "$want" "$rc" "$got" >&2; fails=$((fails + 1)); fi
+}
+Q_COMMA='crates/demo/src/other.rs:1-2,4 (see 1,2 and crates/demo/src/cli.rs:99)'
+caps "quoted comma cite keeps its row, last list item wins" 0 \
+  'crates/demo/src/cli.rs=5;crates/demo/src/other.rs=4;' "$CHECK" "$G_ALPHA" "$Q_COMMA" "$G_LEGACY"
+caps "a cite with no line is whole-file evidence" 0 \
+  'crates/demo/src/cli.rs=5;crates/demo/src/other.rs=999999999;' "$CHECK" "$G_ALPHA" crates/demo/src/other.rs "$G_LEGACY"
+caps "range cite: the end line is the cap" 0 \
+  'crates/demo/src/cli.rs=5;crates/demo/src/other.rs=3;' "$CHECK" "$G_ALPHA" 'crates/demo/src/other.rs:2-3 (a, b)' "$G_LEGACY"
+caps "malformed cite fails closed (exit 2)" 2 '' "$CHECK" crates/demo/src/cli.rs:2x "$G_COMMA" "$G_LEGACY"
+caps "reversed range fails closed (exit 2)" 2 '' "$CHECK" "$G_ALPHA" 'crates/demo/src/other.rs:3-2,4 (x)' "$G_LEGACY"
+sed 's/else if (c == "\\"") q = 1/else if (0) q = 1/' "$CHECK" > "$TD/mutant.sh"
+caps "mutant [naive comma split] loses the quoted row" 0 \
+  'crates/demo/src/cli.rs=5;' "$TD/mutant.sh" "$G_ALPHA" "$Q_COMMA" "$G_LEGACY"
+sed 's/if (h > hi) hi = h/if (i == 1) hi = h/' "$CHECK" > "$TD/mutant.sh"
+caps "mutant [first list item only] under-reports the cap" 0 \
+  'crates/demo/src/cli.rs=5;crates/demo/src/other.rs=2;' "$TD/mutant.sh" "$G_ALPHA" "$Q_COMMA" "$G_LEGACY"
+# the gate must read its caps from this parser, not from a second comma split
+rows=$((rows + 1))
+if grep -q 'check_surface_audit_cites.sh" --root "$root" --caps' "$SRC/scripts/check_dogfood_coverage.sh" \
+   && ! grep -q "awk -F, 'NR > 1 {" "$SRC/scripts/check_dogfood_coverage.sh"; then
+  printf 'ok    caps: check_dogfood_coverage.sh reads --caps (no second comma split)\n'
+else printf 'FAIL  caps: check_dogfood_coverage.sh still splits evidence_path on bare commas\n' >&2; fails=$((fails + 1)); fi
+
 printf '\n%s rows, %s failed\n' "$rows" "$fails"
 [ "$fails" -eq 0 ]
