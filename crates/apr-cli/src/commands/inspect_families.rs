@@ -56,6 +56,7 @@ const SCOPE_TOP: &[(&str, &str)] = &[
     ("embed_tokens", "embed_tokens"),
     ("norm", "final_norm"),
     ("hyper_connection_mixer", "hyper_connection_mixer"),
+    ("fc", "fc"),
     ("fc_embedding", "fc_embedding"),
     ("fc_hidden", "fc_hidden"),
     ("pre_fc_norm_embedding", "pre_fc_norm_embedding"),
@@ -156,9 +157,13 @@ pub(crate) fn report(config: &str, index: &str) -> Result<FamilyReport, CliError
         total_size_bytes: idx
             .get("metadata")
             .and_then(|m| m.get("total_size"))
-            .and_then(serde_json::Value::as_u64),
+            .and_then(byte_count),
         tensor_count: weight_map.len(),
-        layers_in_index: 0,
+        layers_in_index: weight_map
+            .keys()
+            .filter_map(|n| language_layer(n))
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
         families: fam
             .into_iter()
             .map(|(family, (count, example))| FamilyEntry {
@@ -210,27 +215,123 @@ pub(crate) fn render_text(r: &FamilyReport) -> String {
     s
 }
 
-/// Where `--no-weights` reads its two files from (RED stub: the argument, as on main).
-pub(crate) fn no_weights_dir(
-    path: &Path,
-    _cache_dir: &dyn Fn(&str) -> Result<std::path::PathBuf, CliError>,
-    _fetch: &dyn Fn(&str, &Path) -> Result<(), CliError>,
-) -> Result<std::path::PathBuf, CliError> {
-    Ok(path.to_path_buf())
+/// A byte count written as an integer or as a whole float (`4892365451008.0`, which is
+/// how the published 2.4T index writes `total_size`).
+fn byte_count(v: &serde_json::Value) -> Option<u64> {
+    v.as_u64().or_else(|| {
+        let f = v.as_f64()?;
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            clippy::cast_precision_loss
+        )]
+        (f.is_finite() && f >= 0.0 && f.fract() == 0.0 && f < u64::MAX as f64).then_some(f as u64)
+    })
 }
 
-/// `apr inspect DIR --no-weights`: `DIR` holds `config.json` and
+/// The language-model layer a tensor belongs to (`model[.language_model].layers.{n}.`).
+fn language_layer(name: &str) -> Option<u64> {
+    let rest = name
+        .strip_prefix("model.language_model.")
+        .or_else(|| name.strip_prefix("model."))?;
+    rest.strip_prefix("layers.")?
+        .split_once('.')?
+        .0
+        .parse()
+        .ok()
+}
+
+/// The two files `--no-weights` reads.
+const NO_WEIGHTS_FILES: [&str; 2] = ["config.json", "model.safetensors.index.json"];
+
+/// `org/repo` (optionally `hf://org/repo`): exactly two non-empty segments of repo-id
+/// characters, and not a filesystem-looking path.
+fn repo_id(arg: &str) -> Option<&str> {
+    let id = arg.strip_prefix("hf://").unwrap_or(arg);
+    let seg = |s: &str| {
+        !s.is_empty()
+            && s != "."
+            && s != ".."
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    };
+    let (org, repo) = id.split_once('/')?;
+    (seg(org) && seg(repo)).then_some(id)
+}
+
+/// Where `--no-weights` reads its two files from: an existing directory (or the directory
+/// of an existing file), else the `apr pull` cache directory of a bare repo id. A file the
+/// cache lacks is fetched from the repo's `resolve/main` into the cache; a failed fetch is
+/// an error naming the repo and the file, and leaves nothing behind.
+///
+/// # Errors
+/// An argument that is neither an existing path nor `org/repo`; an uncached file that
+/// cannot be fetched (`--offline`, no network, 404, gated).
+pub(crate) fn no_weights_dir(
+    path: &Path,
+    cache_dir: &dyn Fn(&str) -> Result<std::path::PathBuf, CliError>,
+    fetch: &dyn Fn(&str, &Path) -> Result<(), CliError>,
+) -> Result<std::path::PathBuf, CliError> {
+    if path.is_file() {
+        return Ok(path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf());
+    }
+    if path.is_dir() {
+        return Ok(path.to_path_buf());
+    }
+    let arg = path.to_string_lossy();
+    let Some(repo) = repo_id(&arg) else {
+        return Err(CliError::ValidationFailed(format!(
+            "--no-weights: {arg} is neither an existing directory nor a Hugging Face repo id (org/repo)"
+        )));
+    };
+    let dir = cache_dir(repo)?;
+    for f in NO_WEIGHTS_FILES {
+        if dir.join(f).is_file() {
+            continue;
+        }
+        // Directories this call creates, outermost last, so a failure can remove them.
+        let mut made: Vec<&Path> = dir.ancestors().take_while(|a| !a.exists()).collect();
+        made.retain(|a| !a.as_os_str().is_empty());
+        let part = dir.join(format!("{f}.part"));
+        let url = format!("https://huggingface.co/{repo}/resolve/main/{f}");
+        let got = std::fs::create_dir_all(&dir)
+            .map_err(CliError::from)
+            .and_then(|()| fetch(&url, &part))
+            .and_then(|()| std::fs::rename(&part, dir.join(f)).map_err(CliError::from));
+        if let Err(e) = got {
+            let _ = std::fs::remove_file(&part);
+            for d in made {
+                let _ = std::fs::remove_dir(d);
+            }
+            let msg = format!(
+                "--no-weights: {f} of {repo} is not in the cache ({}) and could not be fetched: {e}",
+                dir.display()
+            );
+            return Err(match e {
+                CliError::HttpNotFound(_) => CliError::HttpNotFound(msg),
+                _ => CliError::NetworkError(msg),
+            });
+        }
+    }
+    Ok(dir)
+}
+
+/// `apr inspect DIR|ORG/REPO --no-weights`: a bare repo id is read from the `apr pull`
+/// cache (see [`no_weights_dir`]). `DIR` holds `config.json` and
 /// `model.safetensors.index.json` (a path to either file is accepted). Reads those
 /// two files and nothing else.
 ///
 /// # Errors
 /// A missing or malformed file, or any UNNAMED tensor (printed first).
 pub(crate) fn run_no_weights(path: &Path, json: bool) -> Result<(), CliError> {
-    let dir = if path.is_file() {
-        path.parent().unwrap_or_else(|| Path::new("."))
-    } else {
-        path
-    };
+    let dir = no_weights_dir(
+        path,
+        &crate::commands::pull::resolve_cache_dir_for_ref,
+        &crate::commands::pull::download_file,
+    )?;
     let read = |f: &str| {
         std::fs::read_to_string(dir.join(f))
             .map_err(|e| bad(&format!("--no-weights needs {f} in {}", dir.display()), e))
