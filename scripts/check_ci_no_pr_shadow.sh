@@ -96,9 +96,9 @@ check_file() { # FILE REQUIRE(1|0) -> FAIL lines; rc 1 when any
     for ((i = 0; i < total; i++)); do
         line="${L[i]}"
         if ! [[ $line =~ $TRIG ]]; then
-            if [[ $line =~ \\$ ]]; then # backslash-newline splitting the driver name: join (bash drops both) and test again
+            if [[ $line =~ [^[:space:]]\\$ && ! $line =~ ^[[:space:]]*# ]]; then # backslash-newline splitting the driver name: join (bash drops both) and test again
                 nxt="$line"; j=$i
-                while [[ $nxt =~ \\$ ]] && ((j + 1 < total)); do nxt="${nxt%\\}$(trim "${L[j + 1]}")"; j=$((j + 1)); done
+                while [[ $nxt =~ [^[:space:]]\\$ ]] && ((j + 1 < total)); do nxt="${nxt%\\}$(trim "${L[j + 1]}")"; j=$((j + 1)); done
                 if [[ $nxt =~ $TRIG ]]; then echo "FAIL  [R6-glued] line $((i + 1)): a backslash-newline splits the driver name: $line"; bad=1; continue; fi
             fi
             if [[ $line =~ (^|[[:space:]\'\"])--s(e|ec|ect|ecti|ectio|ection|ections)?([^a-z-]|$) && ! $line =~ ^[[:space:]]*# ]]; then echo "FAIL  [R11-orphan] line $((i + 1)): a --se... option outside a driver statement: $line"; bad=1; fi
@@ -138,16 +138,13 @@ pr_path() { # FILE -> 0 when the workflow can run on the PR / merge-queue / push
 }
 
 check() { # FILE-or-DIR-anchor -> ci.yml (required) plus PR-path siblings
-    local ci="$1" bad=0 d w out rc
+    local ci="$1" bad=0 d w out
     check_file "$ci" 1 || bad=1
     d="$(dirname "$ci")"
     for w in "$d"/*.yml "$d"/*.yaml; do
         [ -e "$w" ] || [ -L "$w" ] || continue   # an unmatched glob stays literal; a dangling link is -L and is RED below
         [ "$w" -ef "$ci" ] && continue
         if ! [ -f "$w" ] || ! [ -r "$w" ]; then echo "FAIL  ($(basename "$w")) [R12-unread] cannot read workflow file: $w"; bad=1; continue; fi
-        rc=0; has "$TRIG" "$w" || rc=$?
-        if [ "$rc" -ge 2 ]; then echo "FAIL  ($(basename "$w")) [R12-unread] grep failed (exit $rc) on: $w"; bad=1; continue; fi
-        [ "$rc" -eq 0 ] || continue
         pr_path "$w" || continue
         if out="$(check_file "$w" 0)"; then :; else printf "%s\n" "$out" | sed "s|^FAIL  |FAIL  ($(basename "$w")) |"; bad=1; fi
     done
@@ -292,6 +289,16 @@ self_test() {
     elif grep -qE '\[R6-' <<<"$got"; then echo "ok    red   MUTANT [R6]: backslash-newline inside the driver name"; else echo "FAIL  wrong reason: $got"; fails=1; fi
     printf '  - run: |\n      echo a\\\n      echo b\n' > "$td/bn2.yml"
     if got="$(check_file "$td/bn2.yml" 0)"; then echo "ok    green control: an unrelated backslash continuation"; else echo "FAIL  unrelated continuation flagged: $got"; fails=1; fi
+    # a comment ending in a backslash and a ' \' shell continuation are not a glued split (green controls)
+    printf '  - run: |\n      # note ends in a backslash\\\n      echo hi\n' > "$td/cm.yml"
+    if got="$(check_file "$td/cm.yml" 0)"; then echo "ok    green control: comment ending in a backslash"; else echo "FAIL  comment backslash flagged: $got"; fails=1; fi
+    printf '  - run: |\n      echo a \\\n        b\n' > "$td/sp.yml"
+    if got="$(check_file "$td/sp.yml" 0)"; then echo "ok    green control: space-backslash continuation"; else echo "FAIL  space-backslash flagged: $got"; fails=1; fi
+    # sibling PR-path workflow with a driver name split by backslash-newline must be RED through check()
+    mkdir "$td/s"; cp "$src" "$td/s/ci.yml"
+    printf 'name: x\non:\n  pull_request:\njobs:\n  j:\n    steps:\n      - run: |\n          python3 scripts/ci/fa\\\nt_driver.py run --sections pr-review-shadow\n' > "$td/s/sib.yml"
+    if got="$(check "$td/s/ci.yml")"; then echo "FAIL  mutant: split driver name in a sibling stayed green"; fails=1
+    elif grep -qE '\(sib.yml\).*\[R6-' <<<"$got"; then echo "ok    red   MUTANT [R6]: split driver name in a sibling workflow"; else echo "FAIL  sibling wrong reason: $got"; fails=1; fi
     return "$fails"
 }
 
