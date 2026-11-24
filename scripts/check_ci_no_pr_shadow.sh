@@ -34,7 +34,8 @@
 #
 # Usage:  bash scripts/check_ci_no_pr_shadow.sh [--self-test] [WORKFLOW_FILE]
 #         WORKFLOW_FILE given: only that file (>=1 list required). Default: ci.yml plus every PR-path workflow beside it.
-# Wired:  ci/explicit-test-commands.d/893-ci-no-pr-shadow.cmd (--self-test).
+# Wired:  PR and merge-queue path: guard-tree (scripts/guard_tree.sh, pr-light) runs [self-test] then [run]; it finds the
+#         self-test through --help. Full tier: ci/explicit-test-commands.d/893-ci-no-pr-shadow.cmd (--self-test).
 set -euo pipefail
 
 TRIG='fat_d|ci/fat|fat_["'"'"'\\]'
@@ -295,6 +296,7 @@ self_test() {
 }
 
 case "${1:-}" in
+    -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --self-test) self_test "${2:-.github/workflows/ci.yml}"; exit $? ;;
     *)
         if [ -n "${1:-}" ]; then check_file "$1" 1 && echo "ok    no --sections list resolves to pr-review-shadow"
