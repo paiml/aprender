@@ -6,7 +6,7 @@
 //! `pv lint <scratch>/contracts --gate shapes --shape sim3d-receipt-v1`. Planted defects on that same receipt
 //! must go red naming the path.
 //!
-//! LAB: this target is not wired into `ci/explicit-test-commands.d/` (a new PR-path check is a gate change).
+//! GATE: wired into `ci/explicit-test-commands.d/892-sim3d-kernel-receipt.cmd` (a PR-path check; this PR is a gate change, see the PR body).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
