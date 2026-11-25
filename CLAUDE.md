@@ -24,7 +24,7 @@ Rationale, command blocks, catalogs: `docs/agent-rules-history.md#second-trim-mo
 
 ## Autonomous Operation Mode (DEFAULT)
 
-- Ship PRs, do not ask permission for routine work; after landing/arming emit ONE line and continue. Stop only when P0/P1 is landed or blocked, or 5+ PRs stick on one flake. `/loop`: no polling.
+- Ship PRs, do not ask permission for routine work; after landing/arming emit ONE line and continue. Stop only when P0/P1 is landed or blocked, or 5+ PRs stick on one flake. loop sessions: no polling.
 - **Check in BEFORE:** compute > 1hr off lambda-vector; `git push --force`; `gh release delete`; dropping branches/tags on main; `cargo yank`; editing `.github/workflows/*.yml`; architectural pivots; contradicting an explicit user instruction.
 - Publish is unattended: operator, 2026-09-20, verbatim: *"tell agent to auto-publish and never wait for me"*. The pre-publish gates ARE the authorization (APR-RELEASE-001 §T-4).
 
@@ -50,7 +50,7 @@ Rationale, command blocks, catalogs: `docs/agent-rules-history.md#second-trim-mo
 
 ## Publishing Safety (CB-510 Lesson)
 
-- **`.gitignore` and `Cargo.toml` exclude patterns must be root-anchored** (`/models/`, not `models/`). Run `bash scripts/check_include_files.sh`; re-run after any exclude change. Claim fence (ONT-4c, `contracts/claude-md.yaml`):
+- **`.gitignore` and `Cargo.toml` exclude patterns must be root-anchored** (anchor models dirs with a leading slash). Run `bash scripts/check_include_files.sh`; re-run after any exclude change. Claim fence (ONT-4c, `contracts/claude-md.yaml`):
 
 ```bash
 setsid --wait bash scripts/check_package_includes.sh  # as CI runs it; scans src/ ONLY, against `cargo package -p aprender --list`
