@@ -52,9 +52,22 @@ if [ "${1:-}" = --self-test ]; then
     chk "gh failure -> not_measured, blocked rc 1" "$rc:${out%% *}" "1:ANDON-BUMP-BLOCKED"
     # exact tag match: a stub that APPLIES the --jq filter to canned matching-refs JSON, so the filter itself is tested
     cat > "$d/gh" <<'STUB'
-#!/bin/bash
+#!/usr/bin/env bash
 expr=; while [ $# -gt 0 ]; do [ "$1" = --jq ] && expr=$2; shift; done
-case "$expr" in *refs/tags*) printf '%s' "$CRB_REFS" | jq "$expr" ;; *) echo 0 ;; esac
+case "$expr" in
+    '[.[] | select(.ref == "'*'")] | length')
+        want=${expr#'[.[] | select(.ref == "'}
+        want=${want%'")] | length'}
+        n=0; rest=${CRB_REFS:-}; re='"ref"[[:space:]]*:[[:space:]]*"([^"]*)"'
+        while [[ $rest =~ $re ]]; do
+            if [ "${BASH_REMATCH[1]}" = "$want" ]; then n=$((n + 1)); fi
+            rest=${rest#*"${BASH_REMATCH[0]}"}
+        done
+        printf '%s\n' "$n"
+        ;;
+    *refs/tags*) exit 1 ;;
+    *) echo 0 ;;
+esac
 STUB
     chmod +x "$d/gh"; rm -f "${d:?}/calls"
     CRB_REFS='[{"ref":"refs/tags/v0.72.20"}]' CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.1 > /dev/null 2>&1
