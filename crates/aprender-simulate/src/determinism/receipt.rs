@@ -146,9 +146,11 @@ pub fn run_receipt_with(
         .collect();
     let hashes = run_observed(spec, None, order, |k, t_ns, state| {
         for (m, v) in monitors.iter().zip(verdicts.iter_mut()) {
-            v.steps_checked += 1;
-            if v.first_violation.is_none() && !m.holds(k, t_ns, state) {
-                v.first_violation = Some(k);
+            if v.first_violation.is_none() {
+                v.steps_checked += 1;
+                if !m.holds(k, t_ns, state) {
+                    v.first_violation = Some(k);
+                }
             }
         }
     })
@@ -361,8 +363,8 @@ mod tests {
             got,
             [
                 ("INV-001", 64, None),
-                ("INV-002", 64, Some(0)),
-                ("INV-003", 64, Some(3))
+                ("INV-002", 1, Some(0)),
+                ("INV-003", 4, Some(3))
             ]
         );
     }
@@ -422,7 +424,7 @@ mod tests {
             ReceiptError::DuplicateMonitor,
             ReceiptError::Spec(super::super::SpecError::ZeroDt),
         ] {
-            assert!(!e.to_string().is_empty());
+            assert_ne!(e.to_string().len(), 0);
         }
     }
 }

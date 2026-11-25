@@ -79,7 +79,9 @@ fn errors(v: &Value, out: &mut Vec<String>) {
             ) {
                 out.push(msg.to_owned());
             }
-            m.values().for_each(|x| errors(x, out));
+            for x in m.values() {
+                errors(x, out);
+            }
         }
         Value::Array(a) => a.iter().for_each(|x| errors(x, out)),
         _ => {}
@@ -155,7 +157,7 @@ fn sha256sum_of_the_spec_file_equals_the_receipts_spec_sha256() {
     let spec_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/fixtures/ont/sim3d/mm1-littles-law.sim.yaml");
     let bytes = std::fs::read(&spec_path).expect("spec fixture readable");
-    assert!(!bytes.is_empty());
+    assert_ne!(bytes.len(), 0);
     let out = Command::new("sha256sum")
         .arg(&spec_path)
         .output()
