@@ -64,7 +64,7 @@ enumerate_claims() {
       norm=$(printf '%s\n' "$text" \
              | sed -E 's/\*\*[0-9][0-9,]*\*\*/**N**/g; s/([^*0-9])[0-9][0-9,]*/\1N/g' \
              | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//' \
-             | cut -c1-100)
+             | LC_ALL=C cut -b1-100)
       printf '%s\t%s\n' "$ln" "$norm"
     done
 }
