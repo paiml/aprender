@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 /// An invariant checked on the canonical snapshot after every step.
 pub trait Monitor {
     /// Stable name, recorded in the receipt. The pv shape admits only `INV-nnn`.
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
     /// `true` when the snapshot of step `step` (time `t_ns`, sorted by entity id) satisfies it.
     fn holds(&self, step: u64, t_ns: u64, state: &[Entity]) -> bool;
 }
@@ -254,7 +254,7 @@ mod tests {
     /// Holds while the wrapping sum of all state words is at most the cap.
     struct Cap(&'static str, u64);
     impl Monitor for Cap {
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             self.0
         }
         fn holds(&self, _step: u64, _t_ns: u64, state: &[Entity]) -> bool {
@@ -265,7 +265,7 @@ mod tests {
     /// Fails from step 3 on, and records the time it was shown.
     struct FromStep3;
     impl Monitor for FromStep3 {
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             "INV-003"
         }
         fn holds(&self, step: u64, t_ns: u64, _state: &[Entity]) -> bool {

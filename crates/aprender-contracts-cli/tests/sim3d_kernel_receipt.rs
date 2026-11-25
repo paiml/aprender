@@ -18,7 +18,7 @@ use simular::determinism::{mix, Entity, Spec};
 /// Holds while the wrapping sum of all state words is at most the cap.
 struct Cap(&'static str, u64);
 impl Monitor for Cap {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         self.0
     }
     fn holds(&self, _step: u64, _t_ns: u64, state: &[Entity]) -> bool {
