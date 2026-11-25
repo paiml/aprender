@@ -361,6 +361,90 @@ fn run_query_sqlite(_query: &str, dir: &Path, _top_k: usize, _format: &str) -> R
     )
 }
 
+/// Serve sqlite-index queries from one process: index, vectors and embedding model open once.
+/// Each stdin line is a query; each query prints one compact JSON object on its own stdout line.
+/// Ranking is the same as `run_query_sqlite` (hybrid when `vectors.bin` exists, FTS5 otherwise).
+#[cfg(all(feature = "sqlite", feature = "embeddings"))]
+pub(crate) fn run_serve(index_path: &str, top_k: usize) -> Result<()> {
+    use std::io::{BufRead, Write};
+
+    let dir = Path::new(index_path);
+    let idx = aprender_rag::SqliteIndex::open(dir.join("index.sqlite"))
+        .map_err(|e| anyhow::anyhow!("Failed to open SQLite index: {e}"))?;
+    let vp = dir.join("vectors.bin");
+    let dense_on = std::env::var_os("RAG_NO_DENSE").is_none() && vp.exists();
+    let store = if dense_on {
+        aprender_rag::vecstore::VecReader::open(&vp).ok()
+    } else {
+        None
+    };
+    let model = if store.is_some() {
+        Some(crate::embed::model().context("loading embedding model")?)
+    } else {
+        None
+    };
+    let env_f = |k: &str, d: f64| {
+        std::env::var(k)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(d)
+    };
+    let (rrf_k, cov_w) = (env_f("RAG_RRF_K", 60.0), env_f("RAG_COV_HYBRID", 0.0));
+
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    for line in std::io::stdin().lock().lines() {
+        let line = line?;
+        let query = line.trim();
+        if query.is_empty() {
+            continue;
+        }
+        let hits = idx
+            .search_fts_any(query, top_k.max(1) * 80)
+            .map_err(|e| anyhow::anyhow!("FTS5 search failed: {e}"))?;
+        let dense = match (&store, &model) {
+            (Some(s), Some(m)) => crate::embed::embed_query_with(m, query).ok().and_then(|q| {
+                let rowids: Vec<i64> = s.top_k(&q, 200).into_iter().map(|(r, _)| r).collect();
+                idx.chunks_by_rowid(&rowids).ok()
+            }),
+            _ => None,
+        };
+        let hits = match dense {
+            Some(d) => rank_docs(&fuse_rrf(&hits, &d, rrf_k), query, top_k, cov_w),
+            None => rank_docs(&hits, query, top_k, 6.0),
+        };
+        let (scores, chunks) = fts_hits_to_chunks(&hits);
+        let results: Vec<serde_json::Value> = scores
+            .iter()
+            .enumerate()
+            .map(|(rank, (i, score))| {
+                let chunk = &chunks[*i];
+                let mut result = serde_json::json!({
+                    "rank": rank + 1,
+                    "score": score,
+                    "content": chunk.content,
+                    "title": chunk.title,
+                    "source": chunk.source,
+                });
+                if let Some(start) = chunk.start_secs {
+                    result["start_secs"] = serde_json::json!(start);
+                }
+                if let Some(end) = chunk.end_secs {
+                    result["end_secs"] = serde_json::json!(end);
+                }
+                result
+            })
+            .collect();
+        writeln!(
+            out,
+            "{}",
+            serde_json::json!({ "query": query, "results": results })
+        )?;
+        out.flush()?;
+    }
+    Ok(())
+}
+
 /// Create the correct embedder for querying based on the index's embedder_type.
 ///
 /// If the index was built with semantic embeddings (BGE/MiniLM), returns a

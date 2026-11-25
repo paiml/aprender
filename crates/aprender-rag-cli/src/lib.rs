@@ -200,6 +200,18 @@ pub enum Commands {
         limit: usize,
     },
 
+    /// Serve queries from stdin (one per line) with the index and model loaded once; JSON out per line
+    #[cfg(all(feature = "sqlite", feature = "embeddings"))]
+    Serve {
+        /// Index directory holding index.sqlite (and vectors.bin for dense)
+        #[arg(short, long)]
+        index: String,
+
+        /// Number of results per query
+        #[arg(short, long, default_value = "5")]
+        top_k: usize,
+    },
+
     /// Query the RAG pipeline
     Query {
         /// Query string
@@ -603,6 +615,8 @@ pub fn dispatch(command: Commands) -> Result<()> {
             batch,
             limit,
         } => embed::run_embed(&index, batch.max(1), limit)?,
+        #[cfg(all(feature = "sqlite", feature = "embeddings"))]
+        Commands::Serve { index, top_k } => query::run_serve(&index, top_k)?,
         Commands::Query {
             query,
             index,

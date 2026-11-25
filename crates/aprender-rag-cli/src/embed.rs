@@ -11,7 +11,8 @@ pub const DIM: usize = 384;
 /// bge-small query instruction (documents are embedded raw).
 const QUERY_PREFIX: &str = "Represent this sentence for searching relevant passages: ";
 
-fn model() -> Result<FastEmbedder> {
+/// Load the bge-small query/document embedder (serve mode loads it once per process).
+pub fn model() -> Result<FastEmbedder> {
     if std::env::var_os("FASTEMBED_CACHE_DIR").is_none() {
         std::env::set_var(
             "FASTEMBED_CACHE_DIR",
@@ -26,7 +27,14 @@ fn model() -> Result<FastEmbedder> {
 /// # Errors
 /// Fails when the model cannot load or embedding fails.
 pub fn embed_query_vec(query: &str) -> Result<Vec<f32>> {
-    let m = model()?;
+    embed_query_with(&model()?, query)
+}
+
+/// Embed a query with an already-loaded model (see [`model`]).
+///
+/// # Errors
+/// Fails when embedding fails.
+pub fn embed_query_with(m: &FastEmbedder, query: &str) -> Result<Vec<f32>> {
     m.embed(&format!("{QUERY_PREFIX}{query}"))
         .context("embedding query")
 }
