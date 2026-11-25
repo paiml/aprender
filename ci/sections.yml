@@ -1396,8 +1396,24 @@ jobs:
         run: |
           set -euo pipefail
           setsid --wait bash scripts/check_pr_closes_issue.sh --self-test
-          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
-            --jq '.body // ""' > "$RUNNER_TEMP/pr-body.txt"
+          # The body read is one API call. A transient non-JSON answer ("invalid
+          # character 'S' looking for beginning of value", measured on #7419
+          # x86-main, run 45663767731) failed the step with no retry. Retry the
+          # read; a read that never succeeds still fails closed (exit 1).
+          body_ok=0
+          for _try in 1 2 3 4; do
+            if gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+                --jq '.body // ""' > "$RUNNER_TEMP/pr-body.txt" 2> "$RUNNER_TEMP/pr-body.err"; then
+              body_ok=1
+              break
+            fi
+            sleep $((_try * 5))
+          done
+          if [ "$body_ok" != 1 ]; then
+            cat "$RUNNER_TEMP/pr-body.err" >&2
+            echo "PR body read failed after 4 tries (fails closed)" >&2
+            exit 1
+          fi
           setsid --wait bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
       # APR-RELEASE-001 §11.1, WIRED. The section shipped as prose in #3268 and
       # nothing read it: `grep -rl ont-delta scripts/ .github/ Makefile` returned
