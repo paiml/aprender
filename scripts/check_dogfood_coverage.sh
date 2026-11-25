@@ -170,24 +170,44 @@ PY
 # Reads the files to judge from the list file $3; prints the ones that are material.
 material_cited_changes() {
   local root="$1" base="$2" list="$3" caps f cap out
-  # evidence_path is the second-to-last CSV field (confidence is last); it is a
-  # repo path and never holds a comma. Last cited line per file; no line = whole file.
-  caps="$(awk -F, 'NR > 1 {
-      p = $(NF - 1); gsub(/"/, "", p)
-      if (!match(p, /^[^ :]+\.(rs|toml|yml|yaml|md|sh|py)/)) next
-      f = substr(p, RSTART, RLENGTH); rest = substr(p, RLENGTH + 1); hi = 0
-      # the cite must be exactly "", ":N" or ":N-M" (N <= M); anything else is a
-      # malformed cite and the whole check fails closed rather than guess a line
-      # (a trailing " (note ...)" annotation, as the real ledger has, is not part of the cite)
-      sub(/ .*$/, "", rest)
-      if (rest != "") {
-        if (rest !~ /^:[0-9]+(-[0-9]+)?$/) { print "!\t" p; next }
-        rest = substr(rest, 2); n = split(rest, a, "-"); hi = a[n] + 0
-        if (n == 2 && a[1] + 0 > hi) { print "!\t" p; next }
-      }
-      if (hi == 0) hi = 999999999
-      if (hi > best[f]) best[f] = hi
-    } END { for (f in best) print f "\t" best[f] }' "$root/$LEDGER")" || return 2
+  # evidence_path is ONE csv field, read with the csv module: a field that holds
+  # commas is quoted and must not be split on them (#7370). Every path a field
+  # names gets the largest line any cite in that field gives it; a whole-file
+  # cite (no line) gives the whole file. Last cited line per file.
+  caps="$(python3 - "$root/$LEDGER" <<'PY'
+import csv, re, sys
+PATH = r"[A-Za-z0-9_./-]+\.(?:rs|toml|yml|yaml|md|sh|py)"
+cite = re.compile(r"(" + PATH + r")(:\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)?")
+BARE = re.compile(PATH + r":")
+GOOD = re.compile(PATH + r":\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*(?![\w./-])")
+caps, bad = {}, []
+with open(sys.argv[1], newline="", encoding="utf-8") as fh:
+    for r in csv.DictReader(fh):
+        p = r["evidence_path"].strip()
+        hits = list(cite.finditer(p))
+        # a malformed cite ("m.rs:1-2x", "m.rs:1-", "m.rs:abc") fails closed
+        if any(not GOOD.match(p, b.start()) for b in BARE.finditer(p)):
+            bad.append(p)
+        if not hits:
+            continue
+        nums = [int(x) for x in re.findall(r"\d+", re.sub(PATH, " ", p))]
+        for h in hits:
+            f, spec = h.group(1), h.group(2)
+            if spec is None:
+                v = 999999999
+            else:
+                for seg in spec[1:].split(","):
+                    parts = [int(x) for x in seg.split("-")]
+                    if len(parts) == 2 and parts[0] > parts[1]:
+                        bad.append(p)
+                v = max(nums) if nums else 999999999
+            caps[f] = max(caps.get(f, 0), v)
+for p in bad:
+    print("!\t" + p)
+for f in sorted(caps):
+    print(f + "\t" + str(caps[f]))
+PY
+)" || return 2
   case "$caps" in "!"$'\t'* | *$'\n!'$'\t'*) return 2 ;; esac
   while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -362,8 +382,66 @@ check_freshness() {
 # ---------------------------------------------------------------------------
 # The gate proper.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# G2.1 cites (#7370). Every evidence_path cite must name a file that exists and
+# a line range inside it (1 <= N <= M <= file length). Multi-cite fields are
+# read whole (csv module), and every "path:N[-M][,N[-M]...]" in them is checked.
+# HONEST LIMIT: a cite that shifts to another in-range line, or names the wrong
+# symbol, passes here; there is no symbol column to check it against.
+# ---------------------------------------------------------------------------
+check_cites() {
+  local root="$1" out rc=0
+  out="$(python3 - "$root" "$root/$LEDGER" <<'PY'
+import csv, os, re, sys
+root, ledger = sys.argv[1], sys.argv[2]
+PATH = r"[A-Za-z0-9_./-]+\.(?:rs|toml|yml|yaml|md|sh|py)"
+lead = re.compile(r"^(" + PATH + r")")
+cite = re.compile(r"(" + PATH + r"):(\d+)(?:-(\d+))?((?:,\d+(?:-\d+)?)*)")
+BARE = re.compile(PATH + r":")
+GOOD = re.compile(PATH + r":\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*(?![\w./-])")
+lengths, problems, n_cites = {}, [], 0
+def length(path):
+    if path not in lengths:
+        with open(os.path.join(root, path), encoding="utf-8", errors="replace") as fh:
+            lengths[path] = sum(1 for _ in fh)
+    return lengths[path]
+with open(ledger, newline="", encoding="utf-8") as fh:
+    for n, r in enumerate(csv.DictReader(fh), 2):
+        p = r["evidence_path"].strip()
+        for b in BARE.finditer(p):
+            if not GOOD.match(p, b.start()):
+                problems.append(f"line {n}: malformed cite at {p[b.start():b.start() + 40]!r}")
+        m = lead.match(p)
+        if not m:
+            continue  # G2.1 freshness already counts rows with no resolvable path
+        if not os.path.isfile(os.path.join(root, m.group(1))):
+            problems.append(f"line {n}: cited file {m.group(1)} does not exist")
+            continue
+        for c in cite.finditer(p):
+            f = c.group(1)
+            if not os.path.isfile(os.path.join(root, f)):
+                problems.append(f"line {n}: cited file {f} does not exist")
+                continue
+            ranges = [(int(c.group(2)), int(c.group(3) or c.group(2)))]
+            ranges += [tuple(int(x) for x in s.split("-")) if "-" in s else (int(s), int(s))
+                       for s in c.group(4)[1:].split(",") if s]
+            for lo, hi in ranges:
+                n_cites += 1
+                if lo < 1 or lo > hi or hi > length(f):
+                    problems.append(f"line {n}: {f}:{lo}-{hi} is out of range (file has {length(f)} lines)")
+for pr in problems:
+    print("  G2.1 cites           FAIL  " + pr)
+if problems:
+    sys.exit(1)
+print(f"  G2.1 cites           PASS  {n_cites} cited line ranges resolve inside their files")
+PY
+)" || rc=$?
+  printf '%s\n' "$out"
+  return "$rc"
+}
+
 run_gate() {
-  local root="$1" resolution mode ref basecsv rc frc
+  local root="$1" resolution mode ref basecsv rc frc crc
   [ -f "$root/$LEDGER" ]   || fail "no ledger at $root/$LEDGER"
   [ -f "$root/$CONTRACT" ] || fail "no contract at $root/$CONTRACT"
   [ -f "$root/$THE44" ]    || fail "no triage file at $root/$THE44"
@@ -420,6 +498,7 @@ run_gate() {
   fbase="$(git -C "$root" merge-base "$BASE_REF" HEAD 2>/dev/null)" || fbase=""
   [ -n "$fbase" ] || fbase="$ref"
   check_freshness "$root" "$fbase"; frc=$?
+  check_cites "$root"; crc=$?
 
   # --pair-scan carries T2 to the other channels. Paths are made absolute against
   # $root so the self-test's scratch repo scans ITS files, not this checkout's.
@@ -437,7 +516,7 @@ run_gate() {
   rc=$?
   rm -f "$basecsv"
 
-  if [ "$frc" -ne 0 ] || [ "$rc" -ne 0 ]; then
+  if [ "$frc" -ne 0 ] || [ "$crc" -ne 0 ] || [ "$rc" -ne 0 ]; then
     printf '\nDOGFOOD COVERAGE GATE: FAIL\n'
     return 1
   fi
@@ -895,6 +974,30 @@ if [ "${1:-}" = "--self-test" ]; then
   # --- M4: the anti-vacuity mutation. Lower the floor AND break it in one
   #     commit — the exact move that defeated the multi-platform gate. It must
   #     still be RED, because the floor is not in this tree.
+  # --- M13 (G2.1 cites, #7370): the beta row cites m2.rs:1, and m2.rs has one
+  #     line. A cite past the end of its file, a cite to a missing file, and a
+  #     one-line shift must each be RED and named; the restored row is GREEN.
+  printf 'M13 G2.1 cites — out-of-range, missing-file and shifted evidence cites\n'
+  sed -i 's/m2\.rs:1,high/m2.rs:99999,high/' "$TD/$LEDGER"
+  selftest_run "$TD" "cite past end of file (m2.rs:99999)" "RED" "out of range" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER"
+  sed -i 's/m2\.rs:1,high/nosuch\/m2.rs:1,high/' "$TD/$LEDGER"
+  selftest_run "$TD" "cite to a file that does not exist" "RED" "does not exist" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER"
+  sed -i 's/m2\.rs:1,high/m2.rs:2,high/' "$TD/$LEDGER"
+  selftest_run "$TD" "cite shifted one line past the end" "RED" "out of range" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  # A quoted field holding commas is ONE field. m3.rs is cited 1-2 inside it, so
+  # a hunk after line 2 is not material. Read by awk -F, the m3 cite was lost and
+  # the whole file counted as cited: this case is RED under that parse.
+  printf 'demo,demo delta,6,x86_64-linux,none,no,1,pair-cluster,"crates/demo/src/m1.rs:1, crates/demo/src/m3.rs:1-2",high\n' >> "$TD/$LEDGER"
+  printf 'fn f3c() {}\n' >> "$TD/crates/demo/src/m3.rs"
+  selftest_run "$TD" "quoted multi-cite field, edit after last cited line" "GREEN" || FAILED=1
+  git -C "$TD" checkout -q -- "$LEDGER" "crates/demo/src/m3.rs"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  printf '\n'
+
   printf 'M4  anti-vacuity — lower the floor and break it in ONE commit\n'
   git -C "$TD" checkout -q -b attacker
   sed -i 's|^demo,demo gamma,6,UNKNOWN,none,yes,1,|demo,demo gamma,6,UNKNOWN,none,no,1,|' "$TD/$LEDGER"

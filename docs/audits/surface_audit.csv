@@ -415,8 +415,8 @@ apr,apr serve run,4,x86_64-linux;nvidia-cuda,llama.cpp,yes,10,apr-core-commands,
 apr,apr serve run --backend cpu,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),high
 apr,apr serve run --backend cuda,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),medium
 apr,apr serve run --backend wgpu,4,UNKNOWN,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),high
-apr,apr serve run --no-cors,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:53 (router.rs:33-42),high
-apr,apr serve run --no-metrics,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:53 (router.rs:33-42),high
+apr,apr serve run --no-cors,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:53 (crates/aprender-serve/src/api/router.rs:33-42),high
+apr,apr serve run --no-metrics,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:53 (crates/aprender-serve/src/api/router.rs:33-42),high
 apr,apr shard,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1239,high
 apr,apr shared-cache-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1217,high
 apr,apr showcase,6,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/tool_commands.rs:5,high
