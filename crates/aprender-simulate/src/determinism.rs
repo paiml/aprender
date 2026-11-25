@@ -99,8 +99,10 @@ pub fn run_with(
     run_observed(spec, tamper, order, |_, _, _| {})
 }
 
-/// [`run_with`], showing `observe(k, t_k, states_k)` the canonical (sorted by id) snapshot that
-/// `h_k` was computed over. This is the one definition of the step; [`run_with`] and the receipt
+/// [`run_with`], also showing `observe` each step's canonical snapshot.
+///
+/// `observe(k, t_k, states_k)` sees the canonical (sorted by id) snapshot that `h_k` was
+/// computed over. This is the one definition of the step; [`run_with`] and the receipt
 /// ([`receipt::run_receipt_with`]) both go through it.
 ///
 /// # Errors
