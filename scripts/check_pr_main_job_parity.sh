@@ -1270,6 +1270,6 @@ case "${1:-}" in
   --self-test) self_test; exit $? ;;
   --live) scan; exit $? ;;
   --eval-if) eval_if "${2:-}"; exit $? ;;
-  -h|--help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) scan; exit $? ;;
 esac

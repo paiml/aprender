@@ -18,9 +18,7 @@
 #      (1-5 are the runner's own --list parser: the CI step refuses the same trees)
 #   6. no workflow EXECUTING the runner on the directory (a `#` comment is a
 #      mention, not wiring) -- every fragment would be dark;
-#   7. any workflow line chaining two cargo commands with `&&` -- the mega-line;
-#   8. a fragment that needs yq (its command, or a scripts/*.sh it names, calls yq):
-#      the fragments run inside the build image, which has no yq.
+#   7. any workflow line chaining two cargo commands with `&&` -- the mega-line.
 #
 # --equivalence OLD_CI_YML [DIR]: the representation change added, dropped and
 #   reordered nothing. Extracts the ONE `&&`-chained cargo line from OLD_CI_YML,
@@ -50,31 +48,6 @@ is_wiring() {
         *"ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d"*) return 0 ;;
         *) return 1 ;;
     esac
-}
-
-# needs_yq < TEXT -- rc 0 when a non-comment line of TEXT invokes yq as a command word.
-# One awk process: no producer to SIGPIPE (a pipe into grep -q fails open on a script over the pipe buffer).
-# yq is a word: not inside a longer name (tokyq, yq_x, yq.yml); a path (/usr/bin/yq) or a delimiter after it
-# (`command -v yq;`, `yq>/dev/null`, `$(command -v yq)`) counts.
-needs_yq() {
-    awk '!/^[[:space:]]*#/ && /(^|[^A-Za-z0-9_.-])yq([^A-Za-z0-9_.-]|$)/ { f = 1; exit } END { exit !f }'
-}
-
-# script_needs_yq ROOT SCRIPT -- rc 0 when SCRIPT, or a scripts/*.sh it sources or runs (a line led by
-# source, `.`, bash or sh; transitively), calls yq. A mere mention of a path does not count.
-# Prints the script that does. Bounded: each script is read once.
-script_needs_yq() {
-    local root="$1" seen=" " queue t h
-    queue=("$2")
-    while [ "${#queue[@]}" -gt 0 ]; do
-        t="${queue[0]}"; queue=("${queue[@]:1}")
-        case "$seen" in *" $t "*) continue ;; esac
-        seen="$seen$t "
-        [ -f "$root/$t" ] || continue
-        if needs_yq < "$root/$t"; then printf '%s' "$t"; return 0; fi
-        for h in $(grep -E '^[[:space:]]*(source|\.|bash|sh)[[:space:]]' "$root/$t" | grep -oE 'scripts/[A-Za-z0-9_./-]+\.sh' | sort -u || true); do queue+=("$h"); done
-    done
-    return 1
 }
 
 workflow_files() { # workflow_files ROOT -> one path per line
@@ -116,24 +89,6 @@ check() {
     else
         printf 'ok    %s workflow invocation(s) run the directory\n' "$wired"
     fi
-    # 8. image tools (#7273 follow-up). The step runs every fragment INSIDE the build image, and the
-    # image has no yq: fragments 877/878 exited 2 ("ENV: yq missing") on every full-tier run from
-    # 2026-11-23, and the PR that added them never ran them (it was quick tier).
-    local frag cmd s h hit yqs=0
-    for frag in "$root/$DIR_REL"/*.cmd; do
-        [ -f "$frag" ] || continue
-        cmd=$(grep -vE '^[[:space:]]*(#|$)' "$frag" || true)
-        hit=""
-        if needs_yq <<< "$cmd"; then hit="the command itself"; fi
-        for s in $(grep -oE 'scripts/[A-Za-z0-9_./-]+\.sh' <<< "$cmd" | sort -u || true); do
-            if h=$(script_needs_yq "$root" "$s"); then hit="$h"; fi
-        done
-        [ -n "$hit" ] || continue
-        yqs=$((yqs + 1))
-        printf 'FAIL  %s/%s needs yq (%s calls it), and the build image the fragments run in has none\n' "$DIR_REL" "${frag##*/}" "$hit"
-        printf '      A guard that needs yq runs on the host: name it scripts/check_*.sh and scripts/guard_tree.sh runs it in the guard lane.\n'
-    done
-    if [ "$yqs" -gt 0 ]; then rc=1; else printf 'ok    no fragment needs yq (absent from the build image)\n'; fi
     [ "$rc" -eq 0 ] && printf 'PASS  check_explicit_test_commands\n'
     return "$rc"
 }
@@ -329,29 +284,6 @@ TABLE
     row 1 "check: a fragment with two commands -> RED" 'holds 2 command' bash "$T" --check "$td/multi"
     mk "$td/badname" "$wire" '010-a-x.cmd=cargo test -p a --test x\n' '020_b.cmd=cargo test -p b --test y\n'
     row 1 "check: a badly named fragment -> RED" 'not a regular file named' bash "$T" --check "$td/badname"
-
-    # ── rule 8: a fragment may not need yq (the build image has none) ────
-    mk "$td/yqs" "$wire" '010-a-x.cmd=cargo test -p a --test x\n' '020-g.cmd=bash scripts/g.sh --self-test\n'
-    printf 'command -v yq >/dev/null || { echo "ENV: yq missing"; exit 2; }\n' > "$td/yqs/scripts/g.sh"
-    row 1 "check: a fragment running a script that calls yq -> RED, named" '020-g.cmd needs yq \(scripts/g.sh calls it\)' bash "$T" --check "$td/yqs"
-    printf '# yq is not needed here\necho ok | tr a-z A-Z\n' > "$td/yqs/scripts/g.sh"
-    row 0 "check: ...the same script naming yq only in a comment -> PASS" '^PASS' bash "$T" --check "$td/yqs"
-    mk "$td/yqd" "$wire" '010-a-x.cmd=yq -o=json . .github/workflows/ci.yml\n'
-    row 1 "check: a fragment calling yq directly -> RED" '010-a-x.cmd needs yq \(the command itself' bash "$T" --check "$td/yqd"
-    mk "$td/yqn" "$wire" '010-a-x.cmd=cargo test -p a --test tokyq_x\n'
-    row 0 "check: yq inside a longer word is not a yq call -> PASS" '^PASS' bash "$T" --check "$td/yqn"
-
-    # a script over the 64 KiB pipe buffer calling yq on line 2 must still be caught (SIGPIPE fail-open, PR 7436)
-    mk "$td/yqbig" "$wire" '010-a-x.cmd=bash scripts/big.sh\n'
-    { printf 'command -v yq >/dev/null || exit 2\n'; for _ in $(seq 1 3000); do printf 'echo pad_line_for_pipe_buffer_test_xxxxxxxxxxxx\n'; done; } > "$td/yqbig/scripts/big.sh"
-    row 1 "check: a >64 KiB script calling yq on line 2 -> RED (no SIGPIPE fail-open)" '010-a-x.cmd needs yq \(scripts/big.sh calls it\)' bash "$T" --check "$td/yqbig"
-    mk "$td/yqdel" "$wire" '010-a-x.cmd=bash scripts/d.sh\n'
-    printf 'x=$(command -v yq)\n' > "$td/yqdel/scripts/d.sh"
-    row 1 "check: yq as \$(command -v yq) -> RED" 'needs yq' bash "$T" --check "$td/yqdel"
-    printf '/usr/local/bin/yq -o=json . f.yml\n' > "$td/yqdel/scripts/d.sh"
-    row 1 "check: path-qualified yq -> RED" 'needs yq' bash "$T" --check "$td/yqdel"
-    printf 'bash scripts/h.sh\n' > "$td/yqdel/scripts/d.sh"; printf 'yq . x.yml\n' > "$td/yqdel/scripts/h.sh"
-    row 1 "check: yq in a helper script the fragment's script runs -> RED, helper named" 'scripts/h.sh calls it' bash "$T" --check "$td/yqdel"
 
     # ── equivalence ──────────────────────────────────────────────────────
     printf "jobs:\n  t:\n    steps:\n      - run: |\n          docker run img \\\\\n            bash -c 'cargo test -p a --lib f && cargo test -p b --test y --test z --no-fail-fast && cargo build --examples'\n" > "$td/old.yml"

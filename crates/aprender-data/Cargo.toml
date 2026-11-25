@@ -68,10 +68,8 @@ tokio = { version = "1", features = ["rt", "fs", "sync", "rt-multi-thread"], opt
 # S3 (feature-gated)
 # default-features off: the default `rustls` feature is aws-smithy-runtime/tls-rustls,
 # the legacy hyper 0.14 + rustls 0.21 client (RUSTSEC-2026-0346/0349). The other
-# defaults kept are http-1x, default-https-client (the rustls 0.23 client) and rt-tokio.
-# `sigv4a` (S3 Multi-Region Access Point signing) is dropped: nothing here uses it, and it
-# pulled p256 0.13 -> crypto-bigint 0.5.5 (RUSTSEC-2026-0387, no fixed 0.5.x).
-aws-sdk-s3 = { version = "1", optional = true, default-features = false, features = ["http-1x", "default-https-client", "rt-tokio"] }
+# four defaults are kept; default-https-client is the rustls 0.23 client.
+aws-sdk-s3 = { version = "1", optional = true, default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
 aws-config = { version = "1", optional = true }
 
 # HTTP (feature-gated)
