@@ -23,7 +23,7 @@ report() { # <json> <label> <min>
 }
 
 self_test() {
-  local d rc
+  local d rc i
   d=$(mktemp -d)
   trap 'rm -rf "${d:?}"' RETURN
   mk() { # <file> <online-count of 5>
@@ -42,17 +42,30 @@ self_test() {
   [ "$rc" -eq 0 ] || { echo "FAIL: 3 online must exit 0, got $rc"; return 1; }
   rc=0; report "$d/nolabel.json" clean-room 1 >/dev/null || rc=$?
   [ "$rc" -eq 1 ] || { echo "FAIL: unlabelled runner must not count, got $rc"; return 1; }
-  echo "runner_capacity self-test: PASS (3 cases)"
+  printf '{"runners":[{"name":"a","status":"online","labels":[{"name":"clean-room"}]}]}' > "$d/nox64.json"
+  rc=0; report "$d/nox64.json" clean-room 1 >/dev/null || rc=$?
+  [ "$rc" -eq 1 ] || { echo "FAIL: a runner without X64 must not count, got $rc"; return 1; }
+  # a gh that fails: an unreadable runner list is not_measured, never a capacity verdict
+  printf '#!/bin/sh\nexit 1\n' > "$d/gh"; chmod +x "$d/gh"
+  rc=0; PATH="$d:$PATH" bash "${BASH_SOURCE[0]}" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || { echo "FAIL: unreadable runner list must exit 2, got $rc"; return 1; }
+  for i in --min --label --json; do
+    rc=0; PATH="$d:$PATH" bash "${BASH_SOURCE[0]}" "$i" >/dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 2 ] || { echo "FAIL: $i with no value must exit 2, got $rc"; return 1; }
+  done
+  echo "runner_capacity self-test: PASS (8 cases)"
 }
+
+usage() { echo "usage: $0 [--min N] [--label L] [--json FILE] | --self-test" >&2; exit 2; }
 
 min=3; label=clean-room; file=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --self-test) self_test; exit $? ;;
-    --min) min="$2"; shift 2 ;;
-    --label) label="$2"; shift 2 ;;
-    --json) file="$2"; shift 2 ;;
-    *) echo "usage: $0 [--min N] [--label L] [--json FILE] | --self-test" >&2; exit 2 ;;
+    --min) [ $# -ge 2 ] || usage; min="$2"; shift 2 ;;
+    --label) [ $# -ge 2 ] || usage; label="$2"; shift 2 ;;
+    --json) [ $# -ge 2 ] || usage; file="$2"; shift 2 ;;
+    *) usage ;;
   esac
 done
 
