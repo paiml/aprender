@@ -1,4 +1,4 @@
-# measured 2026-11-26T06:03:58Z
+# measured 2026-11-26T06:48:59Z
 lambda-labs	apr	GREEN	ok (installed v0.75.3@982ebfd, target v0.75.3@982ebfd)
 lambda-labs	pv	GREEN	ok (installed v0.75.3@982ebfd, target v0.75.3@982ebfd)
 lambda-labs	forjar	GREEN	ok (installed nightly@a0b3f23, target nightly@a0b3f23)
@@ -20,7 +20,7 @@ gx10	pzsh	GREEN	no-sha (installed nightly@b42cbbc, target nightly@b42cbbc)
 gx10	copia	GREEN	no-sha (installed nightly@f48cb27, target nightly@f48cb27)
 gx10	apex	GREEN	ok (installed v-apex-0.1.0-rc.2@f2e20b6, target v-apex-0.1.0-rc.2@f2e20b6)
 gx10	ollama	GREEN	ok (installed 0.40.18, target v0.40.18)
-gx10	llama.cpp	RED	behind-upstream (installed b12752, target b12767)
+gx10	llama.cpp	GREEN	ok (installed b12767, target b12767)
 yoga	apr	GREEN	ok (installed v0.75.3@982ebfd, target v0.75.3@982ebfd)
 yoga	pv	GREEN	ok (installed v0.75.3@982ebfd, target v0.75.3@982ebfd)
 yoga	forjar	GREEN	ok (installed nightly@a0b3f23, target nightly@a0b3f23)
