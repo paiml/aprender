@@ -423,6 +423,11 @@ fn dispatch_run_command(cli: &Cli) -> Option<Result<(), CliError>> {
         json_schema: json_schema.as_deref().map(str::to_owned),
         grammar: grammar.as_deref().map(str::to_owned),
     };
+    // #7331: the known-unrunnable refusal comes first on EVERY run entry (exit 12): above
+    // the accelerator plan (exit 5 / 14) and the `--batch-jsonl` early return.
+    if let Err(e) = commands::run::refuse_known_checkpoint(source) {
+        return Some(Err(e));
+    }
     request_f2_revalidate(*revalidate);
     // Above the `batch_jsonl` early return below (see `run_accel_plan`).
     let (effective_no_gpu, accel_forced) =
@@ -663,9 +668,15 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             weights,
             json,
             quality,
+            no_weights,
         } => {
             let (v, f, w, j, q) = (*vocab, *filters, *weights, *json || cli.json, *quality);
-            crate::pipe::with_stdin_support(file, |p| inspect::run(p, v, f, w, j, q))
+            if *no_weights {
+                // #7330: config + index only; never opens a shard.
+                crate::commands::inspect_families::run_no_weights(file.as_ref(), j)
+            } else {
+                crate::pipe::with_stdin_support(file, |p| inspect::run(p, v, f, w, j, q))
+            }
         }
 
         // GH-685: forward cli.verbose to debug

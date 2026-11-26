@@ -77,8 +77,8 @@ jobs:
         run: |
           set -uo pipefail
           mkdir -p deep
-          cargo test --doc --workspace --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute \
-            > deep/deep-doctests.log 2>&1; rc=$?
+          rc=0; cargo test --doc --workspace --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute \
+            > deep/deep-doctests.log 2>&1 || rc=$?
           echo "DEEP doctests rc=$rc: $(grep -E '^test result' deep/deep-doctests.log | awk '{p+=$4; f+=$6} END {print p" passed, "f" failed"}')"
           tail -n 40 deep/deep-doctests.log
           exit "$rc"
@@ -188,3 +188,8 @@ jobs:
           name: deep-bins-smoke
           path: deep/
           if-no-files-found: error
+
+      # LAB (#7294): this job is lane kind `lab` in nightly_train.sh, never a verdict lane.
+      # No `if: always()`: it would build after a failed assert-head or disk-floor guard, or a cancelled run.
+      - name: apr-cli builds with --no-default-features (#7294; nightly LAB, never a PR job)
+        run: setsid --wait bash scripts/check_apr_cli_no_default_features.sh

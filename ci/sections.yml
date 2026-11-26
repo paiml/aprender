@@ -1320,9 +1320,11 @@ jobs:
       # merge commit. Pinned per event (scripts/ci/pin_build_base.sh):
       #   pull_request  the merge commit's first parent, checked against the PR head
       #   merge_group   merge_group.base_sha, as the refinement-gate pin does
-      #   otherwise     the tip, deepened by one on push (resolve_base.sh judges a
-      #                 push against HEAD's first parent: HEAD vs HEAD would pass
-      #                 vacuously, the G-10 quorum's finding)
+      #   push          the event's own `before` (PUSH_BEFORE_SHA), which main
+      #                 moving during the run cannot change; refused when unusable.
+      #                 A tag push (before is all zeros): the tagged commit's first
+      #                 parent. The depth-1 clone is deepened (bounded) to reach `before`.
+      #   otherwise     the tip (workflow_dispatch)
       # The shared ratchet library takes the same first parent on its own
       # (scripts/lib_baseline_ratchet.sh FIRSTPARENT), so a lib ratchet and a
       # script that reads origin/main directly cannot disagree. A PR that adds
@@ -1334,6 +1336,7 @@ jobs:
         env:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
           bash scripts/ci/pin_build_base.sh --self-test
           bash scripts/ci/pin_build_base.sh
@@ -1739,13 +1742,13 @@ jobs:
       # Text-only, no build. Self-test first (Verification Discipline #7).
       - name: "Receipt-wiring guard case table (both polarities of the if:)"
         run: setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
-      # PMAT-7229: the R3 (check_reconcile) self-test. R3 exempts ruleset-locked heads; this keeps both twins and the nested nightly/a/b case RED-able.
-      - name: R3 reconcile self-test (exemption twins; PMAT-7229)
+      # PMAT-7229 / #7373: the R3 (check_reconcile) self-test. R3 exempts ruleset-locked heads, archives dead branches non-blockingly, and kills mutants.
+      - name: R3 reconcile self-test (exemption twins + R3 archive; PMAT-7229, #7373)
         run: |
           set -euo pipefail
           out=$(setsid --wait bash scripts/check_reconcile.sh --self-test 2>&1) || { printf '%s\n' "$out"; echo "::error::check_reconcile.sh --self-test is red"; exit 1; }
           printf '%s\n' "$out" | tail -n 3
-          case "$out" in *"self-test OK: 33 case(s)."*) ;; *) echo "::error::check_reconcile.sh --self-test did not report 33 cases"; exit 1 ;; esac
+          case "$out" in *"self-test OK: 54 case(s)."*) ;; *) echo "::error::check_reconcile.sh --self-test did not report 54 cases"; exit 1 ;; esac
       - name: The PR-review receipt guard is wired job-level, not path-filtered
         run: setsid --wait bash scripts/check_pr_review_wiring.sh
       # #4441 passed FAT_SECRET_PR_REVIEW_SIGNING_KEY_B (no "64"), so pr-review-sign
@@ -1773,6 +1776,14 @@ jobs:
       # HARNESS-BROKEN rather than as a dead mutant. Text-only, no build.
       - name: "Receipt-wiring guard: every rule it states, mutated (15/15 kill)"
         run: bash scripts/mutate_pr_review_wiring_guard.sh
+      # #7343: check_readme_claims.sh is classified --cargo-only by guard_tree.sh
+      # (crate_count runs cargo metadata), and contracts_gate.sh lives in
+      # guard-cargo, so neither runs on pull_request (pr-light -> guard-tree).
+      # Enforce FALSIFY-README-002 and readme_sync on every PR run here (both are cargo-free).
+      - name: "README CONTRACT_COUNT matches measured contracts (FALSIFY-README-002, #7343)"
+        run: |
+          setsid --wait bash scripts/readme_sync.sh --check
+          setsid --wait bash scripts/check_readme_claims.sh --claim contract_count
       - name: "Guard jobs run all: no fail-fast step over baseline, every guard script reachable (#4415)"
         run: |
           setsid --wait bash scripts/check_guard_steps_run_all.sh --self-test
@@ -1891,6 +1902,7 @@ jobs:
         env:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: bash scripts/ci/pin_build_base.sh
       # DOCKER CREATES A MISSING BIND SOURCE AS root:root, AND `--user` ALONE
       # THEN EACCESs ON IT. The per-RUN target path is fresh every run, so a
@@ -2053,7 +2065,8 @@ jobs:
           root=$(git rev-parse --show-toplevel)
           ru=${RUSTUP_HOME:-$HOME/.rustup}; ca=$HOME/.cargo; tc=$(readlink -f "$(dirname "$(dirname "$(rustup which rustc --toolchain 1.93.0)")")")
           ch=${CARGO_HOME:-$HOME/.cargo}
-          sc=${SCCACHE_HOST_DIR:-$HOME/.cache/sccache}
+          # a /sccache mount this user cannot write fails the cc-rs build script (main run 44583965968): probe, else a temp dir
+          sc=$(bash "$root/scripts/ci/sccache_probe.sh" "${SCCACHE_HOST_DIR:-$HOME/.cache/sccache}")
           # pinned by digest, never :stable (pace condition 7); bump with the image
           img=localhost:5000/sovereign-ci@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36
           # the digest is the amd64 manifest; any other arch keeps the host build it had before
@@ -2609,6 +2622,10 @@ jobs:
             # only when the dir is actually unwritable, so the common path pays
             # nothing.
             mkdir -p "$GUARD_TARGET_DIR" "$GUARD_CARGO_HOME" 2>/dev/null || true
+            # A /sccache mount this user cannot write fails the cc-rs build script (main run 44583965968,
+            # guard-cargo#m60, burst runner): probe it, fall back to a temp dir (one log line), never fail.
+            local sccache_dir
+            sccache_dir=$(bash "$GITHUB_WORKSPACE/scripts/ci/sccache_probe.sh" "/home/noah/data/sccache")
             local d
             for d in "$GUARD_TARGET_DIR" "$GUARD_CARGO_HOME"; do
               if [ -d "$d" ] && [ ! -w "$d" ]; then
@@ -2623,7 +2640,7 @@ jobs:
               -v "${GUARD_CARGO_HOME}:/cargo-home" \
               -v "${GUARD_TARGET_DIR}:/workspace/target" \
               -e CARGO_HOME=/cargo-home \
-              -v "/home/noah/data/sccache:/sccache" \
+              -v "${sccache_dir}:/sccache" \
               -w /workspace \
               -e CARGO_TARGET_DIR=/workspace/target \
               -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
@@ -2758,8 +2775,8 @@ jobs:
         env:
           CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-deny
         run: |
-          if ! command -v cargo-deny > /dev/null 2>&1; then
-            cargo install cargo-deny --locked
+          if ! cargo-deny --version 2>/dev/null | grep -q "cargo-deny 0\.21\.0"; then
+            cargo install cargo-deny --version 0.21.0 --locked
             echo "$CARGO_INSTALL_ROOT/bin" >> "$GITHUB_PATH"
             export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
           fi

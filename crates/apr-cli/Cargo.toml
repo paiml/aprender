@@ -133,6 +133,10 @@ apr-test = { workspace = true }
 aprender = { path = "../aprender-core", version = "0.75.0", package = "aprender-core", default-features = true, features = ["format-compression"] }
 # Provable-contracts engine — `apr beat-run` parses + evaluates BeatBenchmark contracts (PMAT-741)
 aprender-contracts = { workspace = true }
+# #7331 / PR #7356 round 3: `checkpoint_repo_id` parses run sources with a real URL
+# parser and percent-decodes the path. Both already in Cargo.lock (via reqwest).
+url = "2.5"
+percent-encoding = "2.3"
 
 # MCP (Model Context Protocol) server — `apr mcp` subcommand
 aprender-mcp = { path = "../aprender-mcp", version = "0.75.0", features = ["apr-tools"] }   # apr mcp serves apr's own tools (PMAT-3954)

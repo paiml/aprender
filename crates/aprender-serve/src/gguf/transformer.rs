@@ -254,6 +254,11 @@ impl<'a> QuantizedGGUFTransformer<'a> {
     ///
     /// Returns error if required tensors are missing or have unsupported format
     pub fn from_gguf(model: &GGUFModel, data: &'a [u8]) -> Result<Self> {
+        // #7333/#7334: a qwen4exp file goes through its own load contract first, so MTP
+        // tensors are refused by name before any config or weight is read.
+        if crate::gguf::qwen4exp_load::dense_loader_must_refuse(model) {
+            return Err(crate::gguf::qwen4exp_load::dense_loader_refusal(model));
+        }
         // Phase 2: Validate config at construction boundary.
         let config = ValidatedModelConfig::from_gguf(model)?.into_inner();
 

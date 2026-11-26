@@ -23,12 +23,9 @@ name: dogfood-nightly
 # planted red reads green measures nothing.
 
 on:
-  schedule:
-    # 20:05 UTC: five minutes after nightly.yml's 20:00 (night 75 + dogfood 420 ends 04:20Z), so both land in the same late dispatch.
-    # The train judges the head of THAT night's scheduled nightly.yml run (C); the `night` job
-    # below resolves C and the dogfood job checks it out, so a merge after 21:00 no longer
-    # leaves the lane measuring some other commit (#5079).
-    - cron: '5 20 * * *'
+    # STOPPED (#7277, slice of #7181): red every night 2026-11-12..19, so the LAB 7-day rule stops the timer.
+    # The owner restores it by re-adding `schedule:` with the cron `5 20 * * *` once #7181 is fixed (run by hand with workflow_dispatch meanwhile),
+    # AND by updating scripts/check_dogfood_nightly_lab.sh (its schedule rule) in the same PR, or that guard fails the PR.
   workflow_dispatch:
     inputs:
       plant:
@@ -58,14 +55,17 @@ jobs:
       sha: ${{ steps.pick.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
+        timeout-minutes: 10
         with:
           sparse-checkout: |
             scripts/release/dogfood_night_sha.sh
             .github/workflows/dogfood-nightly.yml
           sparse-checkout-cone-mode: false
       - name: The night-commit pick (case table and mutants first)
+        timeout-minutes: 5
         run: setsid --wait bash scripts/release/dogfood_night_sha.sh --self-test
       - name: Resolve C
+        timeout-minutes: 60
         id: pick
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -78,7 +78,7 @@ jobs:
           # One read every 5 minutes (GH-1), at most 12: tonight's nightly.yml run is created
           # within minutes of this one or the lane is not_measured, never a guess.
           for i in $(seq 1 12); do
-            sha=$(bash scripts/release/dogfood_night_sha.sh --now "$(date -u +%s)"); rc=$?
+            rc=0; sha=$(bash scripts/release/dogfood_night_sha.sh --now "$(date -u +%s)") || rc=$?
             [ "$rc" -ne 1 ] && break
             [ "$i" -lt 12 ] && sleep 300
           done
@@ -98,12 +98,14 @@ jobs:
       PLANT: ${{ github.event.inputs.plant || 'none' }}
     steps:
       - uses: actions/checkout@v7
+        timeout-minutes: 10
         with:
           ref: ${{ needs.night.outputs.sha }}
           fetch-depth: 0
           clean: false
 
       - name: No registry token is reachable (case table, then this job)
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           setsid --wait bash scripts/check_no_registry_token.sh
@@ -112,6 +114,7 @@ jobs:
           echo "no-token: none reachable (environment, cargo credentials files, cargo config token)"
 
       - name: Plant the falsifier (dispatch with plant=bashrs only)
+        timeout-minutes: 5
         if: env.PLANT == 'bashrs'
         run: |
           set -euo pipefail
@@ -129,6 +132,7 @@ jobs:
           echo "planted at $(git rev-parse --short HEAD)"
 
       - name: The train target (lowest open X.Y.Z milestone above the newest final tag)
+        timeout-minutes: 10
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -146,6 +150,7 @@ jobs:
           fi
 
       - name: dogfood --phase nightly, tree clean, then preflight R5 must refuse it
+        timeout-minutes: 300
         run: |
           set -uo pipefail
           mkdir -p "$RUNNER_TEMP/dogfood"
@@ -154,14 +159,15 @@ jobs:
           # satisfy if-no-files-found with a receipt from another night.
           SOURCE_DATE_EPOCH=$(date -u +%s); export SOURCE_DATE_EPOCH
           ts=$(date -u -d @"$SOURCE_DATE_EPOCH" +%Y%m%dT%H%M%SZ)
-          bash scripts/dogfood.sh --phase nightly > "$RUNNER_TEMP/dogfood/dogfood-nightly.log" 2>&1; rc=$?
+          # The shell runs under bash -e: a bare `cmd; rc=$?` ends the step on a non-zero cmd (#7291). `|| rc=$?` keeps -e quiet.
+          rc=0; bash scripts/dogfood.sh --phase nightly > "$RUNNER_TEMP/dogfood/dogfood-nightly.log" 2>&1 || rc=$?
           if [ -f ".dogfood/receipt-$ts.json" ]; then cp ".dogfood/receipt-$ts.json" "$RUNNER_TEMP/dogfood/receipt-$ts.json"; else echo "::error::dogfood wrote no receipt-$ts.json tonight (rc=$rc)"; norcpt=1; fi
           tail -n 40 "$RUNNER_TEMP/dogfood/dogfood-nightly.log"
           [ "$rc" -eq 0 ] || bash scripts/dogfood_nightly_explain.sh "$RUNNER_TEMP/dogfood/dogfood-nightly.log" "$rc"
           dirty=$(git status --porcelain)
           [ -z "$dirty" ] || { echo "::error::tree dirty after dogfood: $(printf '%s' "$dirty" | head -3 | tr '\n' ' ')"; exit 1; }
           # Negative control, run whatever the verdict: a nightly receipt is never a release receipt.
-          setsid --wait bash scripts/check_publish_preflight.sh --receipt-only > "$RUNNER_TEMP/dogfood/dogfood-r5.log" 2>&1; r5=$?
+          r5=0; setsid --wait bash scripts/check_publish_preflight.sh --receipt-only > "$RUNNER_TEMP/dogfood/dogfood-r5.log" 2>&1 || r5=$?
           tail -n 2 "$RUNNER_TEMP/dogfood/dogfood-r5.log"
           if [ "$r5" -eq 0 ] || ! grep -q 'is a --phase nightly receipt' "$RUNNER_TEMP/dogfood/dogfood-r5.log"; then
             echo "::error::R5 did not refuse the nightly receipt (rc=$r5): a nightly receipt would pass a publish"; exit 1
@@ -171,6 +177,7 @@ jobs:
           echo "DOGFOOD GO at $(git rev-parse HEAD) (R5 refuses the nightly receipt, as it must)"
 
       - name: Publish tonight's receipt and the logs
+        timeout-minutes: 10
         if: always()
         uses: actions/upload-artifact@v7
         with:

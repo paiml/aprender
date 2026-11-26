@@ -30,7 +30,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use super::{node, Vocabulary};
+use super::{node, Ctx, Vocabulary};
 use crate::ontology::rdf::{iri, Graph, Term};
 use crate::ontology::shapes::expand;
 use crate::ontology::sigma::Sigma;
@@ -453,18 +453,18 @@ fn emit(
         prefix: t.prefix.clone(),
         root_class: t.root_class.clone(),
         nested: Vec::new(),
+        refs: Vec::new(),
     };
     let id = format!("{}@{}", a.r.identity(), a.r.version);
     let mut staged = Graph::new();
-    if let Err(e) = node(
-        &mut staged,
-        &a.file,
-        &id,
-        &t.root_class,
-        true,
-        &serde_json::Value::Object(map),
-        &vocab,
-    ) {
+    let doc = serde_json::Value::Object(map);
+    let ctx = Ctx {
+        stem: &a.file,
+        vocab: &vocab,
+        root_id: &id,
+        root: &doc,
+    };
+    if let Err(e) = node(&mut staged, &ctx, &id, &t.root_class, true, &doc) {
         stats.errors.push(Refusal {
             file: a.file,
             what: e.to_string(),

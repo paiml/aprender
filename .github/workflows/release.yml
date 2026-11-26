@@ -73,10 +73,16 @@ jobs:
           PUBLISH_ONLY: ${{ inputs.publish_only && '1' || '0' }}
         run: |
           set -uo pipefail
-          # previous tag = newest final vX.Y.Z strictly below this version
-          prev=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | grep -vxF "$VERSION" \
-            | { sort -V; printf '%s\n' "$VERSION"; } | sort -V | awk -v v="$VERSION" '$0==v{print p; exit} {p=$0}')
-          [ -n "$prev" ] || { echo "::error::no final tag below v$VERSION: the reconcile window cannot be named"; exit 2; }
+          # previous tag = newest final vX.Y.Z strictly below this version and an ancestor of the cut
+          cutref="$SHA"; [ "$PUBLISH_ONLY" = 1 ] && cutref="v$VERSION"
+          candidates=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | grep -vxF "$VERSION" \
+            | { sort -V; printf '%s\n' "$VERSION"; } | sort -V | awk -v v="$VERSION" '$0==v{exit} {print}' | sort -rV)
+          prev=''
+          while IFS= read -r t; do
+            [ -n "$t" ] || continue
+            git merge-base --is-ancestor "v$t" "$cutref" && { prev="$t"; break; }
+          done <<< "$candidates"
+          [ -n "$prev" ] || { echo "::error::no final ancestor tag below v$VERSION: the reconcile window cannot be named"; exit 2; }
           rev=()
           [ "$PUBLISH_ONLY" = 1 ] || rev=(--rev "$SHA")
           rc=0

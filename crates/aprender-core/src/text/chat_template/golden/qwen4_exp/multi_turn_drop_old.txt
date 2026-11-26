@@ -1,0 +1,10 @@
+<|im_start|>system
+Reasoning effort is set to xhigh. Please think carefully through the task, validate key assumptions, consider plausible alternatives, and prioritize correctness, consistency, and clarity in the final answer.<|im_end|>
+<|im_start|>user
+2+2?<|im_end|>
+<|im_start|>assistant
+4<|im_end|>
+<|im_start|>user
+And 3+3?<|im_end|>
+<|im_start|>assistant
+<think>

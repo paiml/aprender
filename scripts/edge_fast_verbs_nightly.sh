@@ -26,10 +26,13 @@
 # list missing a row cannot be told apart from a list with nothing to say.
 #
 # Usage: bash scripts/edge_fast_verbs_nightly.sh --model <gguf> --out <dir>
-#          [--host <id>]   (ollama: apr qa probes localhost:11434)
+#          [--host <id>] [--only 0..5] [--step-timeout <s>]   (ollama: apr qa probes localhost:11434)
+#   --only N         run measurement N alone: writes only <out>/cell-N.json (no gaps.md, no nightly.json)
+#   --step-timeout   seconds each command may run (default 600); a hit is a NOT_MEASURED cell, reason step_timeout
 #   $APR  the apr binary under test (default target/release/apr)
 #
-# Writes <out>/gaps.md (the comment body) and <out>/nightly.json.
+# Writes <out>/gaps.md (the comment body), <out>/nightly.json and one <out>/cell-N.json per measurement run
+# (a cell of contracts/nightly-lab-receipt-v1.yaml: MEASURED, or NOT_MEASURED with run_failed or step_timeout).
 # Exit: 0 all measured · 1 a measurement missing · 2 usage/tooling.
 #
 # Every status is captured as `cmd; rc=$?`, never through a pipe (#2336, #2360).
@@ -43,14 +46,20 @@ die() { printf 'edge-nightly: %s\n' "$*" >&2; exit 2; }
 MODEL=""
 OUT=""
 HOST_ID="edge"
+ONLY=""
+STEP_TMO=600
 while [ $# -gt 0 ]; do
     case "$1" in
         --model) MODEL="${2:-}"; shift 2 ;;
         --out) OUT="${2:-}"; shift 2 ;;
         --host) HOST_ID="${2:-}"; shift 2 ;;
+        --only) [ $# -ge 2 ] && [ -n "$2" ] || die "--only needs a value 0..5"; ONLY="$2"; shift 2 ;;
+        --step-timeout) [ $# -ge 2 ] || die "--step-timeout needs a value"; STEP_TMO="$2"; shift 2 ;;
         *) die "unknown argument: $1" ;;
     esac
 done
+case "$ONLY" in "" | [0-5]) ;; *) die "--only must be one of 0..5, got: $ONLY" ;; esac
+case "$STEP_TMO" in "" | *[!0-9]* | 0) die "--step-timeout must be a positive number of seconds, got: $STEP_TMO" ;; esac
 [ -n "$MODEL" ] || die "--model is required"
 [ -f "$MODEL" ] || die "no model file: $MODEL"
 [ -n "$OUT" ] || die "--out is required"
@@ -72,22 +81,50 @@ APR_SHA=${APR_SHA%% *}
 VERSION=$(printf '%s' "$APR_VERSION" | command grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
 missing=()
 
+# One cell per measurement (contracts/nightly-lab-receipt-v1.yaml, #7156). want N: N is run. tmo: a command under
+# --step-timeout (a hit marks the step step_timeout). step_end: nothing added to missing[] is MEASURED, else NOT_MEASURED.
+CELL_NAME=(template crux decode ollama cpu_decode profile)
+want() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
+tmo() {
+    local t0=$SECONDS el
+    timeout --kill-after=30 "$STEP_TMO" "$@"; TRC=$?
+    el=$((SECONDS - t0))
+    if [ "$TRC" -eq 124 ] || { [ "$TRC" -eq 137 ] && [ "$el" -ge "$STEP_TMO" ]; }; then TIMED=1; fi
+    return "$TRC"
+}
+step_begin() { CUR=$1; M0=${#missing[@]}; TIMED=0; }
+step_end() {
+    local state=MEASURED reason=null n=1
+    if [ "${#missing[@]}" -gt "$M0" ]; then
+        state=NOT_MEASURED; n=0; reason='"run_failed"'
+        [ "$TIMED" -eq 0 ] || reason='"step_timeout"'
+    fi
+    jq -nc --arg id "edge.m$CUR.${CELL_NAME[$CUR]}" --arg state "$state" --argjson reason "$reason" --argjson n "$n" \
+        '{id: $id, state: $state, value: null, unit: null, n: $n, median: null, spread: null, baseline: null,
+          delta_pct: null, reason: $reason}' > "$OUT/cell-$CUR.json" || die "cannot write $OUT/cell-$CUR.json"
+}
+
+if want 0; then step_begin 0
+
 # 0. The model's own chat template. A GGUF without one leaves every runtime
 # that reads the file alone (ollama) completing raw text; that is a missing
 # measurement of the chat verbs, never a quiet RED (#5254).
-"$APR" inspect "$MODEL" --json > "$OUT/apr-inspect.json" 2> "$OUT/apr-inspect.err"
+tmo "$APR" inspect "$MODEL" --json > "$OUT/apr-inspect.json" 2> "$OUT/apr-inspect.err"
 inspect_rc=$?
 if ! jq -e '[.. | objects | .["tokenizer.chat_template"]? // empty | strings
         | select(test("\\S"))] | length > 0' "$OUT/apr-inspect.json" >/dev/null 2>&1; then
     missing+=("chat template (inspect rc $inspect_rc: the GGUF carries no tokenizer.chat_template)")
 fi
 
+step_end; fi
+if want 1; then step_begin 1
+
 # 1. CRUX smoke, every verb on each device. On cpu the dogfood asks ollama for
 # num_gpu 0 as well, so its ollama cells are the ollama CPU rows.
 CRUX_GPU=""
 CRUX_CPU=""
 for dev in gpu cpu; do
-    DOGFOOD_ALLOW_UNPINNED=1 APR="$APR" bash scripts/crux_inference_dogfood.sh "$VERSION" \
+    tmo env DOGFOOD_ALLOW_UNPINNED=1 APR="$APR" bash scripts/crux_inference_dogfood.sh "$VERSION" \
         --model "$MODEL" --host "$HOST_ID" --backend "$dev" --engines apr,ollama \
         --verbs run,chat,serve,code --out "$OUT/crux" > "$OUT/crux-$dev.log" 2>&1
     crux_rc=$?
@@ -105,8 +142,11 @@ while IFS= read -r line; do
     [ -n "$line" ] && missing+=("$line")
 done < <(jq -nr "${MATRIX_ARGS[@]}" --arg zero 1 -f "$ROOT/scripts/lib/edge_nightly_matrix.jq")
 
+step_end; fi
+if want 2; then step_begin 2
+
 # 2. apr decode.
-"$APR" bench "$MODEL" --fast --json --warmup 3 --iterations 5 --max-tokens 64 \
+tmo "$APR" bench "$MODEL" --fast --json --warmup 3 --iterations 5 --max-tokens 64 \
     > "$OUT/apr-bench.json" 2> "$OUT/apr-bench.err"
 bench_rc=$?
 APR_TPS=$(jq -r '.tokens_per_second // empty | select(. > 0)' "$OUT/apr-bench.json" 2>/dev/null || true)
@@ -122,10 +162,13 @@ APR_BACKEND=$(command grep -m1 -oE 'Backend: [^)]*\)?' "$OUT/apr-bench.err" || t
 APR_BACKEND=${APR_BACKEND#Backend: }
 GPU_REFUSALS=$(command grep -c 'would not fit' "$OUT/apr-bench.err" || true)
 
+step_end; fi
+if want 3; then step_begin 3
+
 # 3. ollama, through `apr qa`'s ollama_parity gate and nothing else. Every
 # other qa gate is skipped: this asks one question. A skip or a failure is a
 # gap; only a qa JSON with no ollama_parity gate in it is "not measured".
-"$APR" qa "$MODEL" --json --ollama-from-file --skip-golden --skip-throughput \
+tmo "$APR" qa "$MODEL" --json --ollama-from-file --skip-golden --skip-throughput \
     --skip-gpu-speedup --skip-contract --skip-format-parity --skip-ptx-parity \
     --skip-gpu-state --skip-metadata --skip-capability \
     > "$OUT/apr-qa.json" 2> "$OUT/apr-qa.err"
@@ -157,10 +200,13 @@ OL_RESIDENT=$(printf '%s' "$OL_MSG" | command grep -oE 'ollama resident [0-9]+ M
 [ -z "$OL_RAW" ] || [ -n "$OL_RESIDENT" ] \
     || missing+=("ollama resident MiB (the parity gate measured, but /api/ps reported no size)")
 
+step_end; fi
+if want 4; then step_begin 4
+
 # 4. apr decode on the CPU: the same bench with --no-gpu (#5276), so the CPU
 # figure comes from the one harness. A binary without the flag names its
 # ticket, and is still a missing row.
-"$APR" bench "$MODEL" --no-gpu --json --warmup 3 --iterations 5 --max-tokens 64 \
+tmo "$APR" bench "$MODEL" --no-gpu --json --warmup 3 --iterations 5 --max-tokens 64 \
     > "$OUT/apr-bench-cpu.json" 2> "$OUT/apr-bench-cpu.err"
 cpu_rc=$?
 APR_CPU_TPS=$(jq -r 'select(.compute_class == "cpu") | .tokens_per_second // empty | select(. > 0)
@@ -176,8 +222,11 @@ if [ -z "$APR_CPU_TPS" ]; then
     fi
 fi
 
+step_end; fi
+if want 5; then step_begin 5
+
 # 5. apr profile. A refusal is a gap with its stated reason, not a missing row.
-"$APR" profile "$MODEL" --format json > "$OUT/profile.json" 2> "$OUT/profile.err"
+tmo "$APR" profile "$MODEL" --format json > "$OUT/profile.json" 2> "$OUT/profile.err"
 profile_rc=$?
 PROF_TPS=$(jq -r '.timing.throughput_tok_s // empty | select(. > 0) | . * 10 | round / 10' \
     "$OUT/profile.json" 2>/dev/null || true)
@@ -188,6 +237,14 @@ if [ -z "$PROF_TPS" ]; then
         PROF_WHY=$(command grep -m1 -iE 'error|fail|refus' "$OUT/profile.err" || true)
     fi
     [ -n "$PROF_WHY" ] || missing+=("apr profile (rc $profile_rc, no non-zero throughput and no stated refusal; see profile.err)")
+fi
+
+step_end; fi
+
+# --only N stops here: its cell is its whole output, and the verdict is its exit status.
+if [ -n "$ONLY" ]; then
+    jq -e ".state == \"MEASURED\"" "$OUT/cell-$ONLY.json" >/dev/null
+    exit $?
 fi
 
 # The ranked list: what costs the most cells first, then decode, then refusals.

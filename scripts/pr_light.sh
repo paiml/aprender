@@ -20,6 +20,7 @@ fail-fast self-test|python3 scripts/ci/fail_fast.py self-test
 falsification ids|python3 scripts/ci/fail_fast.py ids --base origin/main
 guard-tree case table|bash scripts/tests/guard_tree_test.sh
 guard-tree (cargo-free)|bash scripts/guard_tree.sh --no-cargo
+readme contract count|bash scripts/readme_sync.sh --check
 STEPS
 }
 

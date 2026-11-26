@@ -67,7 +67,7 @@ pub fn save_student_checkpoint(
         })
         .collect();
 
-    let mut metadata = HashMap::new();
+    let mut metadata = std::collections::BTreeMap::new();
     metadata.insert("teacher_model".to_string(), checkpoint.teacher_model.clone());
     metadata.insert("temperature".to_string(), format!("{}", checkpoint.temperature));
     metadata.insert("alpha".to_string(), format!("{}", checkpoint.alpha));
@@ -77,7 +77,7 @@ pub fn save_student_checkpoint(
         metadata.insert("final_loss".to_string(), format!("{loss}"));
     }
 
-    let safetensor_bytes = safetensors::serialize(views, Some(metadata))
+    let safetensor_bytes = crate::io::serialize_with_ordered_metadata(views, &metadata)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
 
     let weights_path = output_dir.join(filename);
@@ -116,6 +116,22 @@ mod tests {
         };
 
         (weights, shapes, checkpoint)
+    }
+
+    /// #7293: same inputs must give byte-identical checkpoints (metadata key order).
+    #[test]
+    fn test_save_checkpoint_is_byte_deterministic() {
+        let (weights, shapes, checkpoint) = make_test_data();
+        let tmp = TempDir::new().expect("temp file creation should succeed");
+        let hash = |name: &str| {
+            let p = save_student_checkpoint(&weights, &shapes, &checkpoint, tmp.path(), name)
+                .expect("save");
+            std::fs::read(p).expect("read")
+        };
+        let first = hash("a.safetensors");
+        for i in 0..16 {
+            assert_eq!(first, hash(&format!("b{i}.safetensors")));
+        }
     }
 
     #[test]

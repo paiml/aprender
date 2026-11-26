@@ -519,6 +519,25 @@ const CASES: &[Case] = &[
             f.metadata = format!("{METADATA_OK}  competitor: \"THIS-COMPETITOR-DOES-NOT-EXIST\"\n");
         },
     },
+    // SIM-001/002 (#7245): the `simulation` kind must declare a shape and at least one falsification
+    // test. SIM-001 swaps only the kind (the fixture has no `shape:` key); SIM-002 adds the shape and
+    // empties the falsification list, so each rule is attributable to its own swap.
+    Case {
+        rule: "SIM-001",
+        sev: Sev::Error,
+        build: |f| {
+            f.metadata = METADATA_OK.replace("kind: kernel", "kind: simulation");
+        },
+    },
+    Case {
+        rule: "SIM-002",
+        sev: Sev::Error,
+        build: |f| {
+            f.metadata = METADATA_OK.replace("kind: kernel", "kind: simulation");
+            f.extra = "shape:\n  targetClass: sim:Simulation\n".to_string();
+            f.ftests = "  []\n".to_string();
+        },
+    },
 ];
 
 // ---------------------------------------------------------------------------

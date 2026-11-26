@@ -73,6 +73,10 @@ pub(crate) mod explain_token_lint;
 pub(crate) mod export;
 #[cfg(feature = "training")]
 pub(crate) mod finetune;
+#[cfg(feature = "training")]
+pub(crate) mod finetune_base;
+#[cfg(feature = "training")]
+pub(crate) mod finetune_recipe_run;
 pub(crate) mod flow;
 pub(crate) mod fp8_classifier;
 pub(crate) mod fp8_lint;
@@ -94,6 +98,7 @@ pub(crate) mod imatrix_classifier;
 pub(crate) mod imatrix_lint;
 pub(crate) mod import;
 pub(crate) mod inspect;
+pub(crate) mod inspect_families;
 pub(crate) mod kernel_explain;
 pub(crate) mod kernel_parity;
 pub(crate) mod kv_timeline_classifier;
@@ -111,6 +116,10 @@ pub(crate) mod mcp;
 pub(crate) mod merge;
 #[cfg(feature = "training")]
 pub(crate) mod model_config;
+#[cfg(feature = "inference")]
+pub(crate) mod model_kind_gate;
+#[cfg(not(feature = "inference"))]
+#[path = "model_kind_gate_stub.rs"]
 pub(crate) mod model_kind_gate;
 // #3661: a model parse failure names the format its magic bytes identify.
 #[cfg(test)]
@@ -228,6 +237,8 @@ pub(crate) mod trace_save_tensor;
 pub(crate) mod train;
 #[cfg(feature = "training")]
 pub(crate) mod train_recipe;
+#[cfg(feature = "training")]
+pub(crate) mod train_recipe_lora;
 pub(crate) mod tree;
 pub(crate) mod tui;
 #[cfg(feature = "training")]

@@ -688,7 +688,7 @@ impl WgpuInstructPipeline {
         output_path: &std::path::Path,
         lora_alpha: f32,
     ) -> Result<(), String> {
-        use safetensors::tensor::{serialize_to_file, Dtype, TensorView};
+        use safetensors::tensor::{Dtype, TensorView};
 
         // Collect all tensors
         let mut tensors: Vec<(String, Vec<f32>, Vec<usize>)> = Vec::new();
@@ -742,13 +742,13 @@ impl WgpuInstructPipeline {
             output_path.join("adapter.safetensors")
         };
 
-        let metadata: Option<std::collections::HashMap<String, String>> =
-            Some(std::collections::HashMap::from([
-                ("lora_rank".to_string(), self.lora_rank.to_string()),
-                ("lora_alpha".to_string(), lora_alpha.to_string()),
-            ]));
-        serialize_to_file(views, metadata, &st_path)
-            .map_err(|e| format!("safetensors write: {e}"))?;
+        let metadata = std::collections::BTreeMap::from([
+            ("lora_rank".to_string(), self.lora_rank.to_string()),
+            ("lora_alpha".to_string(), lora_alpha.to_string()),
+        ]);
+        let bytes = crate::io::serialize_with_ordered_metadata(views, &metadata)
+            .map_err(|e| format!("safetensors serialize: {e}"))?;
+        std::fs::write(&st_path, bytes).map_err(|e| format!("safetensors write: {e}"))?;
 
         eprintln!(
             "[wgpu] {} LoRA tensors saved ({} layers × 7 projections × A/B)",
@@ -758,40 +758,8 @@ impl WgpuInstructPipeline {
         Ok(())
     }
 
-    /// Training step: forward → loss → backward → optimizer. All GPU.
-    ///
-    /// Contract: qlora-training-loop-v1 / lora_forward_wgsl
-    pub fn train_step(&mut self, prompt_ids: &[u32], response_ids: &[u32]) -> InstructStepResult {
-        let t0 = std::time::Instant::now();
-
-        let full_ids: Vec<u32> = prompt_ids.iter().chain(response_ids).copied().collect();
-        let seq_len = full_ids.len().min(self.max_seq_len);
-        let full_ids = &full_ids[..seq_len];
-        let prompt_len = prompt_ids.len().min(seq_len);
-
-        let loss_start = prompt_len.saturating_sub(1);
-        let loss_end = seq_len - 1;
-        let num_loss_tokens = loss_end.saturating_sub(loss_start);
-
-        if num_loss_tokens == 0 {
-            return InstructStepResult { loss: 0.0, num_response_tokens: 0, perplexity: 1.0 };
-        }
-
-        // 1. Embed tokens (CPU lookup, small: seq × hidden)
-        let mut hidden = Vec::with_capacity(seq_len * self.hidden_dim);
-        for &tok in full_ids {
-            let offset = (tok as usize) * self.hidden_dim;
-            let end = offset + self.hidden_dim;
-            if end <= self.embed_weights.len() {
-                hidden.extend_from_slice(&self.embed_weights[offset..end]);
-            } else {
-                hidden.extend(std::iter::repeat_n(0.0f32, self.hidden_dim));
-            }
-        }
-
-        let t1 = std::time::Instant::now();
-
-        // PMAT-509: Diagnostic — check embedding norm on first step
+    /// PMAT-509 diagnostic: embedding norm on the first step.
+    fn diag_embed(&self, hidden: &[f32], seq_len: usize) {
         if self.lora_step == 0 {
             let h_norm: f32 = hidden.iter().map(|x| x * x).sum::<f32>().sqrt();
             let h_mean: f32 = hidden.iter().sum::<f32>() / hidden.len() as f32;
@@ -807,100 +775,55 @@ impl WgpuInstructPipeline {
                 eprintln!("[DIAG-509] embed[264,:5]={tok264:?} (PyTorch: [-0.0295, 0.0035, 0.0193, 0.0020, 0.0049])");
             }
         }
+    }
 
-        // 2. GPU forward through 28 transformer layers with LoRA contribution
-        // Contract: lora-algebra-v1/lora_shape — h = W_base @ x + (x @ A) @ B * scale
-        // Per-layer forward: base GEMM (via WgslForwardPass) + LoRA addmm (via pipeline shader)
-        self.fwd.queue_ref().write_buffer(
-            self.fwd.hidden_buffer(),
-            0,
-            bytemuck::cast_slice(&hidden),
-        );
-
-        let mut _saved_activations = Vec::with_capacity(self.num_layers);
-        for layer_idx in 0..self.num_layers {
-            let prefix = format!("layer.{layer_idx}");
-            // Build QkvLoRA for this layer's Q/K/V projections
-            let qkv_lora = if layer_idx < self.lora.len() {
-                let lp = &self.lora[layer_idx].projections;
-                // Find Q, K, V projections by name
-                let q = lp.iter().find(|p| p.name == "q_proj");
-                let k = lp.iter().find(|p| p.name == "k_proj");
-                let v = lp.iter().find(|p| p.name == "v_proj");
-                match (q, k, v) {
-                    (Some(qp), Some(kp), Some(vp)) => Some(trueno::backends::gpu::QkvLoRA {
-                        q_a: &qp.a,
-                        q_b: &qp.b,
-                        k_a: &kp.a,
-                        k_b: &kp.b,
-                        v_a: &vp.a,
-                        v_b: &vp.b,
-                        rank: self.lora_rank as u32,
-                        scale: self.lora_scale,
-                        in_dim: qp.in_dim,
-                        q_dim: qp.out_dim,
-                        kv_dim: kp.out_dim,
-                        lora_pipeline: &self.lora_addmm_pipeline,
-                        lora_bgl: &self.lora_addmm_bgl,
-                    }),
-                    _ => None,
-                }
-            } else {
-                None
-            };
-
-            // Forward with inline LoRA on Q/K/V (before attention consumes them)
-            let saved = self.fwd.alloc_layer_activations(seq_len as u32);
-
-            // Per-operation tracing on layer 0 of first step
-            if self.lora_step == 0 && layer_idx == 0 {
-                if let Err(e) = self.fwd.forward_layer_traced(
-                    seq_len as u32,
-                    &prefix,
-                    &saved,
-                    qkv_lora.as_ref(),
-                ) {
-                    eprintln!("[wgpu] traced forward failed: {e}");
-                }
-            } else {
-                let mut encoder = self.fwd.device_ref().create_command_encoder(&Default::default());
-                if let Err(e) = self.fwd.encode_forward_layer_training(
-                    &mut encoder,
-                    seq_len as u32,
-                    &prefix,
-                    &saved,
-                    qkv_lora.as_ref(),
-                ) {
-                    eprintln!("[wgpu] GPU forward layer {layer_idx} failed: {e}");
-                    return InstructStepResult {
-                        loss: 100.0,
-                        num_response_tokens: num_loss_tokens,
-                        perplexity: 1e6,
-                    };
-                }
-                self.fwd.queue_ref().submit(Some(encoder.finish()));
+    /// Q/K/V LoRA parameters for one layer, when the layer has all three projections.
+    fn qkv_lora_for(&self, layer_idx: usize) -> Option<trueno::backends::gpu::QkvLoRA<'_>> {
+        if layer_idx < self.lora.len() {
+            let lp = &self.lora[layer_idx].projections;
+            // Find Q, K, V projections by name
+            let q = lp.iter().find(|p| p.name == "q_proj");
+            let k = lp.iter().find(|p| p.name == "k_proj");
+            let v = lp.iter().find(|p| p.name == "v_proj");
+            match (q, k, v) {
+                (Some(qp), Some(kp), Some(vp)) => Some(trueno::backends::gpu::QkvLoRA {
+                    q_a: &qp.a,
+                    q_b: &qp.b,
+                    k_a: &kp.a,
+                    k_b: &kp.b,
+                    v_a: &vp.a,
+                    v_b: &vp.b,
+                    rank: self.lora_rank as u32,
+                    scale: self.lora_scale,
+                    in_dim: qp.in_dim,
+                    q_dim: qp.out_dim,
+                    kv_dim: kp.out_dim,
+                    lora_pipeline: &self.lora_addmm_pipeline,
+                    lora_bgl: &self.lora_addmm_bgl,
+                }),
+                _ => None,
             }
-            _saved_activations.push(saved);
-
-            // LoRA addmm for Q/K/V now happens INLINE in encode_forward_layer_training
-            // (before attention consumes Q/K/V buffers)
-
-            // PMAT-509: Diagnostic — check hidden after layers 0, 1, 27
-            if self.lora_step == 0
-                && (layer_idx == 0 || layer_idx == 1 || layer_idx == self.num_layers - 1)
-            {
-                let n_floats = seq_len * self.hidden_dim;
-                let h = self.fwd.download_hidden(n_floats);
-                let norm: f32 = h.iter().map(|x| x * x).sum::<f32>().sqrt();
-                let nan_c = h.iter().filter(|x| x.is_nan()).count();
-                let first5: Vec<f32> = h.iter().take(5).copied().collect();
-                eprintln!("[DIAG-509] after layer {layer_idx}: norm={norm:.4}, nan={nan_c}, first5={first5:?}");
-            }
+        } else {
+            None
         }
+    }
 
-        let t2 = std::time::Instant::now();
+    /// PMAT-509 diagnostic: hidden state after layers 0, 1 and the last.
+    fn diag_layer_hidden(&self, layer_idx: usize, seq_len: usize) {
+        if self.lora_step == 0
+            && (layer_idx == 0 || layer_idx == 1 || layer_idx == self.num_layers - 1)
+        {
+            let n_floats = seq_len * self.hidden_dim;
+            let h = self.fwd.download_hidden(n_floats);
+            let norm: f32 = h.iter().map(|x| x * x).sum::<f32>().sqrt();
+            let nan_c = h.iter().filter(|x| x.is_nan()).count();
+            let first5: Vec<f32> = h.iter().take(5).copied().collect();
+            eprintln!("[DIAG-509] after layer {layer_idx}: norm={norm:.4}, nan={nan_c}, first5={first5:?}");
+        }
+    }
 
-        // PMAT-509: Diagnostic — check hidden state after all layers on first step
+    /// PMAT-509 diagnostic: hidden state after all layers on the first step.
+    fn diag_post_layers(&self, seq_len: usize) {
         if self.lora_step == 0 {
             let n_floats = seq_len * self.hidden_dim;
             let h_data = self.fwd.download_hidden(n_floats);
@@ -911,44 +834,10 @@ impl WgpuInstructPipeline {
             let first5: Vec<f32> = h_data.iter().take(5).copied().collect();
             eprintln!("[DIAG-509] post-layers: norm={h_norm:.4}, mean={h_mean:.6}, nan={nan_count}, inf={inf_count}, first5={first5:?}");
         }
+    }
 
-        // 3. GPU RMSNorm + lm_head — hidden stays on GPU (contract: gpu-output-norm-v1)
-        let _t2a = std::time::Instant::now();
-        self.fwd.gpu_rmsnorm(&self.output_norm_gpu, &self.normed_buf, seq_len as u32);
-        let t2b = std::time::Instant::now();
-        let _t2c = t2b;
-        // lm_head: chunked GEMM + GPU scatter
-        let labels: Vec<u32> = (0..seq_len)
-            .map(|i| if i + 1 < full_ids.len() { full_ids[i + 1] } else { 0 })
-            .collect();
-
-        let mut col_offset = 0u64;
-        for (chunk_buf, chunk_n) in &self.lm_head_t_chunks {
-            let cn = u64::from(*chunk_n);
-            let c_chunk = self.trainer.zeros((seq_len as u64 * cn) as usize);
-            self.trainer.matmul_forward(
-                &self.normed_buf,
-                chunk_buf,
-                &c_chunk,
-                seq_len as u32,
-                self.hidden_dim as u32,
-                *chunk_n,
-            );
-            // GPU scatter: one dispatch replaces 512 copy_buffer_to_buffer calls
-            self.dispatch_scatter(
-                &c_chunk,
-                &self.logits_buf,
-                seq_len as u32,
-                *chunk_n,
-                self.vocab_size as u32,
-                col_offset as u32,
-            );
-            col_offset += cn;
-        }
-
-        let t3 = std::time::Instant::now();
-
-        // PMAT-509: Diagnostic — check logits after lm_head on first step
+    /// PMAT-509 diagnostic: logits after lm_head on the first step.
+    fn diag_logits(&self, labels: &[u32], loss_start: usize, loss_end: usize) {
         if self.lora_step == 0 {
             let logits_data = self.trainer.download(&self.logits_buf);
             let l_norm: f32 =
@@ -977,42 +866,37 @@ impl WgpuInstructPipeline {
             };
             eprintln!("[DIAG-509] pos0: argmax={argmax:?}, target={target}, target_logit={target_logit:.4}, loss_range=[{loss_start},{loss_end})");
         }
+    }
 
-        // Fused CE on full logits_buf (assembled via GPU scatter, no CPU download)
-        self.trainer.queue_ref().write_buffer(&self.labels_buf, 0, bytemuck::cast_slice(&labels));
+    /// lm_head forward: chunked GEMM plus GPU scatter into `logits_buf`.
+    fn lm_head_forward(&self, seq_len: usize) {
+        let mut col_offset = 0u64;
+        for (chunk_buf, chunk_n) in &self.lm_head_t_chunks {
+            let cn = u64::from(*chunk_n);
+            let c_chunk = self.trainer.zeros((seq_len as u64 * cn) as usize);
+            self.trainer.matmul_forward(
+                &self.normed_buf,
+                chunk_buf,
+                &c_chunk,
+                seq_len as u32,
+                self.hidden_dim as u32,
+                *chunk_n,
+            );
+            // GPU scatter: one dispatch replaces 512 copy_buffer_to_buffer calls
+            self.dispatch_scatter(
+                &c_chunk,
+                &self.logits_buf,
+                seq_len as u32,
+                *chunk_n,
+                self.vocab_size as u32,
+                col_offset as u32,
+            );
+            col_offset += cn;
+        }
+    }
 
-        // KAIZEN: async CE forward — dispatch compute without blocking.
-        // Loss is read at the end of the step (after LoRA backward) to avoid
-        // the 10.7s GPU sync that blocks on 28-layer forward compute.
-        let t3a = std::time::Instant::now();
-        self.cross_entropy.forward_async(
-            &self.logits_buf,
-            &self.labels_buf,
-            &self.losses_buf,
-            &self.logsumexp_buf,
-            seq_len as u32,
-            self.vocab_size as u32,
-            loss_start as u32,
-            loss_end as u32,
-        );
-
-        let t3b = std::time::Instant::now();
-        // Fused CE backward (in-place into logits_buf)
-        self.cross_entropy.backward(
-            &self.logits_buf,
-            &self.labels_buf,
-            &self.logsumexp_buf,
-            seq_len as u32,
-            self.vocab_size as u32,
-            loss_start as u32,
-            loss_end as u32,
-        );
-
-        let t3c = std::time::Instant::now();
-
-        // 6. lm_head backward — fully GPU-resident (no CPU download)
-        // grad_hidden = grad_logits @ lm_head, chunked along vocab dimension.
-        // KAIZEN: old code downloaded each chunk to CPU (11.6s sync). Now accumulates on GPU.
+    /// lm_head backward, fully GPU-resident; returns grad_hidden.
+    fn lm_head_backward(&self, seq_len: usize) -> wgpu::Buffer {
         let grad_hidden_buf = self.trainer.zeros(seq_len * self.hidden_dim);
         let mut row_offset = 0u64;
         for (chunk_buf, chunk_k) in &self.lm_head_chunks {
@@ -1056,6 +940,245 @@ impl WgpuInstructPipeline {
             self.fwd.queue_ref().submit(Some(enc.finish()));
             row_offset += ck;
         }
+        grad_hidden_buf
+    }
+
+    /// LoRA backward and AdamW step for one projection.
+    fn lora_proj_backward(
+        &mut self,
+        proj: &LoRAProjection,
+        input_buf: &wgpu::Buffer,
+        grad_buf: &wgpu::Buffer,
+        s: u32,
+        rank: u32,
+        lr: f32,
+    ) {
+        // GPU-only LoRA backward: transpose + matmul_forward (zero CPU downloads)
+        // dB = scale * XA^T @ G,  dA = scale * X^T @ (G @ B^T)
+        let scale = self.lora_scale;
+
+        // Step 1: XA = X @ A  [seq, rank]
+        let xa = self.trainer.zeros((s * rank) as usize);
+        self.trainer.matmul_forward(input_buf, &proj.a, &xa, s, proj.in_dim, rank);
+
+        // Step 2: dB = (scale * XA)^T @ G — GPU transpose + GEMM
+        let xa_t = self.trainer.zeros((s * rank) as usize);
+        self.dispatch_transpose(&xa, &xa_t, s, rank, scale);
+        let db = self.trainer.zeros((rank * proj.out_dim) as usize);
+        self.trainer.matmul_forward(&xa_t, grad_buf, &db, rank, s, proj.out_dim);
+
+        // Step 3: dA (skip if B=0 — first step optimization)
+        let da = if self.lora_step <= 1 {
+            self.trainer.zeros((proj.in_dim * rank) as usize)
+        } else {
+            let bt = self.trainer.zeros((rank * proj.out_dim) as usize);
+            self.dispatch_transpose(&proj.b, &bt, rank, proj.out_dim, 1.0);
+            let d_xa = self.trainer.zeros((s * rank) as usize);
+            self.trainer.matmul_forward(&grad_buf, &bt, &d_xa, s, proj.out_dim, rank);
+            let xt = self.trainer.zeros((s * proj.in_dim) as usize);
+            self.dispatch_transpose(input_buf, &xt, s, proj.in_dim, scale);
+            let da_buf = self.trainer.zeros((proj.in_dim * rank) as usize);
+            self.trainer.matmul_forward(&xt, &d_xa, &da_buf, proj.in_dim, s, rank);
+            da_buf
+        };
+
+        // AdamW step: update A and B
+        // Contract: adamw-kernel-v1/weight_update
+        self.trainer.adamw_step(&proj.a, &da, &proj.m_a, &proj.v_a, lr, 0.9, 0.999, 1e-8, 0.01);
+        self.trainer.adamw_step(&proj.b, &db, &proj.m_b, &proj.v_b, lr, 0.9, 0.999, 1e-8, 0.01);
+    }
+
+    /// CPU embedding lookup for `full_ids` (out-of-range tokens embed as zeros).
+    fn embed_lookup(&self, full_ids: &[u32]) -> Vec<f32> {
+        let mut hidden = Vec::with_capacity(full_ids.len() * self.hidden_dim);
+        for &tok in full_ids {
+            let offset = (tok as usize) * self.hidden_dim;
+            let end = offset + self.hidden_dim;
+            if end <= self.embed_weights.len() {
+                hidden.extend_from_slice(&self.embed_weights[offset..end]);
+            } else {
+                hidden.extend(std::iter::repeat_n(0.0f32, self.hidden_dim));
+            }
+        }
+        hidden
+    }
+
+    /// Encode one training layer forward and submit it; false (after logging) on failure.
+    fn submit_layer_forward<E: std::fmt::Display>(
+        &self,
+        layer_idx: usize,
+        encode: impl FnOnce(&mut wgpu::CommandEncoder) -> Result<(), E>,
+    ) -> bool {
+        let mut encoder = self.fwd.device_ref().create_command_encoder(&Default::default());
+        if let Err(e) = encode(&mut encoder) {
+            eprintln!("[wgpu] GPU forward layer {layer_idx} failed: {e}");
+            return false;
+        }
+        self.fwd.queue_ref().submit(Some(encoder.finish()));
+        true
+    }
+
+    /// LoRA backward for every targeted projection of one layer.
+    /// `inputs` = [attn_norm_out, attn_output, ffn_norm_out, silu_gate_output].
+    fn lora_layer_backward(
+        &mut self,
+        layer: &LayerLoRA,
+        inputs: [&wgpu::Buffer; 4],
+        grad_buf: &wgpu::Buffer,
+        s: u32,
+        rank: u32,
+        lr: f32,
+    ) {
+        for proj in &layer.projections {
+            if !self.lora_target_set.iter().any(|t| t == &proj.name) {
+                continue;
+            }
+            let input_buf = match proj.name.as_str() {
+                "q_proj" | "k_proj" | "v_proj" => inputs[0],
+                "o_proj" => inputs[1],
+                "gate_proj" | "up_proj" => inputs[2],
+                "down_proj" => inputs[3],
+                _ => continue,
+            };
+            self.lora_proj_backward(proj, input_buf, grad_buf, s, rank, lr);
+        }
+    }
+
+    /// Training step: forward → loss → backward → optimizer. All GPU.
+    ///
+    /// Contract: qlora-training-loop-v1 / lora_forward_wgsl
+    pub fn train_step(&mut self, prompt_ids: &[u32], response_ids: &[u32]) -> InstructStepResult {
+        let t0 = std::time::Instant::now();
+
+        let full_ids: Vec<u32> = prompt_ids.iter().chain(response_ids).copied().collect();
+        let seq_len = full_ids.len().min(self.max_seq_len);
+        let full_ids = &full_ids[..seq_len];
+        let prompt_len = prompt_ids.len().min(seq_len);
+
+        let loss_start = prompt_len.saturating_sub(1);
+        let loss_end = seq_len - 1;
+        let num_loss_tokens = loss_end.saturating_sub(loss_start);
+
+        if num_loss_tokens == 0 {
+            return InstructStepResult { loss: 0.0, num_response_tokens: 0, perplexity: 1.0 };
+        }
+
+        // 1. Embed tokens (CPU lookup, small: seq × hidden)
+        let hidden = self.embed_lookup(full_ids);
+
+        let t1 = std::time::Instant::now();
+
+        self.diag_embed(&hidden, seq_len);
+
+        // 2. GPU forward through 28 transformer layers with LoRA contribution
+        // Contract: lora-algebra-v1/lora_shape — h = W_base @ x + (x @ A) @ B * scale
+        // Per-layer forward: base GEMM (via WgslForwardPass) + LoRA addmm (via pipeline shader)
+        self.fwd.queue_ref().write_buffer(
+            self.fwd.hidden_buffer(),
+            0,
+            bytemuck::cast_slice(&hidden),
+        );
+
+        let mut _saved_activations = Vec::with_capacity(self.num_layers);
+        for layer_idx in 0..self.num_layers {
+            let prefix = format!("layer.{layer_idx}");
+            let qkv_lora = self.qkv_lora_for(layer_idx);
+
+            // Forward with inline LoRA on Q/K/V (before attention consumes them)
+            let saved = self.fwd.alloc_layer_activations(seq_len as u32);
+
+            // Per-operation tracing on layer 0 of first step
+            if self.lora_step == 0 && layer_idx == 0 {
+                if let Err(e) = self.fwd.forward_layer_traced(
+                    seq_len as u32,
+                    &prefix,
+                    &saved,
+                    qkv_lora.as_ref(),
+                ) {
+                    eprintln!("[wgpu] traced forward failed: {e}");
+                }
+            } else {
+                let ok = self.submit_layer_forward(layer_idx, |encoder| {
+                    self.fwd.encode_forward_layer_training(
+                        encoder,
+                        seq_len as u32,
+                        &prefix,
+                        &saved,
+                        qkv_lora.as_ref(),
+                    )
+                });
+                if !ok {
+                    return InstructStepResult {
+                        loss: 100.0,
+                        num_response_tokens: num_loss_tokens,
+                        perplexity: 1e6,
+                    };
+                }
+            }
+            _saved_activations.push(saved);
+
+            // LoRA addmm for Q/K/V now happens INLINE in encode_forward_layer_training
+            // (before attention consumes Q/K/V buffers)
+
+            self.diag_layer_hidden(layer_idx, seq_len);
+        }
+
+        let t2 = std::time::Instant::now();
+
+        self.diag_post_layers(seq_len);
+
+        // 3. GPU RMSNorm + lm_head — hidden stays on GPU (contract: gpu-output-norm-v1)
+        let _t2a = std::time::Instant::now();
+        self.fwd.gpu_rmsnorm(&self.output_norm_gpu, &self.normed_buf, seq_len as u32);
+        let t2b = std::time::Instant::now();
+        let _t2c = t2b;
+        // lm_head: chunked GEMM + GPU scatter
+        let labels: Vec<u32> = (0..seq_len)
+            .map(|i| if i + 1 < full_ids.len() { full_ids[i + 1] } else { 0 })
+            .collect();
+
+        self.lm_head_forward(seq_len);
+
+        let t3 = std::time::Instant::now();
+
+        self.diag_logits(&labels, loss_start, loss_end);
+
+        // Fused CE on full logits_buf (assembled via GPU scatter, no CPU download)
+        self.trainer.queue_ref().write_buffer(&self.labels_buf, 0, bytemuck::cast_slice(&labels));
+
+        // KAIZEN: async CE forward — dispatch compute without blocking.
+        // Loss is read at the end of the step (after LoRA backward) to avoid
+        // the 10.7s GPU sync that blocks on 28-layer forward compute.
+        let t3a = std::time::Instant::now();
+        self.cross_entropy.forward_async(
+            &self.logits_buf,
+            &self.labels_buf,
+            &self.losses_buf,
+            &self.logsumexp_buf,
+            seq_len as u32,
+            self.vocab_size as u32,
+            loss_start as u32,
+            loss_end as u32,
+        );
+
+        let t3b = std::time::Instant::now();
+        // Fused CE backward (in-place into logits_buf)
+        self.cross_entropy.backward(
+            &self.logits_buf,
+            &self.labels_buf,
+            &self.logsumexp_buf,
+            seq_len as u32,
+            self.vocab_size as u32,
+            loss_start as u32,
+            loss_end as u32,
+        );
+
+        let t3c = std::time::Instant::now();
+
+        // 6. lm_head backward — fully GPU-resident (no CPU download)
+        // grad_hidden = grad_logits @ lm_head, chunked along vocab dimension.
+        // KAIZEN: old code downloaded each chunk to CPU (11.6s sync). Now accumulates on GPU.
+        let grad_hidden_buf = self.lm_head_backward(seq_len);
 
         let t4 = std::time::Instant::now();
 
@@ -1094,66 +1217,19 @@ impl WgpuInstructPipeline {
         // W_down and W_gate are different for each of the 28 layers.
         let grad_buf = grad_hidden_buf;
 
-        for layer_idx in (0..self.lora.len()).rev() {
-            let layer_lora = &self.lora[layer_idx];
+        // Detach the adapters so the `&mut self` backward helpers can borrow them.
+        let lora = std::mem::take(&mut self.lora);
+        for layer_idx in (0..lora.len()).rev() {
             let saved = &_saved_activations[layer_idx];
-
-            for proj in &layer_lora.projections {
-                if !self.lora_target_set.iter().any(|t| t == &proj.name) {
-                    continue;
-                }
-                // Select saved input based on projection name
-                let input_buf = match proj.name.as_str() {
-                    "q_proj" | "k_proj" | "v_proj" => &saved.attn_norm_out,
-                    "o_proj" => &saved.attn_output,
-                    "gate_proj" | "up_proj" => &saved.ffn_norm_out,
-                    "down_proj" => &saved.silu_gate_output,
-                    _ => continue,
-                };
-
-                // GPU-only LoRA backward: transpose + matmul_forward (zero CPU downloads)
-                // dB = scale * XA^T @ G,  dA = scale * X^T @ (G @ B^T)
-                let scale = self.lora_scale;
-
-                // Step 1: XA = X @ A  [seq, rank]
-                let xa = self.trainer.zeros((s * rank) as usize);
-                self.trainer.matmul_forward(input_buf, &proj.a, &xa, s, proj.in_dim, rank);
-
-                // Step 2: dB = (scale * XA)^T @ G — GPU transpose + GEMM
-                let xa_t = self.trainer.zeros((s * rank) as usize);
-                self.dispatch_transpose(&xa, &xa_t, s, rank, scale);
-                let db = self.trainer.zeros((rank * proj.out_dim) as usize);
-                self.trainer.matmul_forward(&xa_t, &grad_buf, &db, rank, s, proj.out_dim);
-
-                // Step 3: dA (skip if B=0 — first step optimization)
-                let da = if self.lora_step <= 1 {
-                    self.trainer.zeros((proj.in_dim * rank) as usize)
-                } else {
-                    let bt = self.trainer.zeros((rank * proj.out_dim) as usize);
-                    self.dispatch_transpose(&proj.b, &bt, rank, proj.out_dim, 1.0);
-                    let d_xa = self.trainer.zeros((s * rank) as usize);
-                    self.trainer.matmul_forward(&grad_buf, &bt, &d_xa, s, proj.out_dim, rank);
-                    let xt = self.trainer.zeros((s * proj.in_dim) as usize);
-                    self.dispatch_transpose(input_buf, &xt, s, proj.in_dim, scale);
-                    let da_buf = self.trainer.zeros((proj.in_dim * rank) as usize);
-                    self.trainer.matmul_forward(&xt, &d_xa, &da_buf, proj.in_dim, s, rank);
-                    da_buf
-                };
-
-                // AdamW step: update A and B
-                // Contract: adamw-kernel-v1/weight_update
-                self.trainer
-                    .adamw_step(&proj.a, &da, &proj.m_a, &proj.v_a, lr, 0.9, 0.999, 1e-8, 0.01);
-                self.trainer
-                    .adamw_step(&proj.b, &db, &proj.m_b, &proj.v_b, lr, 0.9, 0.999, 1e-8, 0.01);
-            }
-
-            // PMAT-511 REVERTED: Per-layer backward through W_down^T @ W_gate^T was a dead end.
-            // Without SiLU backward derivative, the simplified FFN backward injects WRONG-DIRECTION
-            // gradient that makes training WORSE (3.63→17.77 vs 2.97→16.11 without).
-            // Path B (cuBLAS hybrid via --gpu-backend cuda) replaces this entirely.
-            // The CUDA backward path in backward.rs has proper per-layer backward with cuBLAS.
+            let inputs = [
+                &saved.attn_norm_out,
+                &saved.attn_output,
+                &saved.ffn_norm_out,
+                &saved.silu_gate_output,
+            ];
+            self.lora_layer_backward(&lora[layer_idx], inputs, &grad_buf, s, rank, lr);
         }
+        self.lora = lora;
 
         let t5 = std::time::Instant::now();
 
