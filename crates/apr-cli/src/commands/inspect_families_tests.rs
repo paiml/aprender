@@ -10,21 +10,53 @@ fn fixture(name: &str) -> String {
     std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
 }
 
+fn sha256_hex(s: &str) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(s.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+fn count_of(r: &FamilyReport, family: &str) -> usize {
+    r.families
+        .iter()
+        .find(|f| f.family == family)
+        .map_or(0, |f| f.count)
+}
+
+/// #7330: the PUBLISHED Qwen3.8-2.4T-A95B config and index (verbatim, hashes in the fixture
+/// README), not a synthetic stand-in: every one of the 1609 tensors has a family name.
 #[test]
-/// The synthetic fixture (layers 0-3 of the 2.4T index, hand-written; see the fixture
-/// README) has no unnamed tensor. Not a check of the published index (PR #7356 round 3,
-/// lane 2 finding 3).
-fn every_tensor_in_the_synthetic_2_4t_fixture_is_named() {
-    let r = report(
-        &fixture("config.json"),
-        &fixture("model.safetensors.index.json"),
-    )
-    .expect("report");
+fn every_tensor_in_the_published_2_4t_index_is_named() {
+    let (cfg, idx) = (
+        fixture("config.json"),
+        fixture("model.safetensors.index.json"),
+    );
+    assert_eq!(
+        sha256_hex(&cfg),
+        "4e3819548967e319ab435d044a3a331dbe3b078590ce822e9d74b79430533987"
+    );
+    assert_eq!(
+        sha256_hex(&idx),
+        "e36c40d4e99b2714fff821218a0433bda2dec46afdb1ebee8ce96ced997928ee"
+    );
+    let r = report(&cfg, &idx).expect("report");
     assert!(r.unnamed.is_empty(), "unnamed tensors: {:?}", r.unnamed);
+    assert_eq!(r.tensor_count, 1609);
     assert_eq!(r.model_type, "qwen3_5_moe_text");
     assert_eq!(r.num_hidden_layers, Some(92));
     assert_eq!(r.num_experts, Some(512));
+    // The index writes total_size as a float (4892365451008.0): still a byte count.
+    assert_eq!(r.total_size_bytes, Some(4_892_365_451_008));
+    // All 92 layers are in the index, each with its packed 512-expert pair.
+    assert_eq!(r.layers_in_index, 92);
+    assert_eq!(count_of(&r, "language.mlp.experts"), 2 * 92);
+    assert_eq!(count_of(&r, "language.linear_attn"), 9 * 69);
+    assert_eq!(count_of(&r, "language.self_attn"), 6 * 23);
+    assert_eq!(count_of(&r, "mtp.fc"), 1);
     let names: Vec<&str> = r.families.iter().map(|f| f.family.as_str()).collect();
+    assert_eq!(names.len(), 22, "{names:?}");
     for want in [
         "language.embed_tokens",
         "language.final_norm",
@@ -37,10 +69,12 @@ fn every_tensor_in_the_synthetic_2_4t_fixture_is_named() {
         "language.mlp.shared_expert_gate",
         "language.input_layernorm",
         "language.post_attention_layernorm",
-        "mtp.fc_hidden",
+        "mtp.fc",
+        "mtp.final_norm",
+        "mtp.pre_fc_norm_hidden",
+        "mtp.pre_fc_norm_embedding",
         "mtp.mlp.experts",
-        "vision.blocks",
-        "vision.merger",
+        "mtp.self_attn",
     ] {
         assert!(
             names.contains(&want),
@@ -52,6 +86,175 @@ fn every_tensor_in_the_synthetic_2_4t_fixture_is_named() {
         total, r.tensor_count,
         "every tensor is counted in exactly one family"
     );
+    assert_eq!(render_json(&r)["layers_in_index"], 92);
+}
+
+const REPO: &str = "Qwen/Qwen3.8-2.4T-A95B";
+
+fn seed(dir: &std::path::Path, files: &[&str]) {
+    std::fs::create_dir_all(dir).expect("mkdir");
+    for f in files {
+        std::fs::write(dir.join(f), fixture(f)).expect("seed");
+    }
+}
+
+/// #7330: a bare repo id is answered from the `apr pull` cache with no network call.
+#[test]
+fn a_bare_repo_id_is_read_from_the_cache_offline() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let cache = tmp.path().join("Qwen").join("Qwen3.8-2.4T-A95B");
+    seed(&cache, &["config.json", "model.safetensors.index.json"]);
+    let asked = std::cell::RefCell::new(Vec::new());
+    let dir = no_weights_dir(
+        std::path::Path::new(REPO),
+        &|r| {
+            asked.borrow_mut().push(r.to_string());
+            Ok(cache.clone())
+        },
+        &|url, _| panic!("a cached repo needs no network, asked for {url}"),
+    )
+    .expect("resolved from the cache");
+    assert_eq!(dir, cache);
+    assert_eq!(*asked.borrow(), [REPO]);
+    let read = |f: &str| std::fs::read_to_string(dir.join(f)).expect("read");
+    let r = report(&read("config.json"), &read("model.safetensors.index.json")).expect("report");
+    assert_eq!((r.tensor_count, r.unnamed.len()), (1609, 0));
+    // `hf://org/repo` is the same repo.
+    let dir = no_weights_dir(
+        std::path::Path::new("hf://Qwen/Qwen3.8-2.4T-A95B"),
+        &|_| Ok(cache.clone()),
+        &|url, _| panic!("{url}"),
+    )
+    .expect("hf:// form");
+    assert_eq!(dir, cache);
+}
+
+/// Nothing cached and the network forbidden: a named error through the real `apr pull`
+/// download path (its `--offline` guard), never an empty report, and no file left behind.
+#[test]
+fn an_uncached_repo_id_offline_is_a_named_error() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let cache = tmp.path().join("Qwen").join("Qwen3.8-2.4T-A95B");
+    let _offline = crate::commands::offline::scope(true);
+    let err = no_weights_dir(
+        std::path::Path::new(REPO),
+        &|_| Ok(cache.clone()),
+        &|url, path| crate::commands::pull::download_file(url, path),
+    )
+    .expect_err("no cache and no network is an error");
+    assert!(matches!(err, CliError::NetworkError(_)), "{err:?}");
+    let msg = err.to_string();
+    for want in [REPO, "config.json", "not in the cache", "--offline"] {
+        assert!(msg.contains(want), "{want:?} not in {msg}");
+    }
+    assert!(!cache.exists(), "a failed fetch leaves no cache directory");
+}
+
+/// Only the missing file is fetched, from the repo's `resolve/main`, and lands in the cache.
+#[test]
+fn a_partly_cached_repo_id_fetches_only_the_missing_file() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let cache = tmp.path().join("Qwen").join("Qwen3.8-2.4T-A95B");
+    seed(&cache, &["config.json"]);
+    let urls = std::cell::RefCell::new(Vec::new());
+    let dir = no_weights_dir(
+        std::path::Path::new(REPO),
+        &|_| Ok(cache.clone()),
+        &|url, path| {
+            urls.borrow_mut().push(url.to_string());
+            std::fs::write(path, fixture("model.safetensors.index.json")).map_err(CliError::from)
+        },
+    )
+    .expect("fetched");
+    assert_eq!(
+        *urls.borrow(),
+        ["https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B/resolve/main/model.safetensors.index.json"]
+    );
+    assert_eq!(
+        sha256_hex(
+            &std::fs::read_to_string(dir.join("model.safetensors.index.json")).expect("index")
+        ),
+        "e36c40d4e99b2714fff821218a0433bda2dec46afdb1ebee8ce96ced997928ee"
+    );
+    let left: Vec<_> = std::fs::read_dir(&dir)
+        .expect("ls")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".part"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+}
+
+/// A 404 keeps its own class (exit 11), and names the repo and the file.
+#[test]
+fn a_repo_without_an_index_is_a_named_not_found() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let cache = tmp.path().join("o").join("r");
+    let err = no_weights_dir(
+        std::path::Path::new("o/r"),
+        &|_| Ok(cache.clone()),
+        &|url, _| Err(CliError::HttpNotFound(format!("HTTP 404: {url}"))),
+    )
+    .expect_err("404");
+    assert!(matches!(err, CliError::HttpNotFound(_)), "{err:?}");
+    assert!(err.to_string().contains("o/r") && err.to_string().contains("config.json"));
+}
+
+/// What is neither an existing path nor `org/repo` is refused by name before any lookup.
+#[test]
+fn a_path_that_is_neither_a_directory_nor_a_repo_id_is_refused() {
+    for arg in [
+        "/no/such/dir/at/all",
+        "../x/y",
+        "justonename",
+        "a/b/c",
+        "a//b",
+        "a/b c",
+    ] {
+        let err = no_weights_dir(
+            std::path::Path::new(arg),
+            &|r| panic!("no cache lookup for {r}"),
+            &|u, _| panic!("no fetch of {u}"),
+        )
+        .expect_err(arg);
+        assert!(
+            matches!(err, CliError::ValidationFailed(_)),
+            "{arg}: {err:?}"
+        );
+        assert!(err.to_string().contains(arg), "{err}");
+    }
+}
+
+/// `apr inspect ORG/REPO --no-weights --json` reaches the repo-id path through the real CLI
+/// (dispatch unchanged): with the network forbidden and nothing cached it fails by name.
+#[test]
+fn the_cli_takes_a_bare_repo_id_and_fails_by_name_when_offline_and_uncached() {
+    use clap::Parser;
+    let args: Vec<String> = [
+        "apr",
+        "inspect",
+        "apr-test-7330/never-cached",
+        "--no-weights",
+        "--json",
+    ]
+    .iter()
+    .map(|s| (*s).to_string())
+    .collect();
+    let res = std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            let _offline = crate::commands::offline::scope(true);
+            let cli = crate::Cli::try_parse_from(args).expect("parse");
+            crate::execute_command(&cli)
+        })
+        .expect("spawn")
+        .join()
+        .expect("join");
+    let err = res.expect_err("uncached and offline");
+    assert!(
+        err.to_string().contains("apr-test-7330/never-cached"),
+        "{err}"
+    );
+    assert!(err.to_string().contains("not in the cache"), "{err}");
 }
 
 #[test]
