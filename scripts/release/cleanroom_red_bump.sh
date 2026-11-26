@@ -28,7 +28,18 @@ crb_next_patch() { # crb_next_patch v0.72.1 -> 0.72.2 ; rc 1 for anything but vX
 
 if [ "${1:-}" = --self-test ]; then
     fail=0
-    chk() { if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$2' want '$3'"; fail=1; fi; }
+    # Poka-yoke (ruling on #7449 shard 4/4): a mismatch prints the environment the case ran in,
+    # so a CI-only difference is visible in the log instead of a bare empty string.
+    last_out=""; last_rc="unset"
+    chk() {
+        if [ "$2" = "$3" ]; then echo "  ok   $1"; else
+            echo "  FAIL $1: got '$2' want '$3'"
+            echo "       env: PATH=${PATH:-} CRB_NEXT=${CRB_NEXT:-unset} CRB_REFS=${CRB_REFS:-unset} HOME=${HOME:-unset} pwd=$(pwd)"
+            echo "       git describe: $(git -C "$(dirname "$0")" describe --tags --always 2>&1 | head -n 1)"
+            echo "       last run: rc=$last_rc out: $(printf '%s' "$last_out" | tr '\n' ' ' | cut -c1-300)"
+            fail=1
+        fi
+    }
     chk "v0.72.1 -> 0.72.2" "$(crb_next_patch v0.72.1)" 0.72.2
     chk "0.72.9 -> 0.72.10" "$(crb_next_patch 0.72.9)" 0.72.10
     chk "rc candidate refused" "$(crb_next_patch 0.72.1-rc.1 || echo refused)" refused
@@ -64,7 +75,7 @@ STUB
     chk "exact v0.72.2 exists -> prepare_bump not called" "$([ -e "$d/calls" ] && echo called || echo none)" none
     # CRB_NEXT (#6675 --to): an explicit next version, strictly above the base, replaces the next patch
     rm -f "${d:?}/calls"
-    CRB_NEXT=0.73.0 CRB_REFS='[]' CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.4 > /dev/null 2>&1
+    last_out=$(CRB_NEXT=0.73.0 CRB_REFS='[]' CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.4 2>&1); last_rc=$?
     chk "CRB_NEXT=0.73.0 on v0.72.4 -> 0.73.0 drafted then shipped" "$(tr '\n' '|' < "$d/calls" 2>/dev/null)" "0.73.0|0.73.0 --ship|"
     rm -f "${d:?}/calls"
     CRB_NEXT=0.72.4 CRB_REFS='[]' CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.4 > /dev/null 2>&1; rc=$?
