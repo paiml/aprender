@@ -170,11 +170,11 @@ A non-`pass` cell names the gates the receipt records, which is not always the c
 
 <!-- RELEASE_MATRIX_END -->
 
-> **Known issue — Qwen3 MoE (30B-A3B) on GB10: not claimed for 0.70; planned for 0.70.1 (#3715).** Every verb
+> **Known issue — Qwen3 MoE (30B-A3B) on GB10: not claimed for 0.70; was planned for 0.70.1 (history, #3715).** Every verb
 > times out at 600 s on the 20k-token rung on GB10 (sm_121), so qwen3moe on GB10 is withdrawn from this
 > release's claims (`cells.declaimed`).
 
-> **Known issue — GB10 dense models: prompt processing unbatched; planned for 0.70.1 (#4590).** Output is correct; only prefill speed is affected. On GB10 (sm_121) every dense
+> **Known issue — GB10 dense models: prompt processing unbatched; was planned for 0.70.1 (history, #4590).** Output is correct; only prefill speed is affected. On GB10 (sm_121) every dense
 > model (Qwen2.5, Qwen3) is withdrawn from this release's claims (`cells.declaimed` in
 > [`contracts/model-capability-ladder-v1.yaml`](contracts/model-capability-ladder-v1.yaml)); Qwen3.5 on
 > GB10 and every model on other hosts are still claimed and gated.
@@ -299,7 +299,7 @@ apr tensors --json Qwen3-Coder-30B-A3B-Instruct     # 579 tensors (MoE expert la
 > **CPU only**: `apr run <model>` works, and `apr run --gpu <model>` **refuses
 > before loading**, naming the architecture and exiting 12 rather than
 > generating on the CPU and reporting a fallback. The MoE GPU forward is
-> [#3714](https://github.com/paiml/aprender/issues/3714) and lands in 0.70.0.
+> [#3714](https://github.com/paiml/aprender/issues/3714) and landed in 0.70.0.
 > Introspection above (`inspect`, `tensors`) is unaffected — it reads the
 > header, not a forward.
 
@@ -325,7 +325,7 @@ gotchas (NDJSON commits, LFS batch sizing, Q4_K stride constraints).
 
 ```toml
 [dependencies]
-aprender = "0.35"
+aprender = "0.75"
 ```
 
 ```rust
