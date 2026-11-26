@@ -313,16 +313,26 @@ fn check(
     assert_eq!(ours, golden, "{name}: Rust renderer differs from the published jinja");
 }
 
+// Tool fixtures are written with their object keys in sorted order, at every depth. The
+// oracle's `tojson` reads a minijinja map, which is sorted; the Rust renderer reads the
+// `serde_json::Value`, which is sorted only when serde_json's `preserve_order` is off. That
+// feature is off when aprender-core is built alone and ON in a workspace build (unified in
+// by aprender-ci-tools, pmcp and llguidance), where a fixture written in another order made
+// the renderer disagree with the sorted goldens. Sorted fixtures hold the same order in
+// both builds, so the same goldens are checked in both.
 fn weather_tool() -> serde_json::Value {
-    serde_json::json!({"type": "function", "function": {
-        "name": "get_weather",
+    serde_json::json!({"function": {
         "description": "Current weather for a city (°C).",
-        "parameters": {"type": "object", "required": ["city"], "properties": {
-            "city": {"type": "string"}, "days": {"type": "integer"}}}}})
+        "name": "get_weather",
+        "parameters": {
+            "properties": {"city": {"type": "string"}, "days": {"type": "integer"}},
+            "required": ["city"],
+            "type": "object"}},
+        "type": "function"})
 }
 
 fn clock_tool() -> serde_json::Value {
-    serde_json::json!({"type": "function", "function": {"name": "now", "parameters": {}}})
+    serde_json::json!({"function": {"name": "now", "parameters": {}}, "type": "function"})
 }
 
 fn call(name: &str, args: &[(&str, serde_json::Value)]) -> ThinkingToolCall {
