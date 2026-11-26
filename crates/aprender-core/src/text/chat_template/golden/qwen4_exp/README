@@ -18,7 +18,10 @@ template as jinja2 does. Supplied to minijinja by the test: `raise_exception`,
 `str.startswith/endswith`, `{% generation %}` removed (transparent block), and `tojson` =
 Python `json.dumps(x, ensure_ascii=False)` as `transformers` registers it (", " and ": "
 separators). Not measured: a jinja2 / transformers render of the tools_* inputs. Object keys
-are in sorted order in these goldens (serde_json without `preserve_order`).
+are in sorted order in these goldens. The tool fixtures in tests_qwen4_exp.rs are written in
+sorted key order too, so the goldens hold whether serde_json's `preserve_order` is off
+(aprender-core built alone) or on (workspace build); the Rust renderer emits keys in the
+order the `serde_json::Value` holds them and does not sort.
 Regenerate: QWEN4EXP_BLESS_DIR=<dir> cargo test -p aprender-core --lib chat_template_qwen4_exp
 Jinja lines: tools system block 57-75; tool calls 123-147; tool responses 151-162; vision
 content parts 3-41 (inputs: tools_system_user S U + tools [get_weather, now];
