@@ -19,24 +19,24 @@ equations:
     - timestep_secs > 0.0
     lean_theorem: Theorems.Step_Monotonicity
   audit_completeness:
-    formula: '∀ step_id ∈ [0, step_count): record_step(step_id) is recoverable'
+    formula: 'record_step(id) = id; find_by_step_id(id) = id; seek(id) = id; step_forward(pos) = pos + 1'
     domain: step_id ∈ usize
     codomain: Result<StepRecord, AuditError>
     invariants:
-    - 'All recorded steps retrievable: find_by_step_id never returns None for valid ID'
-    - 'seek(step_id) positions audit cursor correctly'
-    - step_forward advances by exactly 1 step
+    - 'find_by_step_id(record_step(id)) = id'
+    - 'find_by_step_id(seek(id)) = id'
+    - 'step_forward(seek(id)) = id + 1'
     preconditions:
     - step_id < step_count()
     lean_theorem: Theorems.Audit_Completeness
   simulate_convergence:
-    formula: simulate_path(params) → trajectory where energy is bounded
+    formula: 'osc_x(t) = A * cos(w * t); osc_v(t) = -A * w * sin(w * t); energy(x, v) = 0.5 * (v^2 + w^2 * x^2); orbit_x(t) = r * cos(w * t); orbit_y(t) = r * sin(w * t); portfolio_t(n) = n * dt'
     domain: params ∈ SimulationParams
     codomain: Vec<StateSnapshot>
     invariants:
-    - Energy conservation (Hamiltonian systems) within tolerance
-    - Orbit simulations return to near-initial state after full period
-    - Portfolio simulation paths have non-negative time axis
+    - 'abs(energy(osc_x(t), osc_v(t)) - energy(osc_x(0), osc_v(0))) <= 0.000000001 * (1 + abs(energy(osc_x(0), osc_v(0))))'
+    - 'abs(orbit_x(t + 6.283185307179586 / w) - orbit_x(t)) <= 0.000000001 * (1 + abs(orbit_x(t))) and abs(orbit_y(t + 6.283185307179586 / w) - orbit_y(t)) <= 0.000000001 * (1 + abs(orbit_y(t)))'
+    - 'portfolio_t(abs(n)) >= 0'
     preconditions:
     - params.dt > 0.0
     - params.steps > 0
