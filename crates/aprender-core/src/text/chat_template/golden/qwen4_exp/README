@@ -8,3 +8,21 @@ inline_think_preserve / inline_think_drop_old: U "2+2?", A content "<think>\nAdd
 with NO reasoning_content, U "And 3+3?"; preserve_thinking true / false. The published template
 has no `'</think>' in content` split (its only `</think>` literals are jinja lines 119 and 170);
 line 103 trims content and lines 110-122 wrap it in an empty reasoning block or emit it verbatim.
+
+#7336 (tools and vision branches). `chat_template.jinja` is the published file, verbatim
+(same sha256; a test asserts it). tools_*.txt and vision_*.txt were NOT rendered with jinja2
+(no Python in this repo): tests_qwen4_exp.rs renders chat_template.jinja with minijinja and
+asserts each golden equals that render AND the Rust renderer. The same minijinja setup
+replays the nine jinja2 goldens above byte for byte, which is the evidence that it reads the
+template as jinja2 does. Supplied to minijinja by the test: `raise_exception`,
+`str.startswith/endswith`, `{% generation %}` removed (transparent block), and `tojson` =
+Python `json.dumps(x, ensure_ascii=False)` as `transformers` registers it (", " and ": "
+separators). Not measured: a jinja2 / transformers render of the tools_* inputs. Object keys
+are in sorted order in these goldens (serde_json without `preserve_order`).
+Regenerate: QWEN4EXP_BLESS_DIR=<dir> cargo test -p aprender-core --lib chat_template_qwen4_exp
+Jinja lines: tools system block 57-75; tool calls 123-147; tool responses 151-162; vision
+content parts 3-41 (inputs: tools_system_user S U + tools [get_weather, now];
+tools_no_system_medium U + [get_weather], reasoning_effort medium; tools_call_and_response
+S U A(tool_call get_weather{city,days}) T; tools_two_calls_drop_old U A(content + 2 calls)
+T T A U, preserve_thinking false; vision_image_text U[image, text]; vision_ids_two_turns
+S U[image, video, text] A U[text, image, video], add_vision_id true).
