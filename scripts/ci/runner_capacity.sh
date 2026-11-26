@@ -64,6 +64,9 @@ done
 if [ -z "$file" ]; then
   file=$(mktemp)
   trap 'rm -f "${file:?}"' EXIT
-  gh api "repos/${REPO}/actions/runners?per_page=100" > "$file" || { echo "runner_capacity: not_measured (gh api failed)" >&2; exit 2; }
+  # Paginate: one page holds at most 100 runners, and a larger fleet must not be undercounted.
+  # Each page prints its .runners array; jq -s folds them into one {runners: [...]} document.
+  gh api --paginate "repos/${REPO}/actions/runners?per_page=100" --jq '.runners[]' \
+    | jq -s '{runners: .}' > "$file" || { echo "runner_capacity: not_measured (gh api failed)" >&2; exit 2; }
 fi
 report "$file" "$label" "$min"
