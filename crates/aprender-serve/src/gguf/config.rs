@@ -1405,3 +1405,43 @@ mod qwen3moe_rope_theta_tests {
         assert_eq!(default_rope_theta_for_architecture("mistral"), 10_000.0);
     }
 }
+
+#[cfg(test)]
+mod head_dim_source_tests_7285 {
+    use super::*;
+
+    /// #7285: head_dim must come from the config (explicit GGUF value), not
+    /// hidden/heads. Qwen3-0.6B has head_dim 128 with hidden 1024 / 16 heads = 64.
+    fn qwen3_like(explicit: Option<usize>) -> GGUFConfig {
+        GGUFConfig {
+            architecture: "qwen3".to_string(),
+            constraints: ArchConstraints::from_architecture("qwen3"),
+            hidden_dim: 1024,
+            num_layers: 28,
+            num_heads: 16,
+            num_kv_heads: 8,
+            vocab_size: 151_936,
+            intermediate_dim: 3072,
+            context_length: 40_960,
+            rope_theta: 1_000_000.0,
+            eps: 1e-6,
+            rope_type: 2,
+            explicit_head_dim: explicit,
+            query_pre_attn_scalar: None,
+            bos_token_id: None,
+            eos_token_id: Some(151_645),
+        }
+    }
+
+    #[test]
+    fn head_dim_uses_explicit_value_when_hidden_over_heads_differs() {
+        let cfg = qwen3_like(Some(128));
+        assert_ne!(cfg.hidden_dim / cfg.num_heads, 128);
+        assert_eq!(cfg.head_dim(), 128);
+    }
+
+    #[test]
+    fn head_dim_falls_back_to_hidden_over_heads_without_explicit() {
+        assert_eq!(qwen3_like(None).head_dim(), 64);
+    }
+}

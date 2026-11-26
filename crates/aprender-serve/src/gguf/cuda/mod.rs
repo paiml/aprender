@@ -500,7 +500,7 @@ impl OwnedQuantizedModelCuda {
         let num_layers = model.layers.len();
         let num_heads = model.config.num_heads;
         let num_kv_heads = model.config.num_kv_heads; // PAR-021 GQA support
-        let head_dim = model.config.hidden_dim / num_heads;
+        let head_dim = model.config.head_dim(); // #7285
 
         executor
             .init_kv_cache_gpu(num_layers, num_heads, num_kv_heads, head_dim, max_seq_len)
@@ -773,7 +773,7 @@ impl OwnedQuantizedModelCuda {
         // the KV-cache budget below.
         let num_layers = model.layers.len();
         let num_kv_heads = model.config.num_kv_heads; // PAR-021 GQA support
-        let head_dim = model.config.hidden_dim / model.config.num_heads;
+        let head_dim = model.config.head_dim(); // #7285
 
         if let Err(error) = Self::configure_executor(&mut executor, &model, max_seq_len) {
             return Err(CudaInitError {

@@ -17,11 +17,9 @@ fn parity_gate(cuda_model: &mut OwnedQuantizedModelCuda) -> Result<f32> {
     let hidden_dim = cuda_model.model.config.hidden_dim;
     let num_heads = cuda_model.model.config.num_heads;
     let num_kv_heads = cuda_model.model.config.num_kv_heads;
-    let head_dim = if num_heads > 0 {
-        hidden_dim / num_heads
-    } else {
-        0
-    };
+    // #7285: head_dim comes from the model config (explicit GGUF value, else
+    // hidden/heads), never hidden/heads alone: those differ on Qwen3-0.6B.
+    let head_dim = cuda_model.model.config.head_dim();
     let kv_dim = num_kv_heads * head_dim;
     let num_layers = cuda_model.model.config.num_layers;
 
