@@ -59,8 +59,35 @@
 # usage: [MODELS_T1_MEASURE=ladder|crux] models_t1.sh <version> <release-commit> <out-dir>
 # exit:  0 GO on both hosts  ·  1 NO-GO  ·  2 usage/ENV (the caller STOPs on any non-zero)
 set -uo pipefail
-LOCAL_HOST=lambda
-REMOTE_HOST=gx10
+# Host pair from the tracked conf BESIDE this script (PMAT-7497), parsed as DATA, never sourced: a conf line
+# that is not a blank, a #comment or LOCAL_HOST=/REMOTE_HOST=<[a-z0-9][a-z0-9-]*> is refused (exit 2) and never
+# run; a key set twice, a missing key, one host for both, a host outside the operator's set (REMOTE_HOST only
+# gx10, kfocus or jetson, never lambda) and a machine that is not the host it is named as are refused too (F3:
+# a swapped pair run on lambda would measure one box twice). No env names the conf and none prints the pair: a
+# caller cannot redirect the gate to another file, and no early exit 0 exists before the judge. The check
+# points it elsewhere by running a COPY of this script beside its own conf (check_release_models_t1.sh fixture_build).
+mt_conf="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/models_t1_hosts.conf"
+[ -f "$mt_conf" ] && [ -s "$mt_conf" ] || { echo "MODELS-LEG config ENV: host config $mt_conf missing or empty"; exit 2; }
+LOCAL_HOST="" REMOTE_HOST="" # an inherited value must not survive a conf that omits it
+while IFS= read -r mt_line || [ -n "$mt_line" ]; do
+    case $mt_line in ''|'#'*) continue ;; esac
+    case $mt_line in
+        LOCAL_HOST=*) mt_k=LOCAL_HOST ;;
+        REMOTE_HOST=*) mt_k=REMOTE_HOST ;;
+        *) echo "MODELS-LEG config ENV: $mt_conf has a line that is not LOCAL_HOST=/REMOTE_HOST=: refused, not run"; exit 2 ;;
+    esac
+    mt_v=${mt_line#*=}
+    # no leading dash: the value reaches ssh as its host argument, where -x is an option
+    [[ $mt_v =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "MODELS-LEG config ENV: $mt_k value does not match ^[a-z0-9][a-z0-9-]*\$"; exit 2; }
+    [ -z "${!mt_k}" ] || { echo "MODELS-LEG config ENV: $mt_k set twice in $mt_conf"; exit 2; }
+    printf -v "$mt_k" '%s' "$mt_v"
+done < "$mt_conf"
+[ -n "$LOCAL_HOST" ] && [ -n "$REMOTE_HOST" ] || { echo "MODELS-LEG config ENV: $mt_conf must set LOCAL_HOST and REMOTE_HOST"; exit 2; }
+[ "$LOCAL_HOST" != "$REMOTE_HOST" ] || { echo "MODELS-LEG config ENV: LOCAL_HOST == REMOTE_HOST ($LOCAL_HOST): one host judged twice is never GO"; exit 2; }
+# Operator 2026-11-27 (#7498): crux and whisper run only on gx10, kfocus and jetson. The remote is one of them;
+# LOCAL_HOST may still be lambda, the host the 0.76 release runs this script on, until the conf moves it.
+case $LOCAL_HOST in lambda|gx10|kfocus|jetson) ;; *) echo "MODELS-LEG config ENV: LOCAL_HOST=$LOCAL_HOST is not one of lambda gx10 kfocus jetson"; exit 2 ;; esac
+case $REMOTE_HOST in gx10|kfocus|jetson) ;; *) echo "MODELS-LEG config ENV: REMOTE_HOST=$REMOTE_HOST is not one of gx10 kfocus jetson (lambda is never the remote)"; exit 2 ;; esac
 # A fresh `cargo build --release -p apr-cli --bin apr --features cuda --locked` target, in KiB: the
 # gx10 leg REFUSES up front, as ENV, when its filesystem has less free (after the sweep; the run's
 # own dir is always new, so nothing in it counts). Half-building on a 97-99% disk fails later and
@@ -119,6 +146,18 @@ mt_version_is() {
     h=${1#"apr $2 ("}; h=${h%")"}
     [[ $h =~ ^[0-9a-f]{7,40}$ ]] || return 1
     case $3 in "$h"*) return 0 ;; *) return 1 ;; esac
+}
+
+# mt_host_id HOSTNAME -> the host id a box answers to, the mapping model_ladder.sh's host_id uses (gx10*, *lambda*)
+# plus kfocus and jetson; anything else is its own name. Sent ahead of the remote leg with `declare -f`.
+mt_host_id() {
+    case $1 in
+        gx10*) printf 'gx10' ;;
+        *[Ll]ambda*) printf 'lambda' ;;
+        *[Kk]focus*) printf 'kfocus' ;;
+        *[Jj]etson*) printf 'jetson' ;;
+        *) printf '%s' "$1" ;;
+    esac
 }
 
 mt_self_test() {
@@ -183,6 +222,20 @@ refused~apr 9.9.9 ()~an empty sha
 refused~ apr 9.9.9 (42b9873da7)~leading space
 refused~~an empty line (no binary, or --version failed)
 VERSION
+    # mt_host_id: the hostnames of the boxes the conf may name map to their ids; nothing else does (PMAT-7497)
+    while IFS='~' read -r want line; do
+        got=$(mt_host_id "$line")
+        if [ "$got" = "$want" ]; then echo "  ok   host id: '$line' -> '$want'"; else echo "  FAIL host id: '$line' wanted '$want', got '$got'"; fail=1; fi
+    done <<'HOSTID'
+gx10~gx10-a5b5
+lambda~noah-Lambda-Vector
+lambda~lambda-labs
+kfocus~kfocus-ir14
+jetson~jetson-orin
+intel~intel
+x-gx10~x-gx10
+~
+HOSTID
     # mt_fetch_commit against a local origin: a commit on main or on release/VER is found, one on
     # another branch or on the release branch of another version is not
     local o="$d/origin" c n=0 which sha s_main s_rel s_other
@@ -217,6 +270,10 @@ FETCH
     return "$fail"
 }
 if [ "${1:-}" = --self-test ]; then mt_self_test; exit $?; fi
+# This box must BE LOCAL_HOST: its leg runs in-process and its receipt is named after LOCAL_HOST, so a conf run on
+# another machine would measure that machine under LOCAL_HOST's name (PMAT-7497 F3). Refused before the lock.
+mt_me=$(mt_host_id "$(hostname 2> /dev/null)")
+[ "$mt_me" = "$LOCAL_HOST" ] || { echo "MODELS-LEG config ENV: this machine identifies as '$mt_me', not LOCAL_HOST=$LOCAL_HOST -- run models_t1.sh on $LOCAL_HOST or change the conf; refused, nothing built"; exit 2; }
 
 USAGE="usage: [MODELS_T1_MEASURE=ladder|crux] models_t1.sh <version> <release-commit> <out-dir>"
 MEASURE=${MODELS_T1_MEASURE:-ladder}
@@ -291,8 +348,10 @@ local_leg() {
 
 remote_leg() {
     # mt_fetch_commit and mt_version_is go first on the stream, so the remote leg runs the code the self-test ran
-    { declare -f mt_fetch_commit mt_version_is; cat <<HOST
+    { declare -f mt_fetch_commit mt_version_is mt_host_id; cat <<HOST
 set -u
+mt_rid=\$(mt_host_id "\$(hostname 2> /dev/null)")
+[ "\$mt_rid" = "$REMOTE_HOST" ] || { echo "MODELS-LEG $REMOTE_HOST ENV: ssh $REMOTE_HOST reached a host that identifies as '\$mt_rid', not $REMOTE_HOST -- refused before the lock, the sweep and the build"; exit 3; }
 repo="\$HOME/src/aprender"; base="\$HOME/.cache/aprender-release"; dir="\$base/rel-$ver-$run"
 mkdir -p "\$base" || exit 3
 exec 8>> "\$base/.lock" || exit 3

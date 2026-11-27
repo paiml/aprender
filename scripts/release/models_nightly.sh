@@ -94,6 +94,19 @@ ws_version() {
          s && /^version[[:space:]]*=/ { sub(/^version[[:space:]]*=[[:space:]]*"/, ""); sub(/".*$/, ""); print; exit }'
 }
 
+# mt_entry GITDIR REV -> the verdict's entry key: REV's models_t1.sh blob and, when REV carries it, the blob of the
+# host conf beside it (PMAT-7497: the pair is data there, not a literal in the script, so the script blob alone no
+# longer pins which hosts were measured). A REV without the conf gives the key it always gave.
+mt_entry() {
+    local s c
+    s=$(git -C "$1" rev-parse -q --verify "$2:scripts/release/models_t1.sh") || return 1
+    if c=$(git -C "$1" rev-parse -q --verify "$2:scripts/release/models_t1_hosts.conf"); then
+        printf 'scripts/release/models_t1.sh@%s scripts/release/models_t1_hosts.conf@%s\n' "$s" "$c"
+    else
+        printf 'scripts/release/models_t1.sh@%s\n' "$s"
+    fi
+}
+
 # vget KEY < verdict -> the value of KEY=
 vget() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }'; }
 
@@ -337,10 +350,10 @@ verify() {
     ver=$(git show "$c:Cargo.toml" 2> /dev/null | ws_version)
     v=$(vget version < "$b/verdict")
     [ -n "$ver" ] && [ "$v" = "$ver" ] || { printf 'not_measured\tthe bundle measured version %s, C is %s\n' "$v" "${ver:-unreadable}"; return 0; }
-    blob=$(git rev-parse -q --verify "$c:scripts/release/models_t1.sh")
+    blob=$(mt_entry . "$c")
     v=$(vget entry < "$b/verdict")
-    [ -n "$blob" ] && [ "$v" = "scripts/release/models_t1.sh@$blob" ] \
-        || { printf 'not_measured\tthe bundle was not measured by C'"'"'s models_t1.sh (%s)\n' "$v"; return 0; }
+    [ -n "$blob" ] && [ "$v" = "$blob" ] \
+        || { printf 'not_measured\tthe bundle was not measured by C'"'"'s models_t1.sh and host conf (%s)\n' "$v"; return 0; }
     sha9=$(vget sha9 < "$b/verdict")
     case $sha9 in "${c:0:9}"*) ;; *) printf 'not_measured\tthe bundle sha9 %s is not a prefix of C\n' "$sha9"; return 0 ;; esac
     replay=$(classify "$b" "$(vget t1_rc < "$b/verdict")" "$ver" "$sha9")
@@ -483,7 +496,7 @@ run() { # run REPO WORK COMMIT TIMEOUT
     [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || refuse "C's [workspace.package] version '$ver' is not X.Y.Z"
     grep -qE '^version\.workspace[[:space:]]*=[[:space:]]*true' -- "$wt/crates/apr-cli/Cargo.toml" \
         || refuse "apr-cli does not take the workspace version at C: its apr --version would not read $ver"
-    blob=$(git -C "$wt" rev-parse -q --verify HEAD:scripts/release/models_t1.sh) || refuse "C has no scripts/release/models_t1.sh"
+    blob=$(mt_entry "$wt" HEAD) || refuse "C has no scripts/release/models_t1.sh"
     sha9=$(git -C "$wt" rev-parse --short=9 HEAD)
     rm -rf -- "${out:?}"; mkdir -p -- "$out" "$work/target" || die "cannot create $out"
     : > "$work/foreign.log"
@@ -515,7 +528,7 @@ run() { # run REPO WORK COMMIT TIMEOUT
     done
     [ ! -f "$out/judge.log" ] || tail -n 200 -- "$out/judge.log" > "$b/judge.log"
     [ ! -s "$work/foreign.log" ] || head -n 1 -- "$work/foreign.log" > "$b/concurrent"
-    seal "$b" "$c" "$sha9" "$ver" "scripts/release/models_t1.sh@$blob" "$rc" || die "cannot seal $b"
+    seal "$b" "$c" "$sha9" "$ver" "$blob" "$rc" || die "cannot seal $b"
     git -C "$repo" worktree remove --force "$wt" > /dev/null 2>&1
     cls=$(vget state < "$b/verdict")
     say "RUN $cls at $sha9 ($ver, models_t1 rc $rc): $(vget reason < "$b/verdict")"
@@ -850,6 +863,7 @@ echo "judge ran" > "$out/judge.log"
 if [ "$red" = 0 ]; then echo "MODELS GO on lambda and gx10 at $sha9: the judge passed both receipts ($want)"; exit 0; fi
 echo "MODELS NO-GO: the judge found red or missing cells (rc 1):"; exit 1
 STUB
+    printf 'LOCAL_HOST=lambda\nREMOTE_HOST=gx10\n' > "$tmp/src/scripts/release/models_t1_hosts.conf"
     git -C "$tmp/src" add -A && git -C "$tmp/src" commit -q -m c1 && git -C "$tmp/src" push -q "$bare" main && git clone -q "$bare" "$repo" || exit 3
     c1=$(git -C "$tmp/src" rev-parse HEAD)
     : > "$tmp/ps.none"; export MODELS_NIGHTLY_PS_TABLE="$tmp/ps.none"   # hermetic: see ps_table
@@ -858,6 +872,7 @@ STUB
     row e2e_run_judges_the_full_ladder 0 "MODELS_T1_SCOPE=none" "" -- cat "$work/models-t1.log"
     row e2e_run_names_the_ladder_measure 0 "MODELS_T1_MEASURE=ladder" "" -- cat "$work/models-t1.log"
     row e2e_bundle_is_sealed 0 "OK" "FAILED" -- bash -c "cd '$work/pending/$c1' && sha256sum -c SHA256SUMS"
+    row e2e_bundle_pins_the_host_conf 0 "entry=scripts/release/models_t1.sh@$(git -C "$tmp/src" rev-parse "$c1:scripts/release/models_t1.sh") scripts/release/models_t1_hosts.conf@$(git -C "$tmp/src" rev-parse "$c1:scripts/release/models_t1_hosts.conf")" "" -- cat "$work/pending/$c1/verdict"
     row e2e_second_run_on_c_skips_pending 0 "SKIP: ${c1:0:9} is already measured green" "RUN " -- env STUB_MARK="$tmp/mark" bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
     row e2e_skip_ran_no_measurer 1 "" "" -- test -e "$tmp/mark"
     row e2e_publish 0 "PUBLISHED $EV_BRANCH" "" -- nightly --publish --repo "$repo" --work "$work"
@@ -945,7 +960,7 @@ STUB
         rm -rf -- "${b:?}"; mkdir -p "$b"
         printf '{"apr_version":"apr %s (%s)","executed":3,"red":0}\n' "$ST_V" "$s9" | tee "$b/lambda.json" > "$b/gx10.json"
         printf 'MODELS GO on lambda and gx10 at %s: the judge passed both receipts\n' "$s9" > "$b/models-t1.log"
-        seal "$b" "$c1" "$s9" "$ST_V" "scripts/release/models_t1.sh@$(git -C "$clone" rev-parse "$c1:scripts/release/models_t1.sh")" "$2"
+        seal "$b" "$c1" "$s9" "$ST_V" "$(mt_entry "$clone" "$c1")" "$2"
     }
     reseal() { (cd "$1" && find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' | LC_ALL=C sort | xargs sha256sum -- > SHA256SUMS); }
     mkb good 0
@@ -960,6 +975,11 @@ STUB
     row verify_other_version_is_not_measured 0 "measured version 1.2.3" "RELAY green" -- rl "$c1" "$tmp/v/ver"
     mkb entry 0; sed -i 's/^entry=.*/entry=scripts\/release\/models_t1.sh@0000/' "$tmp/v/entry/verdict"; reseal "$tmp/v/entry"
     row verify_other_entry_point_is_not_measured 0 "not measured by C's models_t1.sh" "RELAY green" -- rl "$c1" "$tmp/v/entry"
+    # PMAT-7497: the host conf is pinned with the script: another conf blob, or no conf pin at all, is not C's run
+    mkb conf 0; sed -i 's/models_t1_hosts\.conf@[0-9a-f]*/models_t1_hosts.conf@0000/' "$tmp/v/conf/verdict"; reseal "$tmp/v/conf"
+    row verify_other_host_conf_is_not_measured 0 "not measured by C's models_t1.sh and host conf" "RELAY green" -- rl "$c1" "$tmp/v/conf"
+    mkb noconf 0; sed -i 's/ scripts\/release\/models_t1_hosts\.conf@[0-9a-f]*$//' "$tmp/v/noconf/verdict"; reseal "$tmp/v/noconf"
+    row verify_unpinned_host_conf_is_not_measured 0 "not measured by C's models_t1.sh and host conf" "RELAY green" -- rl "$c1" "$tmp/v/noconf"
     mkb replay 0; sed -i 's/"red":0/"red":1/' "$tmp/v/replay/lambda.json"; reseal "$tmp/v/replay"
     row verify_replay_disagreeing_is_not_measured 0 "the replay says red, the bundle recorded green" "RELAY green" -- rl "$c1" "$tmp/v/replay"
     mkb rc1 1
@@ -1063,7 +1083,8 @@ m12_foreign_run_ignored	s/\[ -z "\$f" \] [|][|] refuse "another models_t1/true |
 m13_concurrent_red_kept	s/if \[ -n "\$red" \] && \[ -f "\$b\/concurrent" \]; then/if false; then/
 m14_timeout_counted_red	s/124[|]137[)] line="models_t1 timed out/124|137) printf "red\\tx\\n"; return 0; line="/
 m15_version_unchecked	s/\[ -n "\$ver" \] && \[ "\$v" = "\$ver" \] [|][|]/true ||/
-m16_entry_unchecked	s/\[ -n "\$blob" \] && \[ "\$v" = "scripts\/release\/models_t1.sh@\$blob" \] \\$/true \\/
+m16_entry_unchecked	s/\[ -n "\$blob" \] && \[ "\$v" = "\$blob" \] \\$/true \\/
+m75_host_conf_unpinned	s/"\$2:scripts\/release\/models_t1_hosts\.conf"\)/"$2:scripts\/release\/models_t1_hosts.conf.none")/
 m17_unlisted_file_ignored	s/\[ "\$listed" = "\$have" \] [|][|]/true ||/
 m18_token_guard_dropped_from_run	0,/^    no_token [|][|] refuse/s/^    no_token [|][|] refuse/    true || refuse/
 m19_prune_kept_everything	s/^    tail -n "\$KEEP" -- "\$idx"/    cat -- "$idx"/
