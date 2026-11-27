@@ -9,6 +9,7 @@
 
 pub mod fill;
 pub mod hex;
+pub mod index;
 pub mod plot;
 pub mod projection;
 pub mod reader;
@@ -17,6 +18,8 @@ pub mod reader;
 mod fill_tests;
 #[cfg(test)]
 mod hex_tests;
+#[cfg(test)]
+mod index_tests;
 #[cfg(test)]
 mod plot_tests;
 #[cfg(test)]
