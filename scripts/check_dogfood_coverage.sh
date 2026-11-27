@@ -171,12 +171,11 @@ PY
 material_cited_changes() {
   local root="$1" base="$2" list="$3" caps f cap out
   # evidence_path is ONE csv field, read with the csv module: a field that holds
-  # commas is quoted and must not be split on them (#7370). Every path a field
-  # names gets the largest line any cite in that field gives it; a whole-file
-  # cite (no line) gives the whole file. Last cited line per file.
+  # commas is quoted and must not be split on them (#7370). Each cite gives its
+  # own path the largest line in its own spec; a whole-file cite (no line) gives
+  # the whole file. Last cited line per file, over every row.
   caps="$(python3 - "$root/$LEDGER" <<'PY'
 import csv, re, sys
-PATH = r"[A-Za-z0-9_./-]+\.(?:rs|toml|yml|yaml|md|sh|py)"
 EXT = r"\.(?:rs|toml|yml|yaml|md|sh|py)"
 TOKEN = re.compile(r"(?<![A-Za-z0-9_./-])[A-Za-z0-9_./-]+")
 SPEC = re.compile(r":(\d+)(?:-(\d+))?((?:,\d+(?:-\d+)?)*)"
@@ -209,14 +208,15 @@ with open(sys.argv[1], newline="", encoding="utf-8") as fh:
         if malformed or not p or None in r:
             bad.append(p or "<empty>")
             continue
-        nums = [int(x) for x in re.findall(r"\d+", re.sub(PATH, " ", p))]
         for f, ranges in found:
             if ranges is None:
                 v = 999999999
             else:
+                # the cap is the largest line in THIS cite's own spec, not any
+                # number in the field (a "#7370" note or a sibling cite is not a line)
                 if any(lo > hi for lo, hi in ranges):
                     bad.append(p)
-                v = max(nums) if nums else 999999999
+                v = max(hi for _, hi in ranges)
             caps[f] = max(caps.get(f, 0), v)
 for p in bad:
     print("!\t" + p)
