@@ -26,34 +26,23 @@ contract_count: 1837
 
 ## Quick Start
 
-The first run, end to end: pull a model, run it, list it, serve it, ask it a question over HTTP, and remove it. Install the CLI first (see [Install](#install)). The script needs `bash`, `curl` and `jq`, and it runs with a temporary `HOME`.
+The first run: run a model, list it, serve it, ask it a question over HTTP, and remove it. Install the CLI first (see [Install](#install)); the HTTP step uses `curl`. These are the target commands of the 0.78.0 first-run plan ([#7477](https://github.com/paiml/aprender/issues/7477)). Not all of them work on `apr 0.75.4` yet.
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache
-S=
-trap '[ -z "$S" ] || kill "$S" 2>/dev/null || true; rm -rf "${D:?}"' EXIT
-cd "$D"
 M=Qwen/Qwen2.5-Coder-0.5B-Instruct
 
-# run
-apr run hf://$M "Explain quicksort in three sentences." --temperature 0 > reply.txt
-[ "$(wc -w < reply.txt)" -gt 32 ]   # more than 32 words is more than 32 tokens
-! grep -q '=== ' reply.txt
-# list
-apr list > list.txt; grep -Fq "$M" list.txt
-# serve, then ask over HTTP
-apr serve run $M --port 18080 & S=$!
-ok=0; for i in $(seq 1 60); do curl -sf -o /dev/null localhost:18080/health && { ok=1; break; }; sleep 1; done; [ "$ok" = 1 ]
+apr run hf://$M "Explain quicksort in three sentences." --temperature 0
+apr list
+
+apr serve run $M --port 18080 &
+# wait until the server answers on /health, then ask
 curl -sf localhost:18080/v1/chat/completions -H content-type:application/json \
-  -d '{"model":"'$M'","messages":[{"role":"user","content":"What is 2+2?"}]}' > chat.json
-jq -e '.choices[0].message.content | test("4")' chat.json > /dev/null
-kill "$S"; wait "$S" || true; S=
-# remove
+  -d '{"model":"'$M'","messages":[{"role":"user","content":"What is 2+2?"}]}'
+
 apr rm $M
-apr list > list.txt; ! grep -Fq "$M" list.txt
 ```
+
+The server started with `&` keeps running until you stop it (`kill %1`).
 
 ## What is Aprender?
 
@@ -164,10 +153,24 @@ mdbook serve book                               # walkthrough docs
 
 ## Install
 
+Pre-built binary (Linux x86_64/aarch64 only today; on other platforms use `cargo install`):
+
 ```text
-cargo install aprender    # installs the `apr` binary
+curl -LsSf https://paiml.com/apr/install.sh | sh
+```
+
+To read the script before it runs, download it with `curl -LsSf https://paiml.com/apr/install.sh -o install.sh`, review it, then run `sh install.sh`. The installer is POSIX `sh` and checks the downloaded release archive against its published `.sha256` before installing.
+
+From crates.io:
+
+```text
+cargo install aprender                    # CPU ONLY - no GPU backend is compiled in
+cargo install aprender --features cuda    # NVIDIA GPU acceleration
+cargo install aprender --features full    # everything (training, visualization, zram)
 apr --version
 ```
+
+For release notes see [GitHub Releases](https://github.com/paiml/aprender/releases).
 
 ## A Qwen story
 
