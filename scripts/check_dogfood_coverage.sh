@@ -402,8 +402,14 @@ check_freshness() {
 # G2.1 cites (#7370). Every evidence_path cite must name a file that exists and
 # a line range inside it (1 <= N <= M <= file length). Multi-cite fields are
 # read whole (csv module), and every "path:N[-M][,N[-M]...]" in them is checked.
-# HONEST LIMIT: a cite that shifts to another in-range line, or names the wrong
-# symbol, passes here; there is no symbol column to check it against.
+# WHAT IS NOT CHECKED (narrowed, #7370; a symbol check was judged larger than the
+# gate it would sit in, and the ledger has no symbol column to check against):
+#   - a cite that shifts to another IN-RANGE line, or names the wrong symbol,
+#     passes here (only existence, range and well-formedness are checked)
+#   - a whole-file path whose extension is not in the list above (or a bare
+#     Makefile-style name) is not read; with a ":line" spec it FAILS as malformed
+#   - an absolute or ../ path is read as given, so it can name a file outside
+#     the repo (existence and line count only; no content is judged)
 # ---------------------------------------------------------------------------
 check_cites() {
   local root="$1" out rc=0
