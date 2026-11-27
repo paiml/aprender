@@ -27987,3 +27987,27 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3863
+- id: PMAT-7509
+  github_issue: 7509
+  item_type: task
+  title: 'MAP-1 (APR-MAP-001): geo kernel in aprender-viz - readers, four projections, simplification, polygon fill, Coord::Geo'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-27T20:10:07Z
+  updated: 2026-11-27T20:10:07Z
+  spec: null
+  acceptance_criteria:
+  - '[ ] For each projection, forward then inverse returns the input within a stated epsilon **for points inside that projection''s stated valid domain**, and a point outside it returns an error, not a number (property tests)'
+  - '[ ] each projection maps a committed table of reference points to committed reference coordinates within a stated epsilon (one table per projection)'
+  - '[ ] a committed GeoJSON fixture and the TopoJSON encoding of the same shapes decode to equal rings'
+  - '[ ] each simplifier keeps the two end points, never adds a point, at tolerance 0 returns its input, and at a stated tolerance above 0 turns a committed fixture polyline into a committed reference polyline with fewer points (one reference per algorithm)'
+  - '[ ] a polygon with a hole leaves a pixel inside the hole unfilled and a pixel in the ring filled, in the framebuffer and in the SVG path'
+  - '[ ] a three-shape golden SVG matches a committed file, and changing one coordinate of the fixture changes it'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 7507

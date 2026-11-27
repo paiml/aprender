@@ -150,6 +150,10 @@ plot-cli = ["dep:clap", "dep:serde", "dep:serde-saphyr", "batuta-common/cli-role
 # SVG output support
 svg = []
 
+# Map projections (Albers equal-area, AlbersUSA, Mercator, equirectangular). Pure Rust, no
+# dependencies: spherical formulas from Snyder, USGS Professional Paper 1395 (PMAT-7509).
+geo = []
+
 # APEX-001 EV-2a. Both are NON-DEFAULT on purpose: the row's own evidence is that
 # `cargo tree -p aprender-viz` with default features is byte-identical before and after
 # this ticket, so no existing consumer pays for skrifa/kurbo/resvg.

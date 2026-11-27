@@ -1,0 +1,18 @@
+//! Map projections on a sphere of radius `R` (`geo` feature).
+//!
+//! The formulas are the spherical forms in Snyder, *Map Projections: A Working Manual*
+//! (USGS Professional Paper 1395). Each projection implements [`Projection`]: geographic
+//! degrees in, plane coordinates in units of `R` out (multiply by `R` for the plane).
+//!
+//! Invalid input is an error, never a number: a non-finite value, a point outside the
+//! projection's domain, or a non-finite result is a [`GeoError`].
+
+pub mod projection;
+
+#[cfg(test)]
+mod projection_tests;
+
+pub use projection::{
+    AlbersEqualArea, AlbersUsa, Equirectangular, GeoError, Mercator, Projection,
+    MERCATOR_MAX_LAT_DEG,
+};
