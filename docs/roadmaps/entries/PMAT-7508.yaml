@@ -1,0 +1,20 @@
+- id: PMAT-7508
+  github_issue: 7508
+  item_type: task
+  title: 'MAP-0 (APR-MAP-001): pv contracts for projection, hex grid, camera, layer cache, URL state'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-27T19:37:30Z
+  updated: 2026-11-27T19:37:30Z
+  spec: null
+  acceptance_criteria:
+  - '[ ] `pv validate` passes on each'
+  - '[ ] each contract names a mutation that turns its test red'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 7507
