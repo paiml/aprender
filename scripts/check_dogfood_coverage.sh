@@ -177,29 +177,45 @@ material_cited_changes() {
   caps="$(python3 - "$root/$LEDGER" <<'PY'
 import csv, re, sys
 PATH = r"[A-Za-z0-9_./-]+\.(?:rs|toml|yml|yaml|md|sh|py)"
-cite = re.compile(r"(" + PATH + r")(:\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)?")
-BARE = re.compile(PATH + r":")
-GOOD = re.compile(PATH + r":\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*(?![\w./-])")
+EXT = r"\.(?:rs|toml|yml|yaml|md|sh|py)"
+TOKEN = re.compile(r"(?<![A-Za-z0-9_./-])[A-Za-z0-9_./-]+")
+SPEC = re.compile(r":(\d+)(?:-(\d+))?((?:,\d+(?:-\d+)?)*)"
+                  r"(?=\s|[)\];]|\Z|,\s+[A-Za-z0-9_./-]+" + EXT + r"(?![A-Za-z0-9_./-]))")
+def parse_cites(p):
+    """(found, malformed), as check_cites reads them: same grammar, same terminators."""
+    found, malformed = [], []
+    for t in TOKEN.finditer(p):
+        tok, end = t.group(0), t.end()
+        if "/" not in tok and "." not in tok:
+            continue
+        if p.startswith(":", end):
+            m = SPEC.match(p, end)
+            if m is None or not re.search(EXT + r"$", tok):
+                malformed.append(p[t.start():end + 40])
+                continue
+            ranges = [(int(m.group(1)), int(m.group(2) or m.group(1)))]
+            ranges += [tuple(int(x) for x in s.split("-")) if "-" in s else (int(s), int(s))
+                       for s in m.group(3)[1:].split(",") if s]
+            found.append((tok, ranges))
+        elif re.search(EXT + r"$", tok):
+            found.append((tok, None))
+    return found, malformed
 caps, bad = {}, []
 with open(sys.argv[1], newline="", encoding="utf-8") as fh:
     for r in csv.DictReader(fh):
-        p = r["evidence_path"].strip()
-        hits = list(cite.finditer(p))
-        # a malformed cite ("m.rs:1-2x", "m.rs:1-", "m.rs:abc") fails closed
-        if any(not GOOD.match(p, b.start()) for b in BARE.finditer(p)):
-            bad.append(p)
-        if not hits:
+        p = (r.get("evidence_path") or "").strip()
+        found, malformed = parse_cites(p)
+        # a malformed or empty cite fails closed; check_cites reports the same row
+        if malformed or not p:
+            bad.append(p or "<empty>")
             continue
         nums = [int(x) for x in re.findall(r"\d+", re.sub(PATH, " ", p))]
-        for h in hits:
-            f, spec = h.group(1), h.group(2)
-            if spec is None:
+        for f, ranges in found:
+            if ranges is None:
                 v = 999999999
             else:
-                for seg in spec[1:].split(","):
-                    parts = [int(x) for x in seg.split("-")]
-                    if len(parts) == 2 and parts[0] > parts[1]:
-                        bad.append(p)
+                if any(lo > hi for lo, hi in ranges):
+                    bad.append(p)
                 v = max(nums) if nums else 999999999
             caps[f] = max(caps.get(f, 0), v)
 for p in bad:
@@ -394,11 +410,33 @@ check_cites() {
   out="$(python3 - "$root" "$root/$LEDGER" <<'PY'
 import csv, os, re, sys
 root, ledger = sys.argv[1], sys.argv[2]
-PATH = r"[A-Za-z0-9_./-]+\.(?:rs|toml|yml|yaml|md|sh|py)"
-lead = re.compile(r"^(" + PATH + r")")
-cite = re.compile(r"(" + PATH + r"):(\d+)(?:-(\d+))?((?:,\d+(?:-\d+)?)*)")
-BARE = re.compile(PATH + r":")
-GOOD = re.compile(PATH + r":\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*(?![\w./-])")
+EXT = r"\.(?:rs|toml|yml|yaml|md|sh|py)"
+TOKEN = re.compile(r"(?<![A-Za-z0-9_./-])[A-Za-z0-9_./-]+")
+# A line spec must END at a terminator: end of field, whitespace, a closing
+# bracket, or ", <next path>". Anything else ("1,2x", "1-", "1,abc", "1:9",
+# "1#L9") is malformed. It is never accepted as a shorter spec that matches.
+SPEC = re.compile(r":(\d+)(?:-(\d+))?((?:,\d+(?:-\d+)?)*)"
+                  r"(?=\s|[)\];]|\Z|,\s+[A-Za-z0-9_./-]+" + EXT + r"(?![A-Za-z0-9_./-]))")
+def parse_cites(p):
+    """(found, malformed). found: (path, ranges); ranges None = a whole-file cite.
+    Every path-like token is a cite, wherever it sits in the field."""
+    found, malformed = [], []
+    for t in TOKEN.finditer(p):
+        tok, end = t.group(0), t.end()
+        if "/" not in tok and "." not in tok:
+            continue
+        if p.startswith(":", end):
+            m = SPEC.match(p, end)
+            if m is None or not re.search(EXT + r"$", tok):
+                malformed.append(p[t.start():end + 40])
+                continue
+            ranges = [(int(m.group(1)), int(m.group(2) or m.group(1)))]
+            ranges += [tuple(int(x) for x in s.split("-")) if "-" in s else (int(s), int(s))
+                       for s in m.group(3)[1:].split(",") if s]
+            found.append((tok, ranges))
+        elif re.search(EXT + r"$", tok):
+            found.append((tok, None))
+    return found, malformed
 lengths, problems, n_cites = {}, [], 0
 def length(path):
     if path not in lengths:
@@ -407,31 +445,24 @@ def length(path):
     return lengths[path]
 with open(ledger, newline="", encoding="utf-8") as fh:
     for n, r in enumerate(csv.DictReader(fh), 2):
-        p = r["evidence_path"].strip()
+        p = (r.get("evidence_path") or "").strip()
         if not p:
             problems.append(f"line {n}: empty evidence_path (a row with no cite is not evidence)")
             continue
-        for b in BARE.finditer(p):
-            if not GOOD.match(p, b.start()):
-                problems.append(f"line {n}: malformed cite at {p[b.start():b.start() + 40]!r}")
-        m = lead.match(p)
-        if not m:
-            continue  # G2.1 freshness already counts rows with no resolvable path
-        if not os.path.isfile(os.path.join(root, m.group(1))):
-            problems.append(f"line {n}: cited file {m.group(1)} does not exist")
-            continue
-        for c in cite.finditer(p):
-            f = c.group(1)
+        found, malformed = parse_cites(p)
+        for bad in malformed:
+            problems.append(f"line {n}: malformed cite at {bad[:40]!r}")
+        for f, ranges in found:
             if not os.path.isfile(os.path.join(root, f)):
                 problems.append(f"line {n}: cited file {f} does not exist")
                 continue
-            ranges = [(int(c.group(2)), int(c.group(3) or c.group(2)))]
-            ranges += [tuple(int(x) for x in s.split("-")) if "-" in s else (int(s), int(s))
-                       for s in c.group(4)[1:].split(",") if s]
+            if ranges is None:
+                n_cites += 1
+                continue
             for lo, hi in ranges:
                 n_cites += 1
                 if lo < 1 or lo > hi or hi > length(f):
-                    problems.append(f"line {n}: {f}:{lo}-{hi} is out of range (file has {length(f)} lines)")
+                    problems.append(f"line {n}: {f}:{lo}-{hi} is out of range or reversed (file has {length(f)} lines)")
 if n_cites == 0 and not problems:
     # anti-vacuity: a 0-byte, header-only or all-empty ledger checks nothing
     problems.append("no cite was checked: the ledger is empty or header-only")
