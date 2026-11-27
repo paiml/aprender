@@ -105,6 +105,10 @@ fn require_default_coord(coord: &Coord) -> Result<()> {
         Coord::Fixed { .. } => {
             return Err(Error::UnsupportedCoord("coord_fixed with tile, rect or raster layers"))
         }
+        #[cfg(feature = "geo")]
+        Coord::Geo { .. } => {
+            return Err(Error::UnsupportedCoord("coord_geo with tile, rect or raster layers"))
+        }
     }
     Ok(())
 }

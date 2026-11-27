@@ -292,6 +292,8 @@ fn check_scope(coord: &Coord, facet: &Facet) -> Result<()> {
         Coord::Cartesian { .. } => Some("coord_cartesian limits with distribution layers"),
         Coord::Polar { .. } => Some("coord_polar with distribution layers"),
         Coord::Fixed { .. } => Some("coord_fixed with distribution layers"),
+        #[cfg(feature = "geo")]
+        Coord::Geo { .. } => Some("coord_geo with distribution layers"),
     };
     if let Some(what) = refused {
         return Err(Error::UnsupportedCoord(what));

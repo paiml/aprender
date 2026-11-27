@@ -39,6 +39,7 @@ mod dist;
 mod dist_math;
 mod facet;
 mod filled;
+mod geo_plot;
 mod geom;
 mod ggplot;
 #[cfg(test)]

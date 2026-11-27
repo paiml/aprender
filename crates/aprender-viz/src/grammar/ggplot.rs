@@ -18,6 +18,7 @@ use super::data::{DataFrame, DataValue};
 use super::dist;
 use super::facet::{panels, Facet, Panel};
 use super::filled;
+use super::geo_plot;
 use super::geom::{Geom, GeomType, PointShape};
 use super::marks;
 use super::path;
@@ -377,6 +378,11 @@ impl BuiltGGPlot {
         if self.layers.iter().any(dist::is_dist) {
             return Err(Error::UnsupportedLayer(dist::NOT_DRAWN));
         }
+        let size = (self.width, self.height);
+        if let Some(fb) = geo_plot::draw(&self.layers, &self.coord, &self.facet, size, &self.theme)?
+        {
+            return Ok(fb);
+        }
         if self.layers.iter().any(|l| rects::is_rect_family(&l.geom.geom_type)) {
             // A layer `build_layer` refuses keeps its own error; an accepted one is not drawn.
             self.position_scales()?;
@@ -434,8 +440,17 @@ impl BuiltGGPlot {
             svg = svg.text_anchored(m, (m * 0.9).max(12.0), y, 12.0, ink, TextAnchor::Start);
         }
         svg = self.svg_strokes(svg)?;
+        let size = (self.width, self.height);
+        svg = geo_plot::svg_polygons(
+            &self.layers,
+            &self.coord,
+            &self.facet,
+            size,
+            self.theme.margin,
+            svg,
+        )?;
         svg = self.svg_facet_strips(svg)?;
-        if self.theme.show_axis {
+        if self.theme.show_axis && !geo_plot::is_geo(&self.coord) {
             svg = self.svg_axis_text(svg)?;
         }
         Ok(svg.render())

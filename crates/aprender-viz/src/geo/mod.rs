@@ -8,11 +8,14 @@
 //! projection's domain, or a non-finite result is a [`GeoError`].
 
 pub mod fill;
+pub mod plot;
 pub mod projection;
 pub mod reader;
 
 #[cfg(test)]
 mod fill_tests;
+#[cfg(test)]
+mod plot_tests;
 #[cfg(test)]
 mod reader_tests;
 
