@@ -82,3 +82,47 @@ pub(crate) fn check_non_negative(v: f64, what: &'static str) -> Result<(), MapEr
         Err(MapError::Negative(what))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_error_display_names_the_offending_value() {
+        let cases = [
+            (MapError::NonFinite("scale"), "scale must be finite"),
+            (
+                MapError::NonPositive("duration"),
+                "duration must be greater than zero",
+            ),
+            (MapError::Negative("margin"), "margin must not be negative"),
+            (
+                MapError::InvertedBounds,
+                "bounds minimum exceeds its maximum",
+            ),
+            (
+                MapError::ViewportMismatch,
+                "fly-to cameras must share a viewport size",
+            ),
+        ];
+        for (err, want) in cases {
+            assert_eq!(err.to_string(), want);
+            let as_std: &dyn std::error::Error = &err;
+            assert!(as_std.source().is_none());
+        }
+    }
+
+    #[test]
+    fn check_helpers_accept_valid_and_reject_invalid_values() {
+        assert_eq!(check_scale(2.0, "s"), Ok(2.0));
+        assert_eq!(check_scale(0.0, "s"), Err(MapError::NonPositive("s")));
+        assert_eq!(check_scale(f64::NAN, "s"), Err(MapError::NonFinite("s")));
+        assert_eq!(check_non_negative(0.0, "m"), Ok(()));
+        assert_eq!(check_non_negative(-1e-9, "m"), Err(MapError::Negative("m")));
+        assert_eq!(
+            check_point((1.0, f64::INFINITY), "p"),
+            Err(MapError::NonFinite("p"))
+        );
+        assert_eq!(check_finite(3.0, "f"), Ok(()));
+    }
+}
