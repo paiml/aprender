@@ -10,6 +10,16 @@ const SCHEMA: &str = include_str!("../anthropic_message_schema.json");
 const OK_BODY: &str =
     r#"{"model":"m","max_tokens":2,"messages":[{"role":"user","content":"token5"}]}"#;
 
+/// The streaming event sequence the Messages reference prescribes, in order.
+const STREAM_EVENTS: [&str; 6] = [
+    "message_start",
+    "content_block_start",
+    "content_block_delta",
+    "content_block_stop",
+    "message_delta",
+    "message_stop",
+];
+
 fn json(body: &str) -> serde_json::Value {
     serde_json::from_str(body).unwrap_or_else(|e| panic!("not JSON ({e}): {body}"))
 }
@@ -38,6 +48,22 @@ fn with_field(field: &str) -> String {
     format!("{{{field},{}", &OK_BODY[1..])
 }
 
+/// The Anthropic error envelope: `{"type":"error","error":{"type":...,"message":...}}`.
+fn assert_error_envelope(resp: &str, kind: &str) {
+    let body = json(resp);
+    assert_eq!(body["type"], "error", "{resp}");
+    assert_eq!(body["error"]["type"], kind, "{resp}");
+    assert!(body["error"]["message"].is_string(), "{resp}");
+}
+
+/// The nested `error.message` text, for checks that name the offending field.
+fn error_message(resp: &str) -> String {
+    json(resp)["error"]["message"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
+}
+
 #[tokio::test]
 async fn a_200_body_has_the_vendored_key_set() {
     let (status, resp) = send(OK_BODY).await;
@@ -49,21 +75,23 @@ async fn a_200_body_has_the_vendored_key_set() {
     assert_eq!(body["type"], "message");
     assert_eq!(body["role"], "assistant");
     assert_eq!(body["content"][0]["type"], "text");
-    assert!(body["stop_reason"].is_string(), "{resp}");
+    // OK_BODY caps generation at 2 tokens, so the reply stops on the length limit.
+    assert_eq!(body["stop_reason"], "max_tokens", "{resp}");
     assert!(body["usage"]["input_tokens"].is_u64(), "{resp}");
     assert!(body["usage"]["output_tokens"].is_u64(), "{resp}");
 }
 
 #[tokio::test]
-async fn a_stream_starts_with_message_start_and_ends_with_message_stop() {
+async fn a_stream_emits_the_full_event_sequence_in_order() {
     let (status, resp) = send(&with_field(r#""stream":true"#)).await;
     assert_eq!(status, StatusCode::OK, "{resp}");
-    let events: Vec<&str> = resp
+    let mut events: Vec<&str> = resp
         .lines()
         .filter_map(|l| l.strip_prefix("event: "))
         .collect();
-    assert_eq!(events.first(), Some(&"message_start"), "{resp}");
-    assert_eq!(events.last(), Some(&"message_stop"), "{resp}");
+    // One `content_block_delta` is emitted per text fragment; collapse the repeats.
+    events.dedup();
+    assert_eq!(events, STREAM_EVENTS, "{resp}");
 }
 
 /// aprender#2375: a temperature no sampler can serve must not reach one.
@@ -72,8 +100,8 @@ async fn an_unservable_temperature_is_refused() {
     for t in ["-1", "1e40"] {
         let (status, resp) = send(&with_field(&format!("\"temperature\":{t}"))).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "temperature {t}: {resp}");
-        assert_eq!(json(&resp)["type"], "error", "{resp}");
-        assert!(resp.contains("temperature must be"), "{resp}");
+        assert_error_envelope(&resp, "invalid_request_error");
+        assert!(error_message(&resp).contains("temperature must be"), "{resp}");
     }
 }
 
@@ -91,8 +119,8 @@ async fn unsupported_fields_are_refused_by_name() {
     ] {
         let (status, resp) = send(&with_field(field)).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{name}: {resp}");
-        assert_eq!(json(&resp)["type"], "error", "{resp}");
-        assert!(resp.contains(name), "{name}: {resp}");
+        assert_error_envelope(&resp, "invalid_request_error");
+        assert!(error_message(&resp).contains(name), "{name}: {resp}");
     }
 }
 
@@ -115,7 +143,7 @@ async fn a_parse_error_leaks_no_parser_internals() {
     for body in ["{not json", "{\"model\":"] {
         let (status, resp) = send(body).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{resp}");
-        assert_eq!(json(&resp)["type"], "error", "{resp}");
+        assert_error_envelope(&resp, "invalid_request_error");
         assert!(
             !resp.contains("at line") && !resp.contains("EOF while"),
             "{resp}"
@@ -132,8 +160,8 @@ async fn a_missing_or_empty_model_is_refused_by_name() {
     ] {
         let (status, resp) = send(body).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{resp}");
-        assert_eq!(json(&resp)["type"], "error", "{resp}");
-        assert!(resp.contains("model: "), "{resp}");
+        assert_error_envelope(&resp, "invalid_request_error");
+        assert!(error_message(&resp).contains("model: "), "{resp}");
     }
 }
 
@@ -143,7 +171,7 @@ async fn an_unservable_top_p_is_refused() {
     for p in ["0", "-0.5", "1.5"] {
         let (status, resp) = send(&with_field(&format!("\"top_p\":{p}"))).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "top_p {p}: {resp}");
-        assert_eq!(json(&resp)["type"], "error", "{resp}");
-        assert!(resp.contains("top_p: "), "{resp}");
+        assert_error_envelope(&resp, "invalid_request_error");
+        assert!(error_message(&resp).contains("top_p: "), "{resp}");
     }
 }

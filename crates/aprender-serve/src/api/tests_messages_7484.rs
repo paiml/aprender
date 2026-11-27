@@ -49,6 +49,8 @@ async fn messages_without_messages_is_an_anthropic_error_400() {
     let (status, body) = post_messages(state, r#"{"model":"m","max_tokens":64}"#).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["type"], "error", "{body}");
+    assert_eq!(body["error"]["type"], "invalid_request_error", "{body}");
+    assert!(body["error"]["message"].is_string(), "{body}");
 }
 
 #[tokio::test]
@@ -57,4 +59,6 @@ async fn messages_that_is_not_json_is_an_anthropic_error_400() {
     let (status, body) = post_messages(state, "not json").await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["type"], "error", "{body}");
+    assert_eq!(body["error"]["type"], "invalid_request_error", "{body}");
+    assert!(body["error"]["message"].is_string(), "{body}");
 }
