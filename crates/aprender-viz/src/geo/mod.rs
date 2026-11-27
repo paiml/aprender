@@ -26,6 +26,7 @@ mod plot_tests;
 mod reader_tests;
 
 pub use fill::{fill_polygon_even_odd, svg_path_d, FillError};
+pub use index::{IndexError, PointIndex, PolygonIndex};
 pub use reader::{read_geojson, read_topojson, Feature, GeoReadError, Geometry, Position, Ring};
 pub mod simplify;
 
