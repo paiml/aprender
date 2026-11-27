@@ -139,6 +139,14 @@ if [ -z "$META" ] && [ "$GREEDY_ONLY" = 1 ]; then
   META=$(sed -n 's/^greedy-[^\t]*\t[^\t]*\t//p' "$OUT/shards.tsv" | head -1)/meta.json
 fi
 [ -f "$META" ] || die "no shard produced a manifest; nothing to judge"
+# #6679: one merged receipt names ONE binary, so every shard that left a meta must have measured the same one.
+# shellcheck source=lib/crux_apr_sha.sh
+. scripts/lib/crux_apr_sha.sh || die "scripts/lib/crux_apr_sha.sh could not be loaded"
+shard_metas=()
+while IFS=$'\t' read -r _ _ work; do
+  [ -n "$work" ] && [ -f "$work/meta.json" ] && shard_metas+=("$work/meta.json")
+done < "$OUT/shards.tsv"
+crux_one_apr_sha "${shard_metas[@]}" || die "the shards do not agree on the measured apr binary"
 # ONE meta for the merged receipt, whose `models` is the UNION over every certified shard. Taking the first shard's
 # meta as-is left the judge knowing ONE model's format: every other model's cells went RED "a format-unknown file"
 # (measured on the freeze sweep, lambda: 2B and 4B-UD all RED in the merge, 30/34 GREEN in their own shards).

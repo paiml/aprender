@@ -145,6 +145,11 @@ else
   . scripts/apr_bin.sh || decline "scripts/apr_bin.sh could not pin a HEAD-built apr"
 fi
 [ -x "${APR:-}" ] || decline "\$APR is not executable: '${APR:-}'"
+# #6679: the version line names a commit, not a binary. Hash the pinned file now; it is stamped into
+# the receipt (and re-hashed) just before the judge.
+# shellcheck source=lib/crux_apr_sha.sh
+. scripts/lib/crux_apr_sha.sh || decline "scripts/lib/crux_apr_sha.sh could not be loaded"
+APR_BINARY_SHA256=$(crux_apr_sha256 "$APR") || decline "cannot hash the apr under test"
 APR_VERSION_LINE=$("$APR" --version 2>/dev/null | head -1)
 APR_GOT=$(printf '%s\n' "$APR_VERSION_LINE" | sed -n 's/^apr \([0-9][0-9A-Za-z.+-]*\).*/\1/p')
 [ "$APR_GOT" = "$VERSION" ] || decline "apr under test reports '$APR_VERSION_LINE'; this dogfood was asked for $VERSION"
@@ -835,6 +840,7 @@ meta = {
 }
 json.dump(meta, open(out, "w"), indent=2)
 PY
+crux_stamp_apr_sha "$WORK/meta.json" "$APR" "$APR_BINARY_SHA256" || decline "the receipt cannot name the apr binary it measured"
 # $OUT_DIR reaches here from `--out` (default evidence/crux/$VERSION). A receipt dir may
 # legitimately be absolute -- operators point it at /mnt -- so absoluteness is allowed and
 # only a `..` segment, which walks out of wherever the caller meant, is refused.
