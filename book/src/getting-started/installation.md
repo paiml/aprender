@@ -26,7 +26,7 @@ model operations, and profiling.
 
 ```bash
 apr --version
-# apr 0.4.17
+# apr 0.75.4
 ```
 
 ## Verify
@@ -48,12 +48,18 @@ For the ML library (algorithms, data structures, format I/O):
 
 ```toml
 [dependencies]
-aprender-core = "0.29"
+aprender = "0.75"
 ```
 
 ```rust
-use aprender::linear_regression::LinearRegression;
+use aprender::linear_model::LinearRegression;
+use aprender::prelude::{Matrix, Vector};
 use aprender::traits::Estimator;
+
+let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("valid matrix dimensions");
+let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+let mut model = LinearRegression::new();
+model.fit(&x, &y).expect("linear regression fit should succeed");
 ```
 
 ## From Source
@@ -66,6 +72,6 @@ cargo install --path .
 
 ## Requirements
 
-- Rust 1.89+ (stable)
+- Rust 1.91+ (stable)
 - Linux, macOS, or Windows
 - GPU optional (CUDA for NVIDIA, wgpu for AMD/Intel/Apple)
