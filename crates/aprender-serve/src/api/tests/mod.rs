@@ -56,6 +56,7 @@ mod sse_stream_stop_markers_4340; // #4340: <|im_end|> must never reach a live S
 mod native_im_end_4344; // #4344: /generate, /batch/generate, /stream/generate, /realize/* cut spelled-out <|im_end|>
 mod serve_dead_routes_3991; // aprender#3991: every generation route GET / lists must generate; text is the completion
 mod native_routes_2376; // aprender#2376: native routes on a quantized server, KV-cache budget, sampling fields
+#[cfg(feature = "gpu")] // quantized_state is gpu-gated
 mod messages_wire_7484; // aprender#7484 (G-01): /v1/messages wire falsifiers
 mod router_flags; // --no-cors / --no-metrics must change HTTP behaviour, not just the banner
 mod ollama_compat_http; // Dogfood 0.63.0 (#2396/#2402): /api/tags|show|version routed, stream:true is NDJSON, /realize/* stops fabricating

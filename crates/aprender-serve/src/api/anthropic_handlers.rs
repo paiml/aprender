@@ -62,6 +62,26 @@ pub struct AnthropicMessagesRequest {
 }
 
 impl AnthropicMessagesRequest {
+    /// The request-level refusals, in order. `Ok` carries the model name.
+    fn checked_model(&self) -> Result<String, String> {
+        if let Some(field) = self.unsupported_field() {
+            return Err(format!("{field}: not supported by this server"));
+        }
+        if self.top_p.is_some_and(|p| !(p > 0.0 && p <= 1.0)) {
+            return Err("top_p: must be greater than 0 and at most 1".to_string());
+        }
+        if self.max_tokens.unwrap_or(0) == 0 {
+            return Err("max_tokens: a positive integer is required".to_string());
+        }
+        if self.messages.is_empty() {
+            return Err("messages: at least one message is required".to_string());
+        }
+        self.model
+            .clone()
+            .filter(|m| !m.is_empty())
+            .ok_or_else(|| "model: a model name is required".to_string())
+    }
+
     /// The first field that asks for behaviour this route does not have. A 200 that ignored
     /// it would answer a different request from the one sent.
     fn unsupported_field(&self) -> Option<&'static str> {
@@ -289,32 +309,12 @@ pub async fn anthropic_messages_handler(
             return anthropic_error(StatusCode::BAD_REQUEST, "invalid_request_error", &message);
         },
     };
-    if let Some(field) = request.unsupported_field() {
-        return anthropic_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request_error",
-            &format!("{field}: not supported by this server"),
-        );
-    }
-    if request.max_tokens.unwrap_or(0) == 0 {
-        return anthropic_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request_error",
-            "max_tokens: a positive integer is required",
-        );
-    }
-    if request.messages.is_empty() {
-        return anthropic_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request_error",
-            "messages: at least one message is required",
-        );
-    }
-    let model = request
-        .model
-        .clone()
-        .filter(|m| !m.is_empty())
-        .unwrap_or_else(|| "apr".to_string());
+    let model = match request.checked_model() {
+        Ok(model) => model,
+        Err(message) => {
+            return anthropic_error(StatusCode::BAD_REQUEST, "invalid_request_error", &message)
+        },
+    };
     let chat_request = match to_chat_request(&request, &model) {
         Ok(chat_request) => chat_request,
         Err(message) => {

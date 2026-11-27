@@ -122,3 +122,28 @@ async fn a_parse_error_leaks_no_parser_internals() {
         );
     }
 }
+
+/// `model` is required: a made-up name would be echoed back, or 404 on a registry server.
+#[tokio::test]
+async fn a_missing_or_empty_model_is_refused_by_name() {
+    for body in [
+        r#"{"max_tokens":2,"messages":[{"role":"user","content":"token5"}]}"#,
+        r#"{"model":"","max_tokens":2,"messages":[{"role":"user","content":"token5"}]}"#,
+    ] {
+        let (status, resp) = send(body).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{resp}");
+        assert_eq!(json(&resp)["type"], "error", "{resp}");
+        assert!(resp.contains("model: "), "{resp}");
+    }
+}
+
+/// A `top_p` no sampler can serve is the client's error (400), never a 500 or a 200.
+#[tokio::test]
+async fn an_unservable_top_p_is_refused() {
+    for p in ["0", "-0.5", "1.5"] {
+        let (status, resp) = send(&with_field(&format!("\"top_p\":{p}"))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "top_p {p}: {resp}");
+        assert_eq!(json(&resp)["type"], "error", "{resp}");
+        assert!(resp.contains("top_p: "), "{resp}");
+    }
+}
