@@ -388,7 +388,7 @@ STUB
     html_out="$( ( PATH="${tmp}/ghhtml:$PATH"; export PATH
       unset PR_CLOSES_REF_KIND_CMD; PR_CLOSES_REF_SLEEP=0; export PR_CLOSES_REF_SLEEP
       bash "$SELF_PATH" --body "${tmp}/no-gh.txt" ) 2>/dev/null )" || got=$?
-    if [ "$got" -ne 0 ] || ! printf '%s\n' "$html_out" | grep -q '^UNMEASURED'; then
+    if [ "$got" -ne 0 ] || ! grep -q '^UNMEASURED' <<<"$html_out"; then
         printf 'FAIL case gh-nonjson-read-is-not-measured: expected exit 0 with an UNMEASURED line, got rc=%s out=%s\n' "$got" "$html_out" >&2
         fails=$((fails + 1))
     fi
