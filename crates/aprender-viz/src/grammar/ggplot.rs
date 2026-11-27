@@ -450,7 +450,7 @@ impl BuiltGGPlot {
             svg,
         )?;
         svg = self.svg_facet_strips(svg)?;
-        if self.theme.show_axis && !geo_plot::is_geo(&self.coord) {
+        if self.theme.show_axis && !geo_plot::is_map(&self.layers, &self.coord) {
             svg = self.svg_axis_text(svg)?;
         }
         Ok(svg.render())
