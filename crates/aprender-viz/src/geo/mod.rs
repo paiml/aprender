@@ -7,12 +7,16 @@
 //! Invalid input is an error, never a number: a non-finite value, a point outside the
 //! projection's domain, or a non-finite result is a [`GeoError`].
 
+pub mod fill;
 pub mod projection;
 pub mod reader;
 
 #[cfg(test)]
+mod fill_tests;
+#[cfg(test)]
 mod reader_tests;
 
+pub use fill::{fill_polygon_even_odd, svg_path_d, FillError};
 pub use reader::{read_geojson, read_topojson, Feature, GeoReadError, Geometry, Position, Ring};
 pub mod simplify;
 

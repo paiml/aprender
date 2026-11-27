@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100" height="100" viewBox="0 0 100 100">
+  <path d="M10 10L40 10L40 40L10 40Z M20 20L30 20L30 30L20 30Z" fill="rgb(255,0,0)" fill-rule="evenodd"/>
+  <path d="M50 10L90 10L70 45Z" fill="rgb(0,255,0)" fill-rule="evenodd"/>
+  <path d="M10.5 60L45 55.25L60 90L12 95Z" fill="rgb(0,0,255)" fill-rule="evenodd"/>
+</svg>
