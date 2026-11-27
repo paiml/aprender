@@ -356,3 +356,56 @@ proptest! {
         prop_assert!(outside);
     }
 }
+
+// ---------------------------------------------------------------------------
+// AlbersUsa reference table and inset placement
+// ---------------------------------------------------------------------------
+
+/// One point per sub-region at unit radius. Computed outside this crate from Snyder's
+/// spherical Albers equations with each sub-region's documented parallels and origin, then
+/// its documented scale and shift: `(lon, lat, x, y)`.
+const ALBERS_USA_REFERENCE: [(f64, f64, f64, f64); 3] = [
+    (-75.0, 35.0, 0.295_272_007_0, -0.011_286_453_3),
+    (-150.0, 61.0, -0.888_205_377_0, -0.382_477_789_2),
+    (-156.0, 20.0, -0.583_537_258_5, -0.497_632_850_0),
+];
+
+#[test]
+fn albers_usa_matches_the_reference_table() {
+    let usa = AlbersUsa::new(1.0).expect("valid");
+    for (lon, lat, want_x, want_y) in ALBERS_USA_REFERENCE {
+        let (x, y) = usa.forward(lon, lat).expect("inside a sub-region");
+        assert!((x - want_x).abs() < REF_TOL, "({lon}, {lat}) x {x}");
+        assert!((y - want_y).abs() < REF_TOL, "({lon}, {lat}) y {y}");
+    }
+}
+
+#[test]
+fn albers_usa_inset_images_do_not_overlap() {
+    let usa = AlbersUsa::new(1.0).expect("valid");
+    // Plane bounding box [x_min, x_max, y_min, y_max] of a 101 x 101 sample of each box.
+    let images: Vec<[f64; 4]> = US_SUB_REGION_BOXES
+        .iter()
+        .map(|&[lon_min, lon_max, lat_min, lat_max]| {
+            let mut image = [f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY];
+            for i in 0..=100 {
+                for j in 0..=100 {
+                    let lon = lon_min + (lon_max - lon_min) * f64::from(i) / 100.0;
+                    let lat = lat_min + (lat_max - lat_min) * f64::from(j) / 100.0;
+                    let (x, y) = usa.forward(lon, lat).expect("inside the box");
+                    image = [image[0].min(x), image[1].max(x), image[2].min(y), image[3].max(y)];
+                }
+            }
+            image
+        })
+        .collect();
+    for (a, first) in images.iter().enumerate() {
+        for second in &images[a + 1..] {
+            let apart = first[1] < second[0]
+                || second[1] < first[0]
+                || first[3] < second[2]
+                || second[3] < first[2];
+            assert!(apart, "{first:?} overlaps {second:?}");
+        }
+    }
+}
