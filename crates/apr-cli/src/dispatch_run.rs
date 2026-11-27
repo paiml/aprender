@@ -214,14 +214,6 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
                     "serve run needs a model file".to_string(),
                 ));
             };
-            // aprender#7481 (U-02): a name that is not a file on disk resolves through the
-            // one model store (`apr serve run org/repo`), the same store `apr run` writes to.
-            let stored = if file.exists() {
-                None
-            } else {
-                crate::commands::pull::store_path_for_name(&file.to_string_lossy())
-            };
-            let file: &std::path::Path = stored.as_deref().unwrap_or(file.as_path());
             crate::error::resolve_model_path(file).and_then(|r| {
             dispatch_serve(
                 &r,

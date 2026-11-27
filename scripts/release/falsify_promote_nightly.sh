@@ -30,13 +30,6 @@ build_template() {
     mkdir -p "$t" && git init -q --bare "$t/origin.git" || return 1
     git clone -q "$t/origin.git" "$t/work" 2>/dev/null || return 1
     w="$t/work"
-    # no background maintenance in either repo: a commit or push starts it detached, and its
-    # repack removes loose objects while fx is copying them (cp: cannot stat tpl/work/.git/objects/..)
-    local repo
-    for repo in "$w" "$t/origin.git"; do
-        git -C "$repo" config maintenance.auto false && git -C "$repo" config gc.auto 0 \
-            && git -C "$repo" config receive.autogc false || return 1
-    done
     git -C "$w" config core.hooksPath /dev/null   # fixture clone only: the real tag guard is stubbed above
     git -C "$w" checkout -q -b main
     mkdir -p "$w/scripts/release" "$w/scripts/hooks" "$w/evidence/crux/0.72.2" "$w/contracts"
@@ -128,20 +121,9 @@ no_calls() { [ ! -s "$FX_CALLS" ]; }
 tag_at_sha() { [ "$(git -C "$1" rev-parse 'v0.72.2^{commit}' 2>/dev/null)" = "$S" ]; }
 tag_subject_ok() { [ "$(git -C "$W" tag -l --format='%(contents:subject)' v0.72.2)" = "aprender v0.72.2" ]; }
 armed_once() { [ "$(cat "$FX_CALLS" 2>/dev/null)" = "ARM --arm-release v0.72.2 120" ]; }
-# a commit and a push in a fixture copy start no auto maintenance (a detached repack races fx's cp -a)
-no_auto_maintenance() {
-    local trace="$TMP/maintenance.trace"
-    GIT_TRACE="$trace" git_q -C "$W" commit -q --allow-empty -m probe || return 1
-    GIT_TRACE="$trace" git_q -C "$W" push -q origin main 2>/dev/null || return 1
-    [ -s "$trace" ] && ! grep -qE '(maintenance run|gc) .*--auto' "$trace"
-}
 
 table() {
     local lane a
-    # ---- the fixtures themselves ----
-    fx quiet
-    holds "fixture repos start no background maintenance" no_auto_maintenance
-
     # ---- green, dry-run ----
     fx green
     row "dry-run, all green: promote decision + exact tag command" 0 "git tag -a v0.72.2 -m \"aprender v0.72.2\" $S" --sha "$S" --receipts "$R"
