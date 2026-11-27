@@ -357,6 +357,25 @@ STUB
         fails=$((fails + 1))
     fi
 
+    # #7446: a read that SUCCEEDS (exit 0) but returns a non-JSON body -- an HTML
+    # or plain-text error page from a proxy -- is not a PR reference we can judge.
+    # It is UNMEASURED: the guard prints an UNMEASURED line and exits 0, the
+    # repo's not_measured convention (guard_tree.sh #3651). It is neither a PASS
+    # verdict on the body nor a FAIL. Before the fix this row exited 1 with the
+    # non-JSON text taken as a reference kind.
+    mkdir -p "${tmp}/ghhtml"
+    printf '#!/usr/bin/env bash\nprintf "Service Unavailable"\nexit 0\n' > "${tmp}/ghhtml/gh"
+    chmod +x "${tmp}/ghhtml/gh"
+    got=0
+    cases=$((cases + 1))
+    html_out="$( ( PATH="${tmp}/ghhtml:$PATH"; export PATH
+      unset PR_CLOSES_REF_KIND_CMD; PR_CLOSES_REF_SLEEP=0; export PR_CLOSES_REF_SLEEP
+      bash "$SELF_PATH" --body "${tmp}/no-gh.txt" ) 2>/dev/null )" || got=$?
+    if [ "$got" -ne 0 ] || ! printf '%s\n' "$html_out" | grep -q '^UNMEASURED'; then
+        printf 'FAIL case gh-nonjson-read-is-not-measured: expected exit 0 with an UNMEASURED line, got rc=%s out=%s\n' "$got" "$html_out" >&2
+        fails=$((fails + 1))
+    fi
+
     # A permanent 404 is NOT retried: gh is called exactly once.
     mkdir -p "${tmp}/gh404"
     printf '#!/usr/bin/env bash\necho x >> "%s/calls404"\necho "gh: Not Found (HTTP 404)" >&2\nexit 1\n' "${tmp}" > "${tmp}/gh404/gh"
