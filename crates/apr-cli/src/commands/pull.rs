@@ -152,6 +152,8 @@ fn run_single_file_streaming(model_ref: &str, force: bool) -> Result<()> {
     let (extension, cache_path) = build_single_cache_path(&cache_dir, model_ref, &filename);
 
     if !force && cache_path.exists() {
+        // A file pulled before the store had names gets its name now.
+        record_store_name(&cache_dir, model_ref, &cache_path)?;
         return report_cached_single(&cache_path);
     }
 
@@ -178,7 +180,7 @@ pub(crate) fn record_store_name(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to record {name}: {e}")))
 }
 
-/// aprender#7481 (U-02): the stored file recorded under the repo name `name` (`org/repo`), if any.
+/// aprender#7481 (U-02): the newest stored file recorded under the repo name `name` (`org/repo`).
 pub(crate) fn store_path_for_name(name: &str) -> Option<std::path::PathBuf> {
     let name = name.trim_start_matches("hf://");
     let cache_dir = get_pacha_cache_dir().ok()?;

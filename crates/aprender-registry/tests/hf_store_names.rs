@@ -28,3 +28,34 @@ fn hf_download_is_listed_and_removed_by_repo_name() {
         "list must no longer show the repo after rm"
     );
 }
+
+fn open(cache: &std::path::Path) -> ModelFetcher {
+    ModelFetcher::with_cache_dir(cache.to_path_buf(), FetchConfig::default()).expect("fetcher")
+}
+
+/// Each CLI command is its own process, so every step reopens the store from disk.
+#[test]
+fn store_survives_reopen_and_keeps_every_file_of_every_repo() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cache = dir.path().join("models");
+    std::fs::create_dir_all(&cache).expect("mkdir");
+
+    let files = [("org/repo", "a.gguf"), ("org/repo", "b.gguf"), ("other/model", "c.gguf")];
+    for (name, file) in files {
+        let path = cache.join(file);
+        std::fs::write(&path, b"GGUF-test-bytes").expect("write model");
+        open(&cache).record_model(name, &path).expect("record");
+    }
+
+    let mut paths: Vec<_> = open(&cache).list().into_iter().map(|m| m.path).collect();
+    paths.sort();
+    let want: Vec<_> = ["a.gguf", "b.gguf", "c.gguf"].iter().map(|f| cache.join(f)).collect();
+    assert_eq!(paths, want, "a later record must not drop an earlier entry");
+
+    assert!(open(&cache).remove("hf://org/repo").expect("rm"), "rm must find the stored name");
+    assert!(!cache.join("a.gguf").exists(), "rm must delete the first file of the repo");
+    assert!(!cache.join("b.gguf").exists(), "rm must delete the second file of the repo");
+
+    let names: Vec<String> = open(&cache).list().into_iter().map(|m| m.name).collect();
+    assert_eq!(names, vec!["other/model".to_string()], "rm must persist and spare other repos");
+}
