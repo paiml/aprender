@@ -185,12 +185,16 @@ def parse_cites(p):
     found, malformed = [], []
     for t in TOKEN.finditer(p):
         tok, end = t.group(0), t.end()
+        # A line spec attempt: ":<n>", ":L<n>" or "#L<n>" right after the token.
+        attempt = re.match(r":L?\d|#L\d", p[end:])
         if "/" not in tok and "." not in tok:
-            # A bare name ("Makefile", "Dockerfile") is a cite only when it carries a
-            # ":<digit>" line spec; that spec is then malformed, never silently dropped.
-            if not (p.startswith(":", end) and re.search(r"[A-Za-z]", tok)
-                    and re.match(r":\d", p[end:])):
+            # A bare name ("Makefile", "Dockerfile") is a cite only with a line spec attempt.
+            if not (attempt and re.search(r"[A-Za-z]", tok)):
                 continue
+        if attempt and not p.startswith(":", end):
+            # a GitHub-style "#L<n>" anchor is not a line spec this gate reads: malformed
+            malformed.append(p[t.start():end + 40])
+            continue
         if p.startswith(":", end):
             m = SPEC.match(p, end)
             if m is None or not re.search(EXT + r"$", tok):
@@ -433,12 +437,16 @@ def parse_cites(p):
     found, malformed = [], []
     for t in TOKEN.finditer(p):
         tok, end = t.group(0), t.end()
+        # A line spec attempt: ":<n>", ":L<n>" or "#L<n>" right after the token.
+        attempt = re.match(r":L?\d|#L\d", p[end:])
         if "/" not in tok and "." not in tok:
-            # A bare name ("Makefile", "Dockerfile") is a cite only when it carries a
-            # ":<digit>" line spec; that spec is then malformed, never silently dropped.
-            if not (p.startswith(":", end) and re.search(r"[A-Za-z]", tok)
-                    and re.match(r":\d", p[end:])):
+            # A bare name ("Makefile", "Dockerfile") is a cite only with a line spec attempt.
+            if not (attempt and re.search(r"[A-Za-z]", tok)):
                 continue
+        if attempt and not p.startswith(":", end):
+            # a GitHub-style "#L<n>" anchor is not a line spec this gate reads: malformed
+            malformed.append(p[t.start():end + 40])
+            continue
         if p.startswith(":", end):
             m = SPEC.match(p, end)
             if m is None or not re.search(EXT + r"$", tok):
