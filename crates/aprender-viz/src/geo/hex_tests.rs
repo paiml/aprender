@@ -135,7 +135,9 @@ fn falsify_map_hex_002_area_is_conserved() {
     }
 }
 
-/// FALSIFY-MAP-HEX-003: spread values sum back to the value, including partly covered cells.
+/// FALSIFY-MAP-HEX-003: spread values sum back to the value, and each cell gets its area share.
+///
+/// `v_c = value * a_c / A`. The areas must be unequal, or the share check proves nothing.
 #[test]
 fn falsify_map_hex_003_spread_sums_to_value() {
     let layout = HexLayout::new((0.0, 0.0), 1.0).expect("valid layout");
@@ -143,12 +145,61 @@ fn falsify_map_hex_003_spread_sums_to_value() {
     let polygons = [fx.rings.clone(), vec![vec![(-2.0, -1.0), (3.0, -1.0), (0.5, 2.5)]]];
     for rings in polygons {
         let areas = rasterise(&layout, &fx.window, &rings).expect("rasterises");
-        for value in [7.5, -3.25, 0.0, 1e12] {
+        let a_max = areas.iter().map(|(_, a)| *a).fold(f64::NEG_INFINITY, f64::max);
+        let a_min = areas.iter().map(|(_, a)| *a).fold(f64::INFINITY, f64::min);
+        assert!(a_max > 2.0 * a_min, "areas must be unequal: min {a_min}, max {a_max}");
+        let a_sum: f64 = areas.iter().map(|(_, a)| a).sum();
+        for value in [7.5, -3.25, 0.0, 1e12, -1e12, 4.2e11] {
             let spread_values = spread(value, &areas).expect("spread");
             let sum: f64 = spread_values.iter().map(|(_, v)| v).sum();
             assert!((sum - value).abs() <= 1e-9 * value.abs(), "spread of {value} sums to {sum}");
+            for (&(c, a), &(c2, v)) in areas.iter().zip(spread_values.iter()) {
+                assert_eq!(c, c2, "spread keeps cell order");
+                let want = value * (a / a_sum);
+                assert!(
+                    (v - want).abs() <= 1e-12 * value.abs(),
+                    "cell {c:?} of spread {value}: got {v}, want value * a / A = {want}"
+                );
+            }
         }
     }
+}
+
+/// Shoelace area is translation invariant, so a square far from the origin must have its exact
+/// area. Both squares have dyadic corners, so the true areas are exact: 1 and 100.
+#[test]
+fn polygon_area_is_exact_far_from_the_origin() {
+    let cases = [
+        ("unit square at 1e8", rect(1e8, 1e8, 1e8 + 1.0, 1e8 + 1.0), 1.0),
+        ("10 x 10 square at 1e6", rect(1e6, 1e6, 1e6 + 10.0, 1e6 + 10.0), 100.0),
+    ];
+    for (name, ring, area) in cases {
+        let got = polygon_area(&[ring]).expect("polygon has area");
+        assert!((got - area).abs() <= 1e-12 * area, "{name}: polygon_area {got}, expected {area}");
+    }
+}
+
+/// Clipping is exact far from the origin. The layout origin and a 1.5 x 1.0 square both sit near
+/// (1e8, 1e8). Every coordinate is dyadic, so the inputs are exact and the covered area is 1.5.
+#[test]
+fn rasterise_conserves_area_far_from_the_origin() {
+    let layout = HexLayout::new((1e8 + 0.5, 1e8 - 0.25), 1.0).expect("valid layout");
+    let window = AxialWindow::new(-4, 4, -4, 4).expect("valid window");
+    let square = vec![rect(1e8 + 0.25, 1e8 + 0.25, 1e8 + 1.75, 1e8 + 1.25)];
+    let got = total(&rasterise(&layout, &window, &square).expect("rasterises"));
+    assert!((got - 1.5).abs() <= 1e-9 * 1.5, "cell areas sum to {got}, expected 1.5");
+}
+
+/// A non-finite cell value is a typed error, and a refused add leaves the column unchanged.
+#[test]
+fn cell_column_rejects_non_finite_values() {
+    let window = AxialWindow::new(0, 1, 0, 1).expect("valid window");
+    let mut col = CellColumn::zeros(window);
+    let c = Cell { q: 1, r: 1 };
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(col.add(c, bad), Err(HexError::NonFinite { what: "cell value" }), "{bad}");
+    }
+    assert!(col.values().iter().all(|&v| v == 0.0), "refused adds must not change the column");
 }
 
 /// FALSIFY-MAP-HEX-004: each cut-cell area matches the committed reference.

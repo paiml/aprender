@@ -174,11 +174,19 @@ impl HexLayout {
 
     /// The six corners of a cell, counter-clockwise from -30 degrees.
     pub fn corners(&self, c: Cell) -> [(f64, f64); 6] {
-        let (cx, cy) = self.center(c);
-        std::array::from_fn(|k| {
-            let angle = (60.0 * k as f64 - 30.0).to_radians();
-            (cx + self.radius * angle.cos(), cy + self.radius * angle.sin())
-        })
+        hexagon_corners(self.center(c), self.radius)
+    }
+
+    /// The six corners of a cell, relative to `anchor`. The centre is formed from the difference
+    /// of the origin and the anchor first, so the corners stay exact near the anchor even when
+    /// both are large.
+    fn corners_about(&self, c: Cell, anchor: (f64, f64)) -> [(f64, f64); 6] {
+        let (q, r) = (c.q as f64, c.r as f64);
+        let centre = (
+            (self.origin.0 - anchor.0) + self.radius * SQRT3 * (q + r / 2.0),
+            (self.origin.1 - anchor.1) + self.radius * 1.5 * r,
+        );
+        hexagon_corners(centre, self.radius)
     }
 
     /// Area of one hexagon: `3 sqrt3 / 2 * R^2`.
@@ -284,8 +292,12 @@ impl CellColumn {
         self.window.index_of(c).map(|i| self.values[i])
     }
 
-    /// Add to a cell. A cell outside the window is an error.
+    /// Add to a cell. A non-finite value or a cell outside the window is an error, and a refused
+    /// add leaves the column unchanged.
     pub fn add(&mut self, c: Cell, v: f64) -> Result<(), HexError> {
+        if !v.is_finite() {
+            return Err(HexError::NonFinite { what: "cell value" });
+        }
         let i = self.window.index_of(c).ok_or(HexError::OutsideWindow { q: c.q, r: c.r })?;
         self.values[i] += v;
         Ok(())
@@ -326,11 +338,15 @@ pub fn rasterise(
         return Err(HexError::TooManyCells { candidates });
     }
     let threshold = NEGLIGIBLE_REL * total;
+    // Clip in coordinates local to the first exterior vertex. Absolute coordinates far from the
+    // origin lose their rounding error to the clipping; differences from a nearby anchor do not.
+    let anchor = rings.first().and_then(|ring| ring.first()).copied().ok_or(HexError::ZeroArea)?;
+    let local = translate_rings(rings, anchor);
     let mut out = Vec::new();
     for r in r_lo..=r_hi {
         for q in q_lo..=q_hi {
             let c = Cell { q, r };
-            let a = cell_overlap(layout, c, rings);
+            let a = cell_overlap(layout, c, anchor, &local);
             if a <= threshold {
                 continue;
             }
@@ -399,10 +415,28 @@ fn exterior_minus_holes(rings: &[Vec<(f64, f64)>], measure: impl Fn(&[(f64, f64)
         .sum()
 }
 
-/// Overlap area of the polygon with one hexagon.
-fn cell_overlap(layout: &HexLayout, c: Cell, rings: &[Vec<(f64, f64)>]) -> f64 {
-    let hex = layout.corners(c);
-    exterior_minus_holes(rings, |ring| signed_area(&clip_to_convex(ring, &hex)).abs())
+/// The rings shifted so that `anchor` is the origin.
+fn translate_rings(rings: &[Vec<(f64, f64)>], anchor: (f64, f64)) -> Vec<Vec<(f64, f64)>> {
+    rings
+        .iter()
+        .map(|ring| ring.iter().map(|&(x, y)| (x - anchor.0, y - anchor.1)).collect())
+        .collect()
+}
+
+/// Overlap area of the polygon with one hexagon. `local` is the polygon translated by `anchor`,
+/// and the hexagon is built in the same frame.
+fn cell_overlap(layout: &HexLayout, c: Cell, anchor: (f64, f64), local: &[Vec<(f64, f64)>]) -> f64 {
+    let hex = layout.corners_about(c, anchor);
+    exterior_minus_holes(local, |ring| signed_area(&clip_to_convex(ring, &hex)).abs())
+}
+
+/// The six corners of a hexagon with the given centre and circumradius, counter-clockwise from
+/// -30 degrees.
+fn hexagon_corners(centre: (f64, f64), radius: f64) -> [(f64, f64); 6] {
+    std::array::from_fn(|k| {
+        let angle = (60.0 * k as f64 - 30.0).to_radians();
+        (centre.0 + radius * angle.cos(), centre.1 + radius * angle.sin())
+    })
 }
 
 /// Candidate axial range `(q_lo, q_hi, r_lo, r_hi)` that covers every cell a polygon can
@@ -435,12 +469,20 @@ fn candidate_range(
 }
 
 /// Shoelace signed area of a ring. Positive for counter-clockwise rings.
+///
+/// The vertices are taken relative to the first one. Products of coordinates near 1e8 are near
+/// 1e16, where f64 has an ulp of 2, so unshifted terms cancel to nothing. Differences of nearby
+/// vertices are exact, so the area is too.
 fn signed_area(ring: &[(f64, f64)]) -> f64 {
+    let Some(&(ax, ay)) = ring.first() else {
+        return 0.0;
+    };
     let n = ring.len();
+    let rel = |i: usize| (ring[i % n].0 - ax, ring[i % n].1 - ay);
     let twice: f64 = (0..n)
         .map(|i| {
-            let (x0, y0) = ring[i];
-            let (x1, y1) = ring[(i + 1) % n];
+            let (x0, y0) = rel(i);
+            let (x1, y1) = rel(i + 1);
             x0 * y1 - x1 * y0
         })
         .sum();
