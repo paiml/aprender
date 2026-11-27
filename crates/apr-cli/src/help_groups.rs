@@ -257,8 +257,10 @@ pub fn grouped_command() -> Command {
             template.push_str(&format!("  {name:<width$}{summary}\n"));
         }
     }
-    // {all-args} would also print the subcommand list again; take only the arguments.
-    template.push_str("\n{positionals}\n{options}");
+    // {all-args} would also print the subcommand list again. clap prints the option
+    // rows without their heading, so the heading is written here. The root has no
+    // positional arguments; `command` is the subcommand field.
+    template.push_str("\nOptions:\n{options}");
     root.help_template(template)
 }
 
