@@ -186,7 +186,11 @@ def parse_cites(p):
     for t in TOKEN.finditer(p):
         tok, end = t.group(0), t.end()
         if "/" not in tok and "." not in tok:
-            continue
+            # A bare name ("Makefile", "Dockerfile") is a cite only when it carries a
+            # ":<digit>" line spec; that spec is then malformed, never silently dropped.
+            if not (p.startswith(":", end) and re.search(r"[A-Za-z]", tok)
+                    and re.match(r":\d", p[end:])):
+                continue
         if p.startswith(":", end):
             m = SPEC.match(p, end)
             if m is None or not re.search(EXT + r"$", tok):
@@ -430,7 +434,11 @@ def parse_cites(p):
     for t in TOKEN.finditer(p):
         tok, end = t.group(0), t.end()
         if "/" not in tok and "." not in tok:
-            continue
+            # A bare name ("Makefile", "Dockerfile") is a cite only when it carries a
+            # ":<digit>" line spec; that spec is then malformed, never silently dropped.
+            if not (p.startswith(":", end) and re.search(r"[A-Za-z]", tok)
+                    and re.match(r":\d", p[end:])):
+                continue
         if p.startswith(":", end):
             m = SPEC.match(p, end)
             if m is None or not re.search(EXT + r"$", tok):
