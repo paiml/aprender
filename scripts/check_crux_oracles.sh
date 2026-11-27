@@ -35,6 +35,14 @@ import importlib.util, json, sys
 spec = importlib.util.spec_from_file_location("crux_oracles", sys.argv[1])
 o = importlib.util.module_from_spec(spec); spec.loader.exec_module(o)
 
+# The code rows run model code under `unshare -rn`. A host without unprivileged user namespaces cannot
+# answer them: that is ENV (rc 2, an unmeasured gate is still not a pass), never "BROKE" rows that
+# accuse the oracle (sandbox_unavailable looked like a defect in the 2026-11-25 t2yoga-tier2 run).
+if o.sandbox_argv() is None:
+    print("check_crux_oracles: ENV - `unshare -rn` is unavailable on this host, so the code_tests rows cannot be judged;"
+          " nothing was measured (enable unprivileged user namespaces).")
+    sys.exit(2)
+
 ASK = "Reply with the final answer inside <answer></answer>."
 def ans(expect, norm="casefold_strip"):
     return {"id": "t", "verb": ["run"], "messages": [{"role": "user", "content": "q " + ASK}],
@@ -274,6 +282,7 @@ fail += not good
 sys.exit(1 if fail else 0)
 PY
 table=$?
+[ "$table" -ne 2 ] || exit 2   # ENV from the table (no sandbox): never reported as a broken row
 
 # Drift against golden_output.rs (#3962 done-when 5: extended, not bypassed): every golden question opens
 # an `answer` prompt whose expect is one of its patterns, or is excluded by name with a reason.

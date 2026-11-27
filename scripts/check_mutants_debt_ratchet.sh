@@ -42,7 +42,7 @@ run() {
     local head base mb bad dup added
     head=$(rows < "$FILE")
     if ! bad=$(check_rows <<<"$head"); then echo "FAIL  $FILE has malformed rows:"; echo "$bad"; return 1; fi
-    dup=$(sort <<<"$head" | uniq -d)
+    dup=$(LC_ALL=C sort <<<"$head" | LC_ALL=C uniq -d)
     [ -z "$dup" ] || { echo "FAIL  $FILE has duplicate rows:"; sed 's/^/  /' <<<"$dup"; return 1; }
     if [ -n "$BASE" ]; then
         mb=$(git merge-base HEAD "$BASE" 2>/dev/null) || { echo "FAIL  merge-base(HEAD, $BASE) unresolvable -- NOT_MEASURED is not a pass"; return 1; }
@@ -55,7 +55,7 @@ run() {
         return 0
     fi
     base=$(git show "$mb:$FILE" | rows)
-    added=$(comm -23 <(sort <<<"$head") <(sort <<<"$base"))
+    added=$(LC_ALL=C comm -23 <(LC_ALL=C sort <<<"$head") <(LC_ALL=C sort <<<"$base"))
     if [ -n "$added" ]; then  # bashrs disable-line=SC2031 (added is assigned in this shell; the subshells are the process substitutions)
         echo "FAIL  $FILE is shrink-only; $(grep -c . <<<"$added") row(s) not in merge base ${mb:0:10}:"  # bashrs disable-line=SC2031,SC2091 (echo argument, not an executed command)
         sed 's/^/  + /' <<<"$added"

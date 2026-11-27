@@ -7,12 +7,13 @@ metadata:
   description: f64 dense Cholesky solve in a fixed operation order (SIM3D P3, #7248 first slice)
 equations:
   cholesky_f64_fixed_order:
-    formula: 'A = L L^T, sums in ascending k, no FMA, no reordering'
+    formula: 'l11(a) = sqrt(a); l21(a, b) = b / l11(a); l22(a, b, c) = sqrt(c - l21(a, b)^2); A = L L^T written out for A = [[a, b], [b, c]], sums in ascending k, no FMA, no reordering'
     domain: A ∈ R^{n×n} symmetric positive definite, f64
     codomain: Result<L, SolverError>
     invariants:
-    - Same input gives bit-identical L and x on every host and in WASM
-    - Non-positive or NaN pivot at column j returns NotPositiveDefinite(j)
+    - 'l11(a) * l11(a) = a'
+    - 'l11(a) * l21(a, b) = b'
+    - 'l21(a, b)^2 + l22(a, b, c)^2 = c'
 proof_obligations:
 - id: F64DS-INV-001
   type: invariant
@@ -29,6 +30,16 @@ proof_obligations:
   property: f64 residual on Hilbert(5)
   formal: '∀ A = Hilbert(5): |A x - b|_inf < 1e-9'
   tolerance: 1.0e-9
+  applies_to: cholesky_f64_fixed_order
+- id: F64DS-INV-004
+  type: invariant
+  property: Same input gives bit-identical L and x on every host and in WASM
+  formal: '∀ A, b: bits(cholesky_f64(A)) and bits(solve(A, b)) are a function of the input bits alone (ascending k, no FMA, no reordering)'
+  applies_to: cholesky_f64_fixed_order
+- id: F64DS-INV-005
+  type: invariant
+  property: Non-positive or NaN pivot at column j returns NotPositiveDefinite(j)
+  formal: 'pivot_j <= 0 or pivot_j is NaN ⇒ cholesky_f64(A) = Err(NotPositiveDefinite(j))'
   applies_to: cholesky_f64_fixed_order
 falsification_tests:
 - id: FALSIFY-SIM3D-CHOL-001
