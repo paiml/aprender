@@ -1,4 +1,4 @@
-//! Map projections on a sphere of radius `R` (`geo` feature).
+//! Map projections on a sphere of radius `R`, and GeoJSON/TopoJSON reading (`geo` feature).
 //!
 //! The formulas are the spherical forms in Snyder, *Map Projections: A Working Manual*
 //! (USGS Professional Paper 1395). Each projection implements [`Projection`]: geographic
@@ -8,6 +8,12 @@
 //! projection's domain, or a non-finite result is a [`GeoError`].
 
 pub mod projection;
+pub mod reader;
+
+#[cfg(test)]
+mod reader_tests;
+
+pub use reader::{read_geojson, read_topojson, Feature, GeoReadError, Geometry, Position, Ring};
 
 #[cfg(test)]
 mod projection_tests;
