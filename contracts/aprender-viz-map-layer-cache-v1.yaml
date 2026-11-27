@@ -46,7 +46,7 @@ proof_obligations:
 - id: MAP-LC-INV-003
   type: invariant
   property: Motion does not render
-  formal: '∀ t ∈ motion: renders_layer(t) ≡ 0 ∧ ∀ settle: renders_layer ≤ 1'
+  formal: '∀ t ∈ motion: renders_layer(t) ≡ 0 ∧ ∀ settle: renders_layer ≡ 1, except that a layer whose raster for the new camera is already cached has renders_layer ≡ 0 (the camera settle and pan-past-margin rule of design item 3)'
   applies_to: all
 - id: MAP-LC-INV-004
   type: invariant
@@ -92,13 +92,13 @@ falsification_tests:
 - id: FALSIFY-MAP-LC-001
   rule: Idle frame loop does no work
   prediction: 'with no input, the frame callback count over one second is 0'
-  test: timing test with a counting frame scheduler. Start the map with no input events, let one second of time pass on the fake clock, and assert the number of frame callbacks is 0 and each layer render count is 0.
-  planted_mutation: 'the frame loop re-requests a frame at the end of every callback regardless of whether anything is owed, so the callback count over one second is greater than 0; the test is red'
+  test: timing test with a counting frame scheduler on a fake clock. Start the map, let the initial paint complete, then reset the frame-callback and per-layer render counters. With no input events, advance the fake clock by one second and assert the number of frame callbacks is 0 and each layer render count is 0.
+  planted_mutation: 'the frame loop keeps a frame request pending after the initial paint completes, so one frame callback runs inside the one-second window and the callback count is greater than 0; the test is red'
   if_fails: The map repaints on an idle screen and burns battery for nothing
 - id: FALSIFY-MAP-LC-002
   rule: Pan inside the margin renders nothing; pan past it renders each layer once
   prediction: 'a pan that stays inside the cache margin gives (0, 0, 0); a pan past the margin gives (1, 1, 1) on settle, or fewer for a layer whose raster for the new camera is cached'
-  test: scripted pan test with per-layer render counters. Run one pan that stays inside the margin and assert (0, 0, 0). Run one pan that ends past the margin and assert the counts on settle are exactly (1, 1, 1) when no raster for the new camera is cached.
+  test: scripted pan test with per-layer render counters. Run one pan that stays inside the margin and assert (0, 0, 0). Run one pan that ends past the margin and assert the counts for that pan are exactly (1, 1, 1) when no raster for the new camera is cached.
   planted_mutation: 'the margin check is removed, so the base layer re-renders on every pan step; the pan inside the margin then records base count 1 and the test is red'
   if_fails: Panning redraws the whole map, and the pan-by-blit design is lost
 - id: FALSIFY-MAP-LC-003

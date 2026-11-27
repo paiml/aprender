@@ -34,13 +34,16 @@ equations:
     - 'p(0) = camera_0 exactly'
     - 'centre of p(1) = centre of target and scale of p(1) = scale of target, each within the MAP-5 epsilon'
   level_of_detail:
-    formula: 'tier(r) for hex radius r in pixels is a step function with boundaries b_1 < b_2 < b_3 taken from the MAP-5 reference table'
-    domain: 'r > 0 in pixels'
-    codomain: 'one tier from the stated set of four tiers'
+    formula: 'tier(r) for the level-of-detail metric r stated by the MAP-5 row is a step function with boundaries b_1 < b_2 < ... < b_k; the number of boundaries k, the boundary values and the tiers are stated by the MAP-5 row'
+    domain: 'r > 0, in the metric the MAP-5 row states'
+    codomain: 'one tier from the set of tiers the MAP-5 row states'
+    preconditions:
+    - '0 < b_1, so that b_1 - δ lies in the domain r > 0'
+    - 'the tier changes at each boundary: the tier just below b_i differs from the tier just above b_i'
     invariants:
     - 'tier is non-decreasing in r'
-    - 'for each boundary b_i, the tier selected just below b_i and the tier selected at b_i are the tiers the MAP-5 reference states for those sides of the boundary'
-    - 'the boundary values are not fixed by this contract; they come from the MAP-5 reference table'
+    - 'for each boundary b_i, the tier selected just below b_i, just above b_i and at b_i are the tiers the MAP-5 row states for those positions'
+    - 'the boundary values are not fixed by this contract; the MAP-5 row states them'
 proof_obligations:
 - id: MAP-CAM-INV-001
   type: invariant
@@ -55,7 +58,7 @@ proof_obligations:
 - id: MAP-CAM-BND-003
   type: bound
   property: Level-of-detail boundaries
-  formal: '∀ boundary b_i ∀ δ > 0 small: tier(b_i − δ) ≡ T_below ∧ tier(b_i + δ) ≡ T_above ∧ tier(b_i) ≡ T_at, the MAP-5 stated tiers'
+  formal: '∀ boundary b_i ∀ δ > 0 small: tier(b_i − δ) ≡ T_below ∧ tier(b_i + δ) ≡ T_above ∧ tier(b_i) ≡ T_at, where T_below, T_above and T_at are the tiers the MAP-5 row states'
   applies_to: all
 - id: MAP-CAM-INV-004
   type: invariant
@@ -91,8 +94,8 @@ falsification_tests:
 - id: FALSIFY-MAP-CAM-003
   rule: Each level-of-detail boundary selects the stated tier on both sides
   prediction: 'for each boundary b_i, the tier just below and the tier just above are the MAP-5 stated tiers, and the tier at b_i is the MAP-5 stated tier at that value'
-  test: table test. For each boundary in the MAP-5 reference table, evaluate the tier at the boundary value and at a small value on each side of it, and assert each result equals the tier the reference states for that value. Also assert the tier is non-decreasing across the full range of radii in the table.
-  planted_mutation: 'the comparison at the boundary is changed from strictly-less-than to less-than-or-equal, so the boundary value takes the lower tier; the test is red at the boundary value'
+  test: table test. For each boundary the MAP-5 row states, evaluate the tier at the boundary value and at a small value just below and just above it, and assert each result equals the tier the MAP-5 row states for that position. Also assert the tier is non-decreasing across the range of the metric covered by the table.
+  planted_mutation: 'the comparison at each boundary is flipped between strictly-less-than and less-than-or-equal, so the boundary value takes the tier on the other side of the boundary; the table test compares tier(b_i) with the stated T_at and is red at each boundary where the two differ'
   if_fails: Tiers flip one pixel early or late, so the sprite and cell detail changes at the wrong zoom
 qa_gate:
   id: F-MAP-CAM-001

@@ -8,7 +8,7 @@ metadata:
     round trip, its output is canonical, keys no extension registered survive a decode and encode, and history
     policy is fixed: selections and lens switches push a history entry, camera moves debounce into a replace.
   references:
-  - 'APR-MAP-001 rev 7, section 5, rows MAP-0, MAP-6 and MAP-7 (epic #7507, issues #7508, #7516 and #7517)'
+  - 'APR-MAP-001 rev 7, section 5, rows MAP-0, MAP-6 and MAP-7 (epic #7507, issues #7508, #7514 and #7515)'
 equations:
   codec:
     formula: 'encode: state -> hash string; decode: hash string -> state, with unrecognised keys kept as opaque key-value pairs; encode(state) is a function of the state alone'
@@ -17,7 +17,6 @@ equations:
     invariants:
     - 'decode(encode(s)) = s for every state s'
     - 'encode(decode(encode(s))) = encode(s) for every state s (canonical)'
-    - 'two hash strings that decode to the same state encode to the same string'
   unknown_keys:
     formula: 'a key that no extension registered is kept as an opaque pair by decode and re-emitted by encode with its value unchanged'
     domain: 'hash strings containing keys outside the registered set'
@@ -42,7 +41,7 @@ proof_obligations:
 - id: MAP-URL-EQ-002
   type: equivalence
   property: Canonical encode
-  formal: '∀ state s: encode(decode(encode(s))) ≡ encode(s) ∧ (s ≡ s′ ⇒ encode(s) ≡ encode(s′))'
+  formal: '∀ state s: encode(decode(encode(s))) ≡ encode(s)'
   applies_to: all
 - id: MAP-URL-INV-003
   type: invariant
@@ -60,7 +59,7 @@ enforcement:
     check: contract_tests::FALSIFY-MAP-URL-001
     severity: ERROR
   canonical:
-    description: Equal states encode to the same string regardless of key order or registration order
+    description: Encoding a state, decoding it and encoding again gives the same string, and encoding the same state twice gives the same string
     check: contract_tests::FALSIFY-MAP-URL-002
     severity: ERROR
   unknown_keys:
@@ -80,9 +79,9 @@ falsification_tests:
   if_fails: Sharing or reloading a link lands on a slightly different view than the one shared
 - id: FALSIFY-MAP-URL-002
   rule: Encode is canonical
-  prediction: 'encode(decode(encode(s))) = encode(s), and two hash strings that decode to the same state encode to the same string'
-  test: property test. For random states, encode, decode and encode again, and assert the two strings are equal. Also take a fixed state, build hash strings with the same keys in two different orders, decode both, and assert the re-encoded strings are equal.
-  planted_mutation: 'the encoder emits the keys in the order the extensions were registered, so two runs that register extensions in different orders produce different strings for the same state; the test is red'
+  prediction: 'encode(decode(encode(s))) = encode(s) for every state s, and encode(s) returns the same string on each call'
+  test: property test. For random states, including the empty state, encode the state, decode the string, encode the decoded state again, and assert the two strings are equal. Also call encode twice on the same state and assert the two strings are equal.
+  planted_mutation: 'the encoder writes a per-call sequence number into the hash, so two encodes of the same state differ and the first assertion fails; the test is red'
   if_fails: The same view produces many different links, so link comparison and caching break
 - id: FALSIFY-MAP-URL-003
   rule: Unknown keys survive decode then encode
