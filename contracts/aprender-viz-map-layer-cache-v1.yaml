@@ -1,0 +1,140 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-27'
+  author: PAIML Engineering
+  description: >-
+    Cache layers of the map runtime (design item 3). The base layer, the lens layer and the overlay each have
+    their own raster cache. For each user or data event this contract states which layers re-render and how many
+    times. The render counts are the contract; a change that re-renders a layer the event does not touch fails.
+  references:
+  - 'APR-MAP-001 rev 7, section 4 design item 3, section 5 rows MAP-0, MAP-5, MAP-6, MAP-7 and MAP-8 (epic #7507, issues #7508 and #7513 to #7516)'
+equations:
+  layers:
+    formula: 'base = geometry independent of data (outlines, borders, terrain, sprites); lens = choropleth fill of the active lens; overlay = hover, selection and point or line entities. Each layer has its own raster cache.'
+    domain: 'the three layers; one active lens at a time'
+    codomain: 'per event, a count of renders for each of base, lens and overlay'
+    invariants:
+    - 'an event renders only the layers in its row of the render table below; a layer not in the row performs 0 renders'
+    - 'a layer whose raster for the current camera is already cached performs 0 renders when the camera settles'
+  render_table:
+    formula: 'events and expected renders (base, lens, overlay); counts are exact unless marked as at most'
+    domain: 'events: idle, pan inside margin, pan past margin, zoom while moving, zoom settle, zoom settle after pre-paint, lens switch, delta to active lens, delta to inactive lens, hover, selection, layer toggle'
+    codomain: 'non-negative integer counts'
+    invariants:
+    - 'idle: frame callbacks over one second with no input = 0'
+    - 'pan inside margin: (0, 0, 0)'
+    - 'pan past margin: exactly (1, 1, 1), or fewer for a layer whose raster for the new camera is cached'
+    - 'zoom while moving: (0, 0, 0)'
+    - 'zoom settle with no pre-painted raster: exactly (1, 1, 1)'
+    - 'zoom settle after the idle pre-paint of the next zoom step: base = 0; lens and overlay are not fixed by the spec and are not asserted here'
+    - 'lens switch: (0, 1, 0)'
+    - 'delta to the active lens, one message: (0, 1, 0), however many cells the message changes'
+    - 'delta to an inactive lens: (0, 0, 0); the value is stored and renders when that lens is selected'
+    - 'hover, selection or layer toggle: (0, 0, 1)'
+proof_obligations:
+- id: MAP-LC-BND-001
+  type: bound
+  property: Idle frame loop does no work
+  formal: '∀ input-free interval of 1 s: frame callback count ≡ 0'
+  applies_to: all
+- id: MAP-LC-INV-002
+  type: invariant
+  property: Pan inside the margin renders nothing
+  formal: '∀ pan with camera ∈ cache margin: renders(base, lens, overlay) ≡ (0, 0, 0)'
+  applies_to: all
+- id: MAP-LC-INV-003
+  type: invariant
+  property: Zoom motion does not render; a settle or a pan past the margin renders once
+  formal: '∀ t ∈ zoom motion: renders_layer(t) ≡ 0 ∧ ∀ zoom or camera settle: renders_layer ≡ 1 ∧ ∀ pan past the margin: renders_layer ≡ 1 over the whole pan, except that a layer whose raster for the new camera is already cached has renders_layer ≡ 0; a pan inside the margin is MAP-LC-INV-002'
+  applies_to: all
+- id: MAP-LC-INV-004
+  type: invariant
+  property: Lens events touch the lens layer only
+  formal: '∀ event ∈ {lens switch, delta to active lens} ∀ #cells: renders_lens ≡ 1 ∧ renders_base ≡ 0 ∧ renders_overlay ≡ 0'
+  applies_to: all
+- id: MAP-LC-INV-005
+  type: invariant
+  property: Overlay events touch the overlay only
+  formal: '∀ event ∈ {hover, selection, layer toggle}: renders_overlay ≡ 1 ∧ renders_base ≡ 0 ∧ renders_lens ≡ 0'
+  applies_to: all
+- id: MAP-LC-INV-006
+  type: invariant
+  property: Inactive lens deltas render nothing
+  formal: '∀ delta to lens L ∉ active: renders ≡ 0 ∧ selecting L afterwards shows the changed value'
+  applies_to: all
+enforcement:
+  idle_frames:
+    description: Idle frame loop requests no frames with no input
+    check: contract_tests::FALSIFY-MAP-LC-001
+    severity: ERROR
+  pan_margin:
+    description: Pan inside the margin renders nothing, pan past it renders each layer once
+    check: contract_tests::FALSIFY-MAP-LC-002
+    severity: ERROR
+  zoom_motion:
+    description: Zoom renders nothing while moving and each layer once on settle
+    check: contract_tests::FALSIFY-MAP-LC-003
+    severity: ERROR
+  lens_events:
+    description: Lens switch and active-lens deltas render the lens layer only, once
+    check: contract_tests::FALSIFY-MAP-LC-004
+    severity: ERROR
+  overlay_events:
+    description: Hover, selection and layer toggle render the overlay only, once
+    check: contract_tests::FALSIFY-MAP-LC-005
+    severity: ERROR
+  inactive_delta:
+    description: A delta to an inactive lens renders nothing until that lens is selected
+    check: contract_tests::FALSIFY-MAP-LC-006
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-MAP-LC-001
+  rule: Idle frame loop does no work
+  prediction: 'with no input, the frame callback count over one second is 0'
+  test: timing test with a counting frame scheduler on a fake clock. Start the map, let the initial paint complete, then reset the frame-callback and per-layer render counters. With no input events, advance the fake clock by one second and assert the number of frame callbacks is 0 and each layer render count is 0.
+  planted_mutation: 'the frame loop keeps a frame request pending after the initial paint completes, so one frame callback runs inside the one-second window and the callback count is greater than 0; the test is red'
+  if_fails: The map repaints on an idle screen and burns battery for nothing
+- id: FALSIFY-MAP-LC-002
+  rule: Pan inside the margin renders nothing; pan past it renders each layer once
+  prediction: 'a pan that stays inside the cache margin gives (0, 0, 0); a pan past the margin gives (1, 1, 1), or fewer for a layer whose raster for the new camera is cached'
+  test: scripted pan test with per-layer render counters. Run one pan that stays inside the margin and assert (0, 0, 0). Run one pan that ends past the margin and assert the counts for that pan are exactly (1, 1, 1) when no raster for the new camera is cached.
+  planted_mutation: 'the margin check is removed, so the base layer re-renders on every pan step; the pan inside the margin then records base count 1 and the test is red'
+  if_fails: Panning redraws the whole map, and the pan-by-blit design is lost
+- id: FALSIFY-MAP-LC-003
+  rule: Zoom renders nothing while moving and each layer once on settle
+  prediction: 'during a zoom the counts are (0, 0, 0); on settle with no pre-painted raster they are exactly (1, 1, 1); after the idle pre-paint of the next zoom step, settling one step gives base = 0'
+  test: scripted zoom test with per-layer render counters and a fake clock. Run a zoom, sample the counters on every frame while it moves and assert zeros, then sample on settle and assert exactly one render per layer; then run the idle pre-paint and a one-step zoom and assert base = 0.
+  planted_mutation: 'the zoom step calls the base-layer render on every animation frame instead of blitting the scaled raster; the counter during the move is greater than 0 and the test is red'
+  if_fails: Zooming redraws the map every frame, so the zoom is slow on large maps
+- id: FALSIFY-MAP-LC-004
+  rule: Lens events render the lens layer only, once
+  prediction: 'a lens switch gives (0, 1, 0), and a delta to the active lens gives (0, 1, 0) whether it changes one cell or many'
+  test: scripted event test with per-layer render counters. Switch the lens and assert (0, 1, 0). Send one delta message that changes many cells of the active lens and assert (0, 1, 0). Repeat with a delta that changes one cell.
+  planted_mutation: 'a lens switch also invalidates the base layer, so the base count is 1 for a switch that should render 0 base layers; the test is red'
+  if_fails: Choosing a lens rebuilds the geometry too, so every lens change is slow
+- id: FALSIFY-MAP-LC-005
+  rule: Overlay events render the overlay only, once
+  prediction: 'a hover, a selection and a layer toggle each give (0, 0, 1)'
+  test: scripted event test with per-layer render counters. For each of hover, selection and a layer toggle in turn, from a settled state, assert the counts are (0, 0, 1).
+  planted_mutation: 'a hover invalidates the lens layer, so the lens count is 1 for a hover that should render 0 lens layers; the test is red'
+  if_fails: Pointer movement over the map repaints the choropleth on every move
+- id: FALSIFY-MAP-LC-006
+  rule: A delta to an inactive lens renders nothing until that lens is selected
+  prediction: 'a delta to a lens that is not active gives (0, 0, 0); after selecting that lens the render shows the changed value'
+  test: scripted event test. With lens A active, send a delta to lens B and assert (0, 0, 0). Then select lens B and assert that lens B renders once and that the drawn value for a changed cell equals the delta value.
+  planted_mutation: 'the delta handler renders the lens layer for whichever lens the delta names, so the render count is 1 for an inactive lens; the test is red'
+  if_fails: Background updates to hidden lenses cost frame time and the displayed lens is stale
+qa_gate:
+  id: F-MAP-LC-001
+  name: Map Layer Cache Contract
+  description: Which events re-render which of the base, lens and overlay layers, and how many times
+  checks:
+  - idle_frames
+  - pan_margin
+  - zoom_motion
+  - lens_events
+  - overlay_events
+  - inactive_delta
+  pass_criteria: All six falsification tests pass with per-layer render counters; the planted mutations named in each test turn them red
+  falsification: 'Invalidate the base layer on a lens switch, or re-render the lens layer on hover'
