@@ -598,6 +598,14 @@ fn find_cached_model(org: &str, repo: &str, file: Option<&str>) -> Option<PathBu
         }
     }
 
+    // 4. The one model store, by repo name (aprender#7481 U-02): a bare `hf://org/repo`
+    //    was recorded under `org/repo` by an earlier `apr run` or `apr pull`.
+    if file.is_none() {
+        if let Some(path) = crate::commands::pull::store_path_for_name(&format!("{org}/{repo}")) {
+            return Some(path);
+        }
+    }
+
     None
 }
 
@@ -610,7 +618,17 @@ pub(crate) fn download_hf_model(org: &str, repo: &str, file: Option<&str>) -> Re
     let base_url = format!("https://huggingface.co/{org}/{repo}/resolve/main");
 
     if let Some(filename) = file {
-        return download_single_hf_file(&cache_dir, &base_url, filename);
+        // aprender#7481 (U-02): a single file goes into the one pacha store and is
+        // recorded under `org/repo`, so `list`, `rm` and `serve run` see it.
+        let store = crate::commands::pull::get_pacha_cache_dir()?;
+        std::fs::create_dir_all(&store)?;
+        let model_ref = format!("hf://{org}/{repo}/{filename}");
+        let (_, path) =
+            crate::commands::pull::build_single_cache_path(&store, &model_ref, filename);
+        download_file(&format!("{base_url}/{filename}"), &path)?;
+        crate::commands::pull::record_store_name(&store, &model_ref, &path)?;
+        eprintln!("{}", "  Download complete!".green());
+        return Ok(path);
     }
 
     let model_path = download_main_safetensors(&cache_dir, &base_url)?;
@@ -638,16 +656,6 @@ fn hf_cache_dir(org: &str, repo: &str) -> Result<PathBuf> {
         .join(repo);
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
-}
-
-fn download_single_hf_file(cache_dir: &Path, base_url: &str, filename: &str) -> Result<PathBuf> {
-    let model_url = format!("{base_url}/{filename}");
-    let model_path = cache_dir.join(filename);
-
-    eprintln!("  Downloading {}...", filename);
-    download_file(&model_url, &model_path)?;
-    eprintln!("{}", "  Download complete!".green());
-    Ok(model_path)
 }
 
 /// Download SafeTensors weights. GH-127: prefer sharded (index.json) over single file.

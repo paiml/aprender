@@ -156,8 +156,38 @@ fn run_single_file_streaming(model_ref: &str, force: bool) -> Result<()> {
     }
 
     stream_and_post_process(&url, &cache_path, model_ref, &extension)?;
+    record_store_name(&cache_dir, model_ref, &cache_path)?;
     print_pull_usage(&cache_path, true);
     Ok(())
+}
+
+/// aprender#7481 (U-02): record an hf download in the one pacha store under `org/repo`,
+/// so `apr list` shows the repo, `apr rm org/repo` removes it, and `apr serve run org/repo`
+/// finds it. The file itself stays where the streaming pull put it.
+pub(crate) fn record_store_name(
+    cache_dir: &std::path::Path,
+    model_ref: &str,
+    path: &std::path::Path,
+) -> Result<()> {
+    let (org, repo, _) = parse_hf_single_uri(model_ref)?;
+    let name = format!("{org}/{repo}");
+    let mut fetcher = ModelFetcher::with_cache_dir(cache_dir.to_path_buf(), FetchConfig::default())
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to open model store: {e}")))?;
+    fetcher
+        .record_model(&name, path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to record {name}: {e}")))
+}
+
+/// aprender#7481 (U-02): the stored file recorded under the repo name `name` (`org/repo`), if any.
+pub(crate) fn store_path_for_name(name: &str) -> Option<std::path::PathBuf> {
+    let name = name.trim_start_matches("hf://");
+    let cache_dir = get_pacha_cache_dir().ok()?;
+    let fetcher = ModelFetcher::with_cache_dir(cache_dir, FetchConfig::default()).ok()?;
+    fetcher
+        .list()
+        .into_iter()
+        .find(|m| m.name == name && m.path.exists())
+        .map(|m| m.path)
 }
 
 fn stream_and_post_process(
