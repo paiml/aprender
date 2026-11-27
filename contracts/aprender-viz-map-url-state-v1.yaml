@@ -1,0 +1,108 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-27'
+  author: PAIML Engineering
+  description: >-
+    URL state codec for the map runtime. The state is encoded in the URL hash and decoded back. The codec is a
+    round trip, its output is canonical, keys no extension registered survive a decode and encode, and history
+    policy is fixed: selections and lens switches push a history entry, camera moves debounce into a replace.
+  references:
+  - 'APR-MAP-001 rev 7, section 5, rows MAP-0, MAP-6 and MAP-7 (epic #7507, issues #7508, #7514 and #7515)'
+equations:
+  codec:
+    formula: 'encode: state -> hash string; decode: hash string -> state, with unrecognised keys kept as opaque key-value pairs; encode(state) is a function of the state alone'
+    domain: 'every state the map runtime can hold, including extension-registered keys; every hash string'
+    codomain: 'hash strings and states'
+    invariants:
+    - 'decode(encode(s)) = s for every state s'
+    - 'encode(decode(encode(s))) = encode(s) for every state s (canonical)'
+  unknown_keys:
+    formula: 'a key that no extension registered is kept as an opaque pair by decode and re-emitted by encode with its value unchanged'
+    domain: 'hash strings containing keys outside the registered set'
+    codomain: 'the same key and value in the re-encoded string'
+    invariants:
+    - 'for a hash h with an unregistered key k and value v, encode(decode(h)) contains k with value v'
+  history_policy:
+    formula: 'selection: pushState, one history entry per selection change; lens switch: pushState, one history entry per switch; camera: replaceState after a debounce, so a camera drag adds no entries. The history effect of hover and layer toggle is not fixed by the spec and is not asserted here'
+    domain: 'the events that change state: camera move, selection change, lens switch'
+    codomain: 'history entry count change and URL hash after the event'
+    invariants:
+    - 'a camera drag adds 0 history entries'
+    - 'after the debounce interval the URL hash decodes to the final camera'
+    - 'a selection adds exactly 1 history entry and the URL hash then decodes to the new selection'
+    - 'a lens switch adds exactly 1 history entry and the URL hash then decodes to the new lens'
+proof_obligations:
+- id: MAP-URL-INV-001
+  type: invariant
+  property: Round trip
+  formal: '∀ state s: decode(encode(s)) ≡ s'
+  applies_to: all
+- id: MAP-URL-EQ-002
+  type: equivalence
+  property: Canonical encode
+  formal: '∀ state s: encode(decode(encode(s))) ≡ encode(s)'
+  applies_to: all
+- id: MAP-URL-INV-003
+  type: invariant
+  property: Unknown keys survive
+  formal: '∀ hash h with unregistered key k ∈ h: encode(decode(h)) ∋ (k, v) with v the value of k in h'
+  applies_to: all
+- id: MAP-URL-INV-004
+  type: invariant
+  property: Push versus replace
+  formal: 'selection ⇒ Δentries ≡ 1 ∧ lens switch ⇒ Δentries ≡ 1 ∧ camera drag ⇒ Δentries ≡ 0 ∧ camera ends in a replace after the debounce'
+  applies_to: all
+enforcement:
+  round_trip:
+    description: Decode after encode returns the same state for every state
+    check: contract_tests::FALSIFY-MAP-URL-001
+    severity: ERROR
+  canonical:
+    description: Encoding a state, decoding it and encoding again gives the same string, and encoding the same state twice gives the same string
+    check: contract_tests::FALSIFY-MAP-URL-002
+    severity: ERROR
+  unknown_keys:
+    description: An unregistered key survives decode then encode
+    check: contract_tests::FALSIFY-MAP-URL-003
+    severity: ERROR
+  history_policy:
+    description: Camera drags replace and add no entries; selections and lens switches push one entry each
+    check: contract_tests::FALSIFY-MAP-URL-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-MAP-URL-001
+  rule: Decode after encode returns the same state
+  prediction: 'decode(encode(s)) = s for every state s, including states with camera values of many decimal places and the empty state'
+  test: property test. Draw random states, including cameras with full-precision centre and scale values, extension-registered values and the empty state. Assert that decode of the encoded string returns a state equal to the input.
+  planted_mutation: 'the encoder writes the camera centre and scale with two fixed decimal places; a state with more precision decodes to a different camera, and the test is red'
+  if_fails: Sharing or reloading a link lands on a slightly different view than the one shared
+- id: FALSIFY-MAP-URL-002
+  rule: Encode is canonical
+  prediction: 'encode(decode(encode(s))) = encode(s) for every state s, and encode(s) returns the same string on each call'
+  test: property test. For random states, including the empty state, encode the state, decode the string, encode the decoded state again, and assert the two strings are equal. Also call encode twice on the same state and assert the two strings are equal.
+  planted_mutation: 'the encoder writes a per-call sequence number into the hash, so two encodes of the same state differ and the first assertion fails; the test is red'
+  if_fails: The same view produces many different links, so link comparison and caching break
+- id: FALSIFY-MAP-URL-003
+  rule: Unknown keys survive decode then encode
+  prediction: 'a hash with a key no extension registered keeps that key and its value through decode then encode'
+  test: fixture test. Take a committed hash string that contains one unregistered key with a committed value, decode it, encode the result, and assert the output contains that key with the same value.
+  planted_mutation: 'the decoder keeps only registered keys and drops everything else, so the unregistered pair is absent from the re-encoded string; the test is red'
+  if_fails: A link from a newer version or another extension loses its settings when this page re-saves the URL
+- id: FALSIFY-MAP-URL-004
+  rule: Push for selection and lens switch, debounced replace for camera
+  prediction: 'a camera drag adds 0 history entries and ends with the URL hash decoding to the final camera after the debounce interval; a selection and a lens switch each add exactly 1 entry, and the hash then decodes to the new selection or lens'
+  test: scripted history test that counts history entries. Run a camera drag and assert 0 entries added and, after the debounce interval, that the hash decodes to the final camera. Make a selection and assert 1 entry added and that the hash decodes to the selection. Switch the lens and assert 1 entry and the hash decodes to the lens.
+  planted_mutation: 'camera moves call pushState on every change instead of a debounced replaceState; a camera drag then adds one entry per move, and the test is red'
+  if_fails: The back button walks through every pixel of a pan, and the selection history is lost
+qa_gate:
+  id: F-MAP-URL-001
+  name: Map URL State Contract
+  description: Codec round trip, canonical encode, unregistered keys, and push versus replace history
+  checks:
+  - round_trip
+  - canonical
+  - unknown_keys
+  - history_policy
+  pass_criteria: All four falsification tests pass; the planted mutations named in each test turn them red
+  falsification: 'Write camera values with two fixed decimals, or push a history entry on every camera move'
