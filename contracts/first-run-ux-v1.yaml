@@ -2,6 +2,8 @@ metadata:
   version: 1.0.0
   created: '2026-11-27'
   author: PAIML Engineering
+  valid_under:
+    world: committed
   description: >-
     The first-run harness as a pv contract. A newcomer runs each step from
     nothing on the binary under test; each step is one falsification test. A
@@ -172,6 +174,7 @@ kani_harnesses:
   property: >-
     every row has a falsification test that runs from nothing
   status: declared-not-written
+  bound: 0
   cheaper_alternative: >-
     the pv validate check plus the per-row test lines themselves
 qa_gate:
