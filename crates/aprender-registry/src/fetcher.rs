@@ -210,7 +210,7 @@ impl ModelFetcher {
                 for entry in entries {
                     // Verify file still exists before adding to cache
                     if entry.path.exists() {
-                        cache.add(entry);
+                        cache.insert(entry);
                     }
                 }
             }
@@ -438,7 +438,7 @@ impl ModelFetcher {
         let hash = String::new();
         // One entry per file: two files of one repo must not replace each other.
         let version = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy().into_owned();
-        self.cache.add(CacheEntry::new(name, &version, size_bytes, hash, path.to_path_buf()));
+        self.cache.insert(CacheEntry::new(name, &version, size_bytes, hash, path.to_path_buf()));
         self.save_manifest();
         Ok(())
     }

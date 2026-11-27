@@ -59,3 +59,28 @@ fn store_survives_reopen_and_keeps_every_file_of_every_repo() {
     let names: Vec<String> = open(&cache).list().into_iter().map(|m| m.name).collect();
     assert_eq!(names, vec!["other/model".to_string()], "rm must persist and spare other repos");
 }
+
+/// `rm` and `list` need every name: the size cap must not drop entries from the manifest
+/// while the files stay on disk (aprender#7481).
+#[test]
+fn store_keeps_every_name_past_the_cache_size_cap() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cache = dir.path().join("models");
+    std::fs::create_dir_all(&cache).expect("mkdir");
+    // Each file is 15 bytes, so the second one already passes 90% of this cap.
+    let capped = || {
+        let mut config = FetchConfig::default();
+        config.cache = config.cache.with_max_size_bytes(16);
+        ModelFetcher::with_cache_dir(cache.clone(), config).expect("fetcher")
+    };
+
+    for (name, file) in [("org/one", "a.gguf"), ("org/two", "b.gguf"), ("org/three", "c.gguf")] {
+        let path = cache.join(file);
+        std::fs::write(&path, b"GGUF-test-bytes").expect("write model");
+        capped().record_model(name, &path).expect("record");
+    }
+
+    let mut names: Vec<String> = capped().list().into_iter().map(|m| m.name).collect();
+    names.sort();
+    assert_eq!(names, vec!["org/one", "org/three", "org/two"]);
+}
