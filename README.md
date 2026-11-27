@@ -26,82 +26,23 @@ contract_count: 1837
 
 ## Quick Start
 
-Pre-built and ready to use (Linux x86_64/aarch64 only today — other platforms fall
-through to `cargo install` below):
+The first run: run a model, list it, serve it, ask it a question over HTTP, and remove it. Install the CLI first (see [Install](#install)); the HTTP step uses `curl`. These are the target commands of the 0.78.0 first-run plan ([#7477](https://github.com/paiml/aprender/issues/7477)). Not all of them work on `apr 0.75.4` yet.
 
 ```text
-curl -LsSf https://paiml.com/apr/install.sh | sh
-```
+M=Qwen/Qwen2.5-Coder-0.5B-Instruct
 
-To read the script before it runs, download it with `curl -LsSf https://paiml.com/apr/install.sh -o install.sh`, review it, then run `sh install.sh`. The installer is POSIX `sh` and checks the downloaded release archive against its published `.sha256` before installing.
-
-Compile and build:
-
-```text
-cargo install aprender                    # CPU ONLY - no GPU backend is compiled in
-cargo install aprender --features cuda    # NVIDIA GPU acceleration
-cargo install aprender --features full    # everything (training, visualization, zram)
-apr pull hf://Qwen/Qwen2.5-Coder-0.5B-Instruct
+apr run hf://$M "Explain quicksort in three sentences." --temperature 0
 apr list
-apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors "2+2?"
+
+apr serve run $M --port 18080 &
+# wait until the server answers on /health, then ask
+curl -sf localhost:18080/v1/chat/completions -H content-type:application/json \
+  -d '{"model":"'$M'","messages":[{"role":"user","content":"What is 2+2?"}]}'
+
+apr rm $M
 ```
 
-full log of output
-
-<details>
-
-```text
-
-apr pull hf://Qwen/Qwen2.5-Coder-0.5B-Instruct
-== APR Pull ===
-
-Model: hf://Qwen/Qwen2.5-Coder-0.5B-Instruct/model.safetensors
-
-Downloading (streaming)...
- 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
-✓ Downloaded successfully
-  Path: ~/.cache/pacha/models/1e3be9285aea6923.safetensors
-  Size: 942.3 MB
-...  
-Usage:
-  apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors
-  apr serve ~/.cache/pacha/models/1e3be9285aea6923.safetensors
-  
-apr list
-=== Cached Models ===
-
-NAME                                     SIZE         FORMAT       PATH
---------------------------------------------------------------------------------------------------------
-1e3be9285aea6923                         942.3 MB     SafeTensors  ~/.cache/pacha/models/1e3be9285aea6923.safetensors (orphan)
-
-Total: 1 models (0 tracked + 1 orphans), 942.3 MB used
-apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors "what is 2+2?"
-=== APR Run ===
-
-Source: ~/.cache/pacha/models/1e3be9285aea6923.safetensors
-[GH-189] Loaded tokenizer from ~/.cache/pacha/models/1e3be9285aea6923.tokenizer.json: 22 special tokens
-
-Output:
-2 + 2 equals 4.
-
-Completed in 4.82s (cached)
-
-apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors "can you help me summarize quick sort algorithm, in less than 100 words"
-=== APR Run ===
-
-Source: ~/.cache/pacha/models/1e3be9285aea6923.safetensors
-[GH-189] Loaded tokenizer from ~/.cache/pacha/models/1e3be9285aea6923.tokenizer.json: 22 special tokens
-
-Output:
-Quick sort is a divide-and-conquer algorithm that sorts an array of elements. It works by selecting a 'pivot' element from the array and partitioning the
-
-Completed in 7.03s (cached)
-$
-```
-
-</details>
-
-For release notes see [GitHub Releases](https://github.com/paiml/aprender/releases).
+The server started with `&` keeps running until you stop it (`kill %1`).
 
 ## What is Aprender?
 
@@ -212,10 +153,24 @@ mdbook serve book                               # walkthrough docs
 
 ## Install
 
+Pre-built binary (Linux x86_64/aarch64 only today; on other platforms use `cargo install`):
+
 ```text
-cargo install aprender    # installs the `apr` binary
+curl -LsSf https://paiml.com/apr/install.sh | sh
+```
+
+To read the script before it runs, download it with `curl -LsSf https://paiml.com/apr/install.sh -o install.sh`, review it, then run `sh install.sh`. The installer is POSIX `sh` and checks the downloaded release archive against its published `.sha256` before installing.
+
+From crates.io:
+
+```text
+cargo install aprender                    # CPU ONLY - no GPU backend is compiled in
+cargo install aprender --features cuda    # NVIDIA GPU acceleration
+cargo install aprender --features full    # everything (training, visualization, zram)
 apr --version
 ```
+
+For release notes see [GitHub Releases](https://github.com/paiml/aprender/releases).
 
 ## A Qwen story
 
@@ -331,12 +286,19 @@ aprender = "0.75"
 ```
 
 ```rust
-use aprender::linear_regression::LinearRegression;
+use aprender::linear_model::LinearRegression;
+use aprender::prelude::{Matrix, Vector};
 use aprender::traits::Estimator;
 
-let model = LinearRegression::new();
-model.fit(&x_train, &y_train)?;
-let predictions = model.predict(&x_test)?;
+// Train on y = 2*x + 1
+let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("valid matrix dimensions");
+let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+let mut model = LinearRegression::new();
+model.fit(&x, &y).expect("linear regression fit should succeed");
+let predictions = model.predict(&x);
+let r2 = model.score(&x, &y);
+assert!(r2 > 0.99);
 ```
 
 Algorithms: Linear/Logistic Regression, Decision Trees, Random Forest, GBM,
@@ -350,7 +312,7 @@ Monorepo, flat `crates/aprender-*` layout (same pattern as
 [Burn](https://github.com/tracel-ai/burn),
 [Nushell](https://github.com/nushell/nushell)):
 
-```
+```text
 paiml/aprender/
 ├── Cargo.toml                      # Workspace root + `cargo install aprender`
 ├── crates/
