@@ -408,6 +408,9 @@ def length(path):
 with open(ledger, newline="", encoding="utf-8") as fh:
     for n, r in enumerate(csv.DictReader(fh), 2):
         p = r["evidence_path"].strip()
+        if not p:
+            problems.append(f"line {n}: empty evidence_path (a row with no cite is not evidence)")
+            continue
         for b in BARE.finditer(p):
             if not GOOD.match(p, b.start()):
                 problems.append(f"line {n}: malformed cite at {p[b.start():b.start() + 40]!r}")
@@ -429,6 +432,9 @@ with open(ledger, newline="", encoding="utf-8") as fh:
                 n_cites += 1
                 if lo < 1 or lo > hi or hi > length(f):
                     problems.append(f"line {n}: {f}:{lo}-{hi} is out of range (file has {length(f)} lines)")
+if n_cites == 0 and not problems:
+    # anti-vacuity: a 0-byte, header-only or all-empty ledger checks nothing
+    problems.append("no cite was checked: the ledger is empty or header-only")
 for pr in problems:
     print("  G2.1 cites           FAIL  " + pr)
 if problems:
