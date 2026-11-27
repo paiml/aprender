@@ -15,6 +15,8 @@ metadata:
   - docs/specifications/crux-ux-first-run-analysis-2026-11-27.md
   - aprender#7479 (U-00, P0)
   - 'Baseline apr 0.75.4: every row is RED (known red at baseline)'
+  depends_on:
+    - apr-cli-commands-v1
 equations:
   first_run_step_from_nothing:
     formula: >-
@@ -158,14 +160,14 @@ proof_obligations:
     Every first-run row is scored from its falsification test run from nothing.
     A row with no test is not scoreable (F-FR-U00-001 names the contract check).
   formal: >-
-    forall step in rows: exists test(step) and from_nothing(test(step))
+    ∀ step ∈ rows: ∃ test(step) ∧ from_nothing(test(step))
 - id: FR-NEG-002
   type: soundness
   property: >-
     On apr 0.75.4 every row is RED. A harness that passes 0.75.4 is broken
     (negative control, docs/roadmaps/releases/0.78.0-first-run.md §3).
   formal: >-
-    forall step in rows: result(step, apr_0_75_4) = RED
+    ∀ step ∈ rows: result(step, apr_0_75_4) ≡ RED
 kani_harnesses:
 # Declared, NOT written: the rows are shell harnesses run from nothing, not
 # bounded model-checking targets. Stated so no score is inflated (CF-5).
