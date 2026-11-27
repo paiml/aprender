@@ -28,7 +28,7 @@ contract_count: 1837
 
 The first run: run a model, list it, serve it, ask it a question over HTTP, and remove it. Install the CLI first (see [Install](#install)); the HTTP step uses `curl`. These are the target commands of the 0.78.0 first-run plan ([#7477](https://github.com/paiml/aprender/issues/7477)). Not all of them work on `apr 0.75.4` yet.
 
-```bash
+```text
 M=Qwen/Qwen2.5-Coder-0.5B-Instruct
 
 apr run hf://$M "Explain quicksort in three sentences." --temperature 0
