@@ -309,7 +309,7 @@ fixture_build() {
     local d="$TMP/$1" r
     r="$d/repo"
     mkdir -p "$r/scripts/release" "$d/ap" || return 2
-    cp -- "$2" "$r/scripts/release/autopilot.sh" && cp -- "$3" "$r/scripts/release/models_t1.sh" \
+    cp -- "$2" "$r/scripts/release/autopilot.sh" && cp -- "$3" "$r/scripts/release/models_t1.sh" && cp -- "$ROOT/scripts/release/models_t1_hosts.conf" "$r/scripts/release/" \
         && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" || return 2
     printf '#!/usr/bin/env bash\nexit 0\n' > "$r/scripts/bump-version.sh"
     # the standing release policy autopilot reads: this checkout's reader, and a ladder with no

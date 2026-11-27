@@ -59,8 +59,13 @@
 # usage: [MODELS_T1_MEASURE=ladder|crux] models_t1.sh <version> <release-commit> <out-dir>
 # exit:  0 GO on both hosts  ·  1 NO-GO  ·  2 usage/ENV (the caller STOPs on any non-zero)
 set -uo pipefail
-LOCAL_HOST=lambda
-REMOTE_HOST=gx10
+# Host pair from config (PMAT-7497): never a literal here. MODELS_T1_HOSTS_FILE overrides for the check.
+MODELS_T1_HOSTS_FILE=${MODELS_T1_HOSTS_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/models_t1_hosts.conf}
+[ -s "$MODELS_T1_HOSTS_FILE" ] || { echo "MODELS-LEG config ENV: $MODELS_T1_HOSTS_FILE missing or empty"; exit 2; }
+# shellcheck disable=SC1090
+. "$MODELS_T1_HOSTS_FILE"
+: "${LOCAL_HOST:?host config sets LOCAL_HOST}" "${REMOTE_HOST:?host config sets REMOTE_HOST}"
+[ "${MODELS_T1_PRINT_HOSTS:-}" = 1 ] && { echo "hosts $LOCAL_HOST $REMOTE_HOST"; exit 0; }
 # A fresh `cargo build --release -p apr-cli --bin apr --features cuda --locked` target, in KiB: the
 # gx10 leg REFUSES up front, as ENV, when its filesystem has less free (after the sweep; the run's
 # own dir is always new, so nothing in it counts). Half-building on a 97-99% disk fails later and
