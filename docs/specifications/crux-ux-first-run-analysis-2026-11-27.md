@@ -10,7 +10,7 @@ The existing CRUX work (`crux-competitive-research-ux-workflows.md`, #6730) asks
 
 | Subject | Version | How it was obtained |
 |---|---|---|
-| `apr` | 0.75.3 (982ebfd36), then 0.75.4 (d44c64523) | `apr --version`, the installed release binary. It was updated during the session; every finding was re-run on 0.75.4 and is unchanged (`recheck-0754.txt`, `routes3.txt`, `routes4-0754.txt` in the review packet) |
+| `apr` | 0.75.3 (982ebfd36), then 0.75.4 (d44c64523) | `apr --version`, the installed release binary. It was updated during the session; every measured finding (F-01 to F-11) was re-run on 0.75.4 and is unchanged (`recheck-0754.txt`, `routes3.txt`, `routes4-0754.txt` in the review packet) |
 | Source tree | `dd6e459ac` (`origin/main`) | `git rev-parse HEAD` |
 | Ollama | 0.40.18 | `ollama --version` |
 | llama.cpp | 1.1.0-dev, build 12808 (ed2153e70) | `llama-cli --version` |
@@ -18,7 +18,7 @@ The existing CRUX work (`crux-competitive-research-ux-workflows.md`, #6730) asks
 
 Rules followed:
 
-- Every `apr` finding was produced by running the installed binary. The command is given in §6.
+- Every measured `apr` finding (F-01 to F-11) was produced by running the installed binary; the command is given in §6. F-12 is read from the README and was not re-tested.
 - "From nothing" means a fresh `HOME` and `XDG_CACHE_HOME`, so no earlier download can help.
 - stdout and stderr were captured separately, with stdin closed.
 - Competitor behaviour that was run on this host is marked **measured**. Behaviour taken from the vendor's documentation is marked **cited**, with the URL in §7. LM Studio, mistral.rs, vLLM and mlx-lm are not installed here, so every cell for them is cited.
