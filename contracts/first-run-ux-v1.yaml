@@ -1,0 +1,183 @@
+metadata:
+  version: 1.0.0
+  created: '2026-11-27'
+  author: PAIML Engineering
+  description: >-
+    The first-run harness as a pv contract. A newcomer runs each step from
+    nothing on the binary under test; each step is one falsification test. A
+    row is done only when its done_when passes from nothing
+    (D=$(mktemp -d); HOME=$D XDG_CACHE_HOME=$D/.cache). LAB: this contract can
+    block no merge and no release.
+  references:
+  - docs/roadmaps/releases/0.78.0-first-run.md §3 (rows U-00..U-08, U-10, G-01..G-03)
+  - docs/specifications/crux-ux-first-run-analysis-2026-11-27.md
+  - aprender#7479 (U-00, P0)
+  - 'Baseline apr 0.75.4: every row is RED (known red at baseline)'
+equations:
+  first_run_step_from_nothing:
+    formula: >-
+      from_nothing(step) => passes(step) on binary_under_test
+    domain: >-
+      step in {U-00..U-08, U-10, G-01..G-03}; binary_under_test is the apr
+      build named in the receipt; from_nothing is an empty HOME and an empty
+      XDG_CACHE_HOME
+    codomain: bool — each falsification test exits 0 when the step passes
+    invariants:
+    - >-
+      NEGATIVE CONTROL. On apr 0.75.4 every test is RED. A harness that passes
+      0.75.4 is broken.
+    - >-
+      FROM NOTHING. Each test runs with an empty HOME and XDG_CACHE_HOME; no
+      test reads a cache left by another test.
+    - >-
+      NAMED FAILURE. A red test names the failing step in its output.
+falsification_tests:
+- id: F-FR-U00-001
+  rule: the contract exists and validates
+  prediction: >-
+    `pv validate contracts/first-run-ux-v1.yaml` exits 0 with no errors.
+  test: 'pv validate contracts/first-run-ux-v1.yaml'
+  if_fails: the first-run harness is not a checkable contract; no row can be scored.
+  mutation: >-
+    drop the `equations:` block; validation must fail.
+- id: F-FR-U01-001
+  rule: apr run on a safetensors hf:// repo works from nothing (U-01)
+  prediction: >-
+    from nothing, `apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0`
+    exits 0 and the reply contains `4`. On apr 0.75.4 it exits 8.
+  test: 'bash -c ''D=$(mktemp -d); HOME=$D XDG_CACHE_HOME=$D/.cache apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0 | grep -q 4'''
+  if_fails: step U-01 fails - safetensors hf:// run is not usable by a newcomer.
+  mutation: >-
+    replace the reply check with `true`; the contract must still name exit 8 as RED on 0.75.4.
+- id: F-FR-U02-001
+  rule: run, list and rm share one model store (U-02)
+  prediction: >-
+    from nothing, after `apr run hf://$G "hi"`, `apr list` shows $G, and after
+    `apr rm $G` it does not. On apr 0.75.4 `apr list` shows nothing.
+  test: 'bash -c ''G=Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://$G "hi" >/dev/null 2>&1; apr list | grep -q "$G"'''
+  if_fails: step U-02 fails - the model store does not list what run pulled.
+  mutation: >-
+    delete the `apr list` line; the contract must fail its own check.
+- id: F-FR-U03-001
+  rule: a pulled model has a name and no hash row (U-03)
+  prediction: >-
+    from nothing, `apr pull hf://HuggingFaceTB/SmolLM2-135M-Instruct` then
+    `apr list` shows the repo name and no `(orphan)`. On apr 0.75.4 the row is
+    a 16-hex hash marked `(orphan)`.
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr pull hf://HuggingFaceTB/SmolLM2-135M-Instruct >/dev/null 2>&1; apr list | grep -q "HuggingFaceTB/SmolLM2-135M-Instruct" && ! apr list | grep -q "(orphan)"'''
+  if_fails: step U-03 fails - a pulled model is nameless or shown as an orphan.
+  mutation: >-
+    print the hash row; the `(orphan)` check must turn RED.
+- id: F-FR-U04-001
+  rule: a reply is not cut off by default (U-04)
+  prediction: >-
+    `apr run <gguf> "Explain quicksort in three sentences." --temperature 0 --json`
+    reports more than 32 generated tokens and stop reason end-of-turn. On apr 0.75.4 it stops at 32.
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF "Explain quicksort in three sentences." --temperature 0 --json | grep -q "end_of_turn"'''
+  if_fails: step U-04 fails - default generation is truncated at 32 tokens.
+  mutation: >-
+    cap the default at 32; the stop-reason check must turn RED.
+- id: F-FR-U05-001
+  rule: apr run says which backend ran (U-05)
+  prediction: >-
+    `apr run <m> "hi"` writes one stderr line naming the backend. On apr 0.75.4
+    no such line exists (F-07).
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" 2>&1 >/dev/null | grep -qiE "backend|cpu|cuda"'''
+  if_fails: step U-05 fails - the backend is silent; a user cannot tell CPU from GPU.
+  mutation: >-
+    remove the backend line; the grep must turn RED.
+- id: F-FR-U06-001
+  rule: apr doctor exists and reports the selected backend (U-06)
+  prediction: >-
+    `apr doctor --json` exits 0 and carries the selected backend. On apr 0.75.4
+    the subcommand is unrecognized.
+  test: 'bash -c ''apr doctor --json >/dev/null 2>&1'''
+  if_fails: step U-06 fails - no doctor verb, so a newcomer cannot diagnose a backend.
+  mutation: >-
+    make `apr doctor` exit 1 with no output; the exit-0 check must turn RED.
+- id: F-FR-U07-001
+  rule: stdout of apr run is the reply and nothing else by default (U-07)
+  prediction: >-
+    without -v, stdout of a successful `apr run` is the reply only; stderr has
+    no internal tag such as `[PMAT-044]`. On apr 0.75.4 the banner is on stdout.
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" 2>/dev/null | grep -qE "^[[:space:]]*[Aa]ppend|Endpoints:"; test $? -ne 0'''
+  if_fails: step U-07 fails - internal banner or log lines leak onto stdout.
+  mutation: >-
+    print the banner on stdout; the grep must match and the test must turn RED.
+- id: F-FR-U08-001
+  rule: apr --help has no internal tags (U-08)
+  prediction: >-
+    `apr --help` has no match for `GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+|#[0-9]{3,}`.
+    On apr 0.75.4 it has tagged lines.
+  test: 'bash -c ''apr --help | grep -qE "GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+|#[0-9]{3,}"; test $? -ne 0'''
+  if_fails: step U-08 fails - the help a newcomer reads carries ticket ids.
+  mutation: >-
+    add `PMAT-001` to a help line; the test must turn RED.
+- id: F-FR-U10-001
+  rule: the README quick start is the first-run script (U-10)
+  prediction: >-
+    the README library snippet compiles as a doctest; a planted wrong module
+    path in the snippet turns the doctest RED.
+  test: 'cargo test --doc -p aprender-core README'
+  if_fails: step U-10 fails - the README snippet does not match the binary.
+  mutation: >-
+    plant a wrong module path in the snippet; the doctest must turn RED.
+- id: F-FR-G01-001
+  rule: POST /v1/messages on apr serve run (G-01)
+  prediction: >-
+    with a GGUF chat model loaded, POST /v1/messages returns 200 with
+    type=message. On apr 0.75.4 it returns 404.
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port 18080 >/dev/null 2>&1 & P=$!; sleep 5; curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:18080/v1/messages -H "content-type: application/json" -d "{\"model\":\"m\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"What is 2+2?\"}]}" | grep -q 200; R=$?; kill $P; exit $R'''
+  if_fails: step G-01 fails - the Anthropic-compatible messages route is missing.
+  mutation: >-
+    return 404 on the route; the status check must turn RED.
+- id: F-FR-G02-001
+  rule: POST /v1/responses on apr serve run (G-02)
+  prediction: >-
+    with the same model, POST /v1/responses returns 200 with object=response.
+    On apr 0.75.4 it returns 404.
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port 18081 >/dev/null 2>&1 & P=$!; sleep 5; curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:18081/v1/responses -H "content-type: application/json" -d "{\"model\":\"m\",\"input\":\"What is 2+2?\"}" | grep -q 200; R=$?; kill $P; exit $R'''
+  if_fails: step G-02 fails - the responses route is missing.
+  mutation: >-
+    return 404 on the route; the status check must turn RED.
+- id: F-FR-G03-001
+  rule: a request with no model field says so (G-03)
+  prediction: >-
+    POST /v1/chat/completions without a model field returns a 4xx whose message
+    names `model`. On apr 0.75.4 it returns 422 with a generic schema message.
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port 18082 >/dev/null 2>&1 & P=$!; sleep 5; curl -s -X POST http://127.0.0.1:18082/v1/chat/completions -H "content-type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" | grep -qi "model"; R=$?; kill $P; exit $R'''
+  if_fails: step G-03 fails - a missing model field gets an unhelpful error.
+  mutation: >-
+    return the generic schema message; the `model` match must turn RED.
+proof_obligations:
+- id: FR-INV-001
+  type: invariant
+  property: >-
+    Every first-run row is scored from its falsification test run from nothing.
+    A row with no test is not scoreable (F-FR-U00-001 names the contract check).
+  formal: >-
+    forall step in rows: exists test(step) and from_nothing(test(step))
+- id: FR-NEG-002
+  type: soundness
+  property: >-
+    On apr 0.75.4 every row is RED. A harness that passes 0.75.4 is broken
+    (negative control, docs/roadmaps/releases/0.78.0-first-run.md §3).
+  formal: >-
+    forall step in rows: result(step, apr_0_75_4) = RED
+kani_harnesses:
+# Declared, NOT written: the rows are shell harnesses run from nothing, not
+# bounded model-checking targets. Stated so no score is inflated (CF-5).
+- id: KH-FR-001
+  obligation: FR-INV-001
+  property: >-
+    every row has a falsification test that runs from nothing
+  status: declared-not-written
+  cheaper_alternative: >-
+    the pv validate check plus the per-row test lines themselves
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: >-
+      No numeric quality gate. This contract scores binary first-run steps
+      from nothing; a fabricated score would misstate them. LAB: it blocks no
+      merge and no release.
