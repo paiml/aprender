@@ -854,6 +854,33 @@ mod emit_trace_tests {
             assert!(line.contains("\"v\":1"), "every JSONL record must carry v:1, got: {line}");
         }
     }
+
+    #[test]
+    fn emit_user_prompt_carries_the_four_input_keys() {
+        // #4600: the user_prompt record carries what the driver was actually sent, not only the
+        // caller's text. Keys are read from the loop result, so they are always present here.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("trace.jsonl");
+        let mut r = synth_result("x");
+        r.input.input_bytes_sent = 5;
+        r.input.input_bytes_consumed = 5;
+        r.input.prompt_sha256 = "ab12".to_owned();
+        r.input.prompt_tokens = 3;
+        emit_ccpa_trace(&path, "hello", &r, std::time::Duration::from_millis(1), "m")
+            .expect("emit");
+        let body = std::fs::read_to_string(&path).expect("read back");
+        let user_prompt = body
+            .lines()
+            .find(|l| l.contains("\"kind\":\"user_prompt\""))
+            .expect("no user_prompt record");
+        let v: serde_json::Value =
+            serde_json::from_str(user_prompt).expect("user_prompt record is valid JSON");
+        assert_eq!(v["text"], "hello");
+        assert_eq!(v["input_bytes_sent"], 5);
+        assert_eq!(v["input_bytes_consumed"], 5);
+        assert_eq!(v["prompt_sha256"], "ab12");
+        assert_eq!(v["prompt_tokens"], 3);
+    }
 }
 
 // ── PMAT-CODE-OUTPUT-FORMAT-001 / PMAT-CODE-INPUT-FORMAT-001 ─────────

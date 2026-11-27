@@ -4,13 +4,14 @@ use super::*;
 use crate::agent::capability::Capability;
 use crate::agent::code_envelope::{envelope, CodeOutcome};
 use crate::agent::driver::mock::MockDriver;
-use crate::agent::driver::{CompletionResponse, ToolDefinition};
+use crate::agent::driver::{CompletionRequest, CompletionResponse, LlmDriver, ToolDefinition};
 use crate::agent::manifest::AgentManifest;
 use crate::agent::memory::InMemorySubstrate;
 use crate::agent::result::AgentLoopResult;
 use crate::agent::result::{StopReason, TokenUsage};
 use crate::agent::runtime::{run_agent_loop, run_agent_loop_with_nudge};
 use crate::agent::tool::{Tool, ToolRegistry, ToolResult};
+use crate::serve::backends::PrivacyTier;
 use crate::serve::context::{ContextConfig, ContextWindow};
 
 fn context() -> ContextManager {
@@ -66,6 +67,57 @@ fn falsify_4600_001_planted_one_byte_drop_is_refused() {
     let doc: serde_json::Value = serde_json::from_str(&doc).expect("json");
     assert_eq!(doc["error"]["kind"], "input_not_consumed");
     assert_eq!(doc["is_error"], true);
+}
+
+/// A driver that counts the requests it is handed. It answers `ok` when called.
+struct CountingDriver {
+    window: usize,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl LlmDriver for CountingDriver {
+    async fn complete(
+        &self,
+        _request: CompletionRequest,
+    ) -> Result<CompletionResponse, AgentError> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(answer("ok"))
+    }
+    fn context_window(&self) -> usize {
+        self.window
+    }
+    fn privacy_tier(&self) -> PrivacyTier {
+        PrivacyTier::Sovereign
+    }
+}
+
+/// FALSIFY-4600-006: a prompt the loop cannot send whole is refused at `run_agent_loop` and the
+/// driver is never called. Sliding-window truncation never cuts a message's content, so the
+/// loop-level refusal for an oversized prompt is `context_overflow` (#4599), not
+/// `input_not_consumed`; the byte-level refusal is covered by the `measure` falsifiers above.
+#[tokio::test]
+async fn falsify_4600_006_overflowing_prompt_refused_before_driver_call() {
+    let driver = CountingDriver { window: 8_192, calls: std::sync::atomic::AtomicUsize::new(0) };
+    let mut manifest = AgentManifest::default();
+    manifest.model.max_tokens = 4096;
+    let prompt = prompt_200kb();
+    let err = run_agent_loop(
+        &manifest,
+        &prompt,
+        &driver,
+        &ToolRegistry::new(),
+        &InMemorySubstrate::new(),
+        None,
+    )
+    .await
+    .expect_err("a 200 KB prompt fit a 4096-token input budget");
+    assert!(matches!(err, AgentError::ContextOverflow { .. }), "got {err:?}");
+    assert_eq!(
+        driver.calls.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "the driver was called with a prompt the loop refused"
+    );
 }
 
 /// FALSIFY-4600-002: a changed byte at the head, and a request with no prompt, are refused.
