@@ -346,3 +346,39 @@ fn renders_total_sums_the_three_layers() {
 fn cache_margin_constant_is_160_px() {
     assert_eq!(CACHE_MARGIN_PX, 160.0);
 }
+
+#[test]
+fn falsify_map_lc_002_prepaint_after_a_prepainted_settle_keeps_current_coverage() {
+    let mut layers = with_lens(Some(1));
+    let anchor = (300.0, 200.0);
+    step(
+        &mut layers,
+        Event::IdlePrepaint {
+            anchor,
+            next_scale: 20.0,
+        },
+    );
+    step(
+        &mut layers,
+        Event::ZoomMotion {
+            anchor,
+            scale: 20.0,
+        },
+    );
+    step(&mut layers, Event::ZoomSettle);
+    step(
+        &mut layers,
+        Event::IdlePrepaint {
+            anchor,
+            next_scale: 40.0,
+        },
+    );
+    let pan = step(
+        &mut layers,
+        Event::Pan {
+            dx_px: 1.0,
+            dy_px: 0.0,
+        },
+    );
+    assert_eq!(pan.renders, r(0, 0, 0), "the settled view is still cached");
+}

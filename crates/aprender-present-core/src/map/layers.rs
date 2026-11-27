@@ -119,12 +119,17 @@ impl LayerCache {
 
     /// Paints the primary raster unless one covers `camera`. Returns the render count.
     fn paint_if_uncovered(&mut self, camera: &Camera2D) -> u32 {
-        if self.covers(camera) {
-            0
-        } else {
-            self.primary = Some(Raster::of(camera));
-            1
+        if self.primary.is_some_and(|r| r.covers(camera)) {
+            return 0;
         }
+        if self.prefetch.is_some_and(|r| r.covers(camera)) {
+            // The pre-painted raster is now the current view: keep it out of the prefetch slot,
+            // which the next idle pre-paint overwrites.
+            std::mem::swap(&mut self.primary, &mut self.prefetch);
+            return 0;
+        }
+        self.primary = Some(Raster::of(camera));
+        1
     }
 
     /// Pre-paints the prefetch raster unless one covers `camera`. Returns the render count.
