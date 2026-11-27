@@ -154,13 +154,28 @@ C_JCRUX='CRUX_CERT="$CERT" bash scripts/check_model_ladder.sh --version "$ver" -
 C_CUT='--crux "$out" --cut-commit "$sha"'
 C_NAME='    MEASURER=crux_sweep_shards.sh'
 C_RRCPT='if [ -f "\$dir/out/$RREC" ]; then'
+# host-config anchors (PMAT-7497), in models_t1.sh: one per check the hosts_* rows must see fire
+H_CONF='mt_conf="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/models_t1_hosts.conf"'
+H_EMPTY='[ -f "$mt_conf" ] && [ -s "$mt_conf" ] || {'
+H_RESET='LOCAL_HOST="" REMOTE_HOST="" # an inherited value must not survive a conf that omits it'
+H_READ='done < "$mt_conf"'
+H_NONDATA='        *) echo "MODELS-LEG config ENV: $mt_conf has a line that is not LOCAL_HOST=/REMOTE_HOST=: refused, not run"; exit 2 ;;'
+H_RE='    [[ $mt_v =~ ^[a-z0-9][a-z0-9-]*$ ]] || {'
+H_DUP='    [ -z "${!mt_k}" ] || {'
+H_NOKEY='[ -n "$LOCAL_HOST" ] && [ -n "$REMOTE_HOST" ] || {'
+H_SAME='[ "$LOCAL_HOST" != "$REMOTE_HOST" ] || {'
+H_LALLOW='case $LOCAL_HOST in lambda|gx10|kfocus|jetson)'
+H_RALLOW='case $REMOTE_HOST in gx10|kfocus|jetson)'
+H_LID='[ "$mt_me" = "$LOCAL_HOST" ] || {'
+H_RID='[ "\$mt_rid" = "$REMOTE_HOST" ] || { echo "MODELS-LEG $REMOTE_HOST ENV: ssh'
 
 env_die() { printf 'ENV   %s -- the table judged nothing, not a pass\n' "$*" >&2; exit 2; }
 for f in "$AUTOPILOT" "$MODELS" "$PARAMS" "$PREFLIGHT"; do [ -r "$f" ] || env_die "no $f"; done
 for t in git python3 flock; do command -v "$t" > /dev/null 2>&1 || env_die "no $t"; done
 FX_REAL_FLOCK=$(command -v flock); export FX_REAL_FLOCK
 for a in "$A_SHARED" "$A_255" "$A_BUILD" "$A_NORCPT" "$A_RED" "$A_DECLINE" "$A_PROOF" "$A_DISK" "$A_LLOCK" "$A_RLOCK" "$A_RUNDIR" "$A_LOCKDEF" "$A_CHOOM_R" "$A_CHOOM_L" "$A_CELLS_R" "$A_CELLS_L" \
-         "$C_BOGUS" "$C_CERT" "$C_VER" "$C_POLICY" "$C_LOCAL" "$C_CHOOM_R" "$C_SUBDIR" "$C_JCRUX" "$C_CUT" "$C_NAME" "$C_RRCPT"; do
+         "$C_BOGUS" "$C_CERT" "$C_VER" "$C_POLICY" "$C_LOCAL" "$C_CHOOM_R" "$C_SUBDIR" "$C_JCRUX" "$C_CUT" "$C_NAME" "$C_RRCPT" \
+         "$H_CONF" "$H_EMPTY" "$H_RESET" "$H_READ" "$H_NONDATA" "$H_RE" "$H_DUP" "$H_NOKEY" "$H_SAME" "$H_LALLOW" "$H_RALLOW" "$H_LID" "$H_RID"; do
     grep -qF -- "$a" "$MODELS" || env_die "models_t1.sh has no '$a' line -- the subject moved"
 done
 grep -qF -- "$A_LOCKDEF" "$NIGHTLY" || env_die "models_nightly.sh does not probe '$A_LOCKDEF' -- the two scripts lock different files"
@@ -259,7 +274,13 @@ while [ "${1#-}" != "${1:-}" ]; do [ "$1" = -w ] && shift; shift; done
 shift
 FX_FLOCK=1 exec "$@"
 STUB
-chmod +x "$TMP/bin/gh" "$TMP/bin/ssh" "$TMP/bin/cargo" "$TMP/bin/choom" "$TMP/bin/flock"
+# hostname: the host identity models_t1.sh checks on each side. The real names (lambda = noah-Lambda-Vector,
+# gx10 = gx10-a5b5) by default; FX_LOCAL_HOSTNAME / FX_REMOTE_HOSTNAME make one side a different box (PMAT-7497)
+cat > "$TMP/bin/hostname" <<'STUB'
+#!/usr/bin/env bash
+if [ "${FX_HOST:-lambda}" = gx10 ]; then printf '%s\n' "${FX_REMOTE_HOSTNAME:-gx10-a5b5}"; else printf '%s\n' "${FX_LOCAL_HOSTNAME:-noah-Lambda-Vector}"; fi
+STUB
+chmod +x "$TMP/bin/gh" "$TMP/bin/ssh" "$TMP/bin/cargo" "$TMP/bin/choom" "$TMP/bin/flock" "$TMP/bin/hostname"
 # the judge stub (check_model_ladder.sh's frozen interface): every required host's receipt present,
 # green and for this version -> 0; otherwise 1 with a FAIL line each; FX_JUDGE_DECLINE=1 -> 2
 cat > "$TMP/judge-stub.sh" <<'STUB'
@@ -620,25 +641,40 @@ measure_bogus() { # models_t1.sh's own refusal: autopilot never hands it a mode 
 # models_t1.sh's host-config refusals (PMAT-7497): called directly, no autopilot, nothing may build and
 # nothing may exit 0. The conf is the fixture's COPY beside its copy of the script (no env names a conf).
 # $4 is the case: same (LOCAL_HOST == REMOTE_HOST), empty (empty conf), inject (a conf line that runs a
-# command must not run it), badchar (a host outside ^[a-z0-9-]+$), nokey (REMOTE_HOST absent while the env
-# carries one), printhosts (MODELS_T1_PRINT_HOSTS=1 with a good conf and bad args must not exit 0).
+# command must not run it), badchar (a host outside the value regex), nokey (REMOTE_HOST absent while the env
+# carries one), printhosts (MODELS_T1_PRINT_HOSTS=1 with a good conf and bad args must not exit 0), dup (a key
+# set twice), swapped (LOCAL_HOST=gx10 REMOTE_HOST=lambda: lambda is never the remote), foreign (a pair outside
+# the operator's hosts), dash (a value with a leading dash, an ssh option), envfile (a refused conf while every
+# env a caller could use to name another conf or pair points at a good one), notme (a good conf run on a box
+# that is not LOCAL_HOST). Each case must refuse with ITS OWN message (the needle), so a check that is gone
+# cannot hide behind a later one.
 hosts_refuse() {
-    local d="$TMP/hostsref-$1-$4" mc rc conf="$TMP/hostsref-$1-$4/repo/scripts/release/models_t1_hosts.conf" pre=""
+    local d="$TMP/hostsref-$1-$4" mc rc conf="$TMP/hostsref-$1-$4/repo/scripts/release/models_t1_hosts.conf" needle
+    local -a pre=()
     fixture "hostsref-$1-$4" "$2" "$3" || return 2
     : > "$d/wrap.log"; mc=$(cat "$d/mc")
     case $4 in
-        same) printf 'LOCAL_HOST=gx10\nREMOTE_HOST=gx10\n' > "$conf" ;;
-        empty) : > "$conf" ;;
-        inject) printf 'LOCAL_HOST=lambda\nREMOTE_HOST=gx10\ntouch %s/PWNED\n' "$d" > "$conf" ;;
-        badchar) printf 'LOCAL_HOST=lambda\nREMOTE_HOST=gx10;touch %s/PWNED\n' "$d" > "$conf" ;;
-        nokey) printf 'LOCAL_HOST=lambda\n' > "$conf"; pre="REMOTE_HOST=gx10" ;;
-        printhosts) mc="not-a-commit" ;;
+        same) printf 'LOCAL_HOST=gx10\nREMOTE_HOST=gx10\n' > "$conf"; needle='LOCAL_HOST == REMOTE_HOST (gx10)' ;;
+        empty) : > "$conf"; needle='missing or empty' ;;
+        inject) printf 'LOCAL_HOST=lambda\nREMOTE_HOST=gx10\ntouch %s/PWNED\n' "$d" > "$conf"; needle='has a line that is not LOCAL_HOST=/REMOTE_HOST=' ;;
+        badchar) printf 'LOCAL_HOST=lambda\nREMOTE_HOST=gx10;touch %s/PWNED\n' "$d" > "$conf"; needle='REMOTE_HOST value does not match' ;;
+        nokey) printf 'LOCAL_HOST=lambda\n' > "$conf"; pre=(REMOTE_HOST=gx10); needle='must set LOCAL_HOST and REMOTE_HOST' ;;
+        printhosts) mc="not-a-commit"; needle="'not-a-commit' is not a commit" ;;
+        dup) printf 'LOCAL_HOST=lambda\nREMOTE_HOST=gx10\nLOCAL_HOST=kfocus\n' > "$conf"; needle='LOCAL_HOST set twice' ;;
+        swapped) printf 'LOCAL_HOST=gx10\nREMOTE_HOST=lambda\n' > "$conf"; needle='REMOTE_HOST=lambda is not one of gx10 kfocus jetson' ;;
+        foreign) printf 'LOCAL_HOST=foo\nREMOTE_HOST=bar\n' > "$conf"; needle='LOCAL_HOST=foo is not one of lambda gx10 kfocus jetson' ;;
+        dash) printf 'LOCAL_HOST=lambda\nREMOTE_HOST=-gx10\n' > "$conf"; needle='REMOTE_HOST value does not match' ;;
+        envfile) printf 'LOCAL_HOST=lambda\nREMOTE_HOST=gx10\n' > "$d/good.conf"; printf 'LOCAL_HOST=gx10\nREMOTE_HOST=gx10\n' > "$conf"
+                 pre=(MODELS_T1_HOSTS_FILE="$d/good.conf" MODELS_T1_HOSTS_CONF="$d/good.conf" MODELS_T1_CONF="$d/good.conf" LOCAL_HOST=lambda REMOTE_HOST=gx10)
+                 needle='LOCAL_HOST == REMOTE_HOST (gx10)' ;;
+        notme) pre=(FX_LOCAL_HOSTNAME=gx10-a5b5); needle="this machine identifies as 'gx10', not LOCAL_HOST=lambda" ;;
         *) return 2 ;;
     esac
     ( cd "$d/repo" && export CARGO_HOME="$TMP/cargo-home" CARGO_TARGET_DIR="$d/target" PATH="$TMP/bin:$PATH" FX_MC="$mc" FX_GX10_HOME="$d/gx10" \
-          MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log" MODELS_T1_LOCK="$d/t1.lock" MODELS_T1_PRINT_HOSTS=1 ${pre:+"$pre"}
+          MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log" MODELS_T1_LOCK="$d/t1.lock" MODELS_T1_PRINT_HOSTS=1 "${pre[@]}"
       bash scripts/release/models_t1.sh 9.9.9 "$mc" "$d/ap/models-t1" ) > "$d/ap/models-t1.log" 2>&1; rc=$?
     [ "$rc" = 2 ] || { printf 'models_t1.sh exited %s, not 2\n' "$rc"; return 1; }
+    grep -qF -- "$needle" "$d/ap/models-t1.log" || { printf 'the refusal never said "%s": %s\n' "$needle" "$(head -n 1 "$d/ap/models-t1.log")"; return 1; }
     [ ! -e "$d/PWNED" ] || { printf 'a conf line was EXECUTED\n'; return 1; }
     ! grep -q '^build ' "$d/wrap.log" || { printf 'a leg built on a refused host config\n'; return 1; }
     ! grep -q 'MODELS GO' "$d/ap/models-t1.log" || { printf 'refused config still printed GO\n'; return 1; }
@@ -651,6 +687,23 @@ hosts_inject() { hosts_refuse "$1" "$2" "$3" inject; }
 hosts_badchar() { hosts_refuse "$1" "$2" "$3" badchar; }
 hosts_nokey() { hosts_refuse "$1" "$2" "$3" nokey; }
 hosts_print() { hosts_refuse "$1" "$2" "$3" printhosts; }
+hosts_dup() { hosts_refuse "$1" "$2" "$3" dup; }
+hosts_swapped() { hosts_refuse "$1" "$2" "$3" swapped; }
+hosts_foreign() { hosts_refuse "$1" "$2" "$3" foreign; }
+hosts_dash() { hosts_refuse "$1" "$2" "$3" dash; }
+hosts_envfile() { hosts_refuse "$1" "$2" "$3" envfile; }
+hosts_notme() { hosts_refuse "$1" "$2" "$3" notme; }
+# ssh REMOTE_HOST reaches a box that is not REMOTE_HOST (an ssh alias pointing home): that leg refuses as ENV
+# before its lock, its sweep and its build, so one machine is never measured twice under two names
+hosts_remote_notme() {
+    local rc d="$TMP/ridnotme-$1"
+    stops "ridnotme-$1" "$2" "$3" "MODELS gx10 NO-GO: no receipt -- ENV: ssh gx10 reached a host that identifies as 'lambda'" FX_REMOTE_HOSTNAME=noah-Lambda-Vector; rc=$?
+    [ "$rc" = 0 ] || return "$rc"
+    grep -q 'rc=2' "$d/ap/STATUS" || { printf 'models_t1.sh did not exit 2 (ENV)\n'; return 1; }
+    ! grep -q '^build host=gx10' "$d/wrap.log" || { printf 'the remote leg built on a box that is not gx10\n'; return 1; }
+    [ -d "$d/gx10/.cache/aprender-release/rel-9.9.7" ] || { printf "the remote leg swept rel-* on a box that is not gx10\n"; return 1; }
+    return 0
+}
 crux_env() { crux_green "$1-env" "$2" "$3" MODELS_T1_MEASURE=ladder; } # the policy picks the mode, not the caller's env
 policy_bad() { # a policy block the reader refuses: STOP before anything is built or measured
     local d="$TMP/polbad-$1"
@@ -700,7 +753,10 @@ for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails 
             "build-indented-text-rc101-is-build-failed r_bf_indented_101" "build-indented-text-rc28-is-build-failed r_bf_indented_28" \
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
             "stale-binary stale" "disk-refusal disk" "t1-lock-held t1_held" "gx10-lock-held gx10_held" "oom-victim oom_victim" \
-            "ladder-explicit ladder_explicit" "measure-bogus measure_bogus" "hosts-local-eq-remote-exit2 hosts_same" "hosts-empty-conf-refuses hosts_empty" "hosts-conf-line-not-run hosts_inject" "hosts-bad-char-refused hosts_badchar" "hosts-missing-key-refused hosts_nokey" "hosts-print-hosts-no-exit0 hosts_print" "crux-green-pair crux_green" \
+            "ladder-explicit ladder_explicit" "measure-bogus measure_bogus" "hosts-local-eq-remote-exit2 hosts_same" "hosts-empty-conf-refuses hosts_empty" "hosts-conf-line-not-run hosts_inject" "hosts-bad-char-refused hosts_badchar" "hosts-missing-key-refused hosts_nokey" "hosts-print-hosts-no-exit0 hosts_print" \
+            "hosts-duplicate-key-refused hosts_dup" "hosts-swapped-pair-refused hosts_swapped" "hosts-foreign-pair-refused hosts_foreign" \
+            "hosts-leading-dash-refused hosts_dash" "hosts-env-cannot-name-a-conf hosts_envfile" "hosts-local-identity-refused hosts_notme" \
+            "hosts-remote-identity-refused hosts_remote_notme" "crux-green-pair crux_green" \
             "crux-no-certification crux_nocert" "crux-wrong-binary crux_wrongbin" \
             "crux-missing-gx10-receipt crux_missing" "crux-red-receipt crux_red" "crux-judge-no-policy crux_nopolicy" \
             "crux-env-cannot-override crux_env" "policy-unreadable-stops policy_bad"; do
@@ -843,6 +899,20 @@ mutant crux-judge-ladder    "$MODELS" "$C_JCRUX" 'CRUX_CERT="$CERT" bash scripts
 mutant crux-no-cut-commit   "$MODELS" "$C_CUT" '--crux "$out"' crux_green
 mutant crux-ladder-wording  "$MODELS" "$C_NAME" '    MEASURER=model_ladder.sh' crux_missing
 mutant crux-remote-rcpt-name "$MODELS" "$C_RRCPT" 'if [ -f "\$dir/out/$REMOTE_HOST.json" ]; then' crux_green
+# the host-config checks (PMAT-7497): each one removed must turn its own row red
+mutant hosts-conf-from-env  "$MODELS" "$H_CONF" 'mt_conf="${MODELS_T1_HOSTS_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/models_t1_hosts.conf}"' hosts_envfile
+mutant hosts-empty-ok       "$MODELS" "$H_EMPTY" 'true || {' hosts_empty
+mutant hosts-no-reset       "$MODELS" "$H_RESET" ': # inherited values survive' hosts_nokey
+mutant hosts-sourced        "$MODELS" "$H_READ" 'done < /dev/null; . "$mt_conf"' hosts_inject
+mutant hosts-nondata-skipped "$MODELS" "$H_NONDATA" '        *) continue ;;' hosts_inject
+mutant hosts-dash-allowed   "$MODELS" "$H_RE" '    [[ $mt_v =~ ^[a-z0-9-]+$ ]] || {' hosts_dash
+mutant hosts-dup-allowed    "$MODELS" "$H_DUP" '    true || {' hosts_dup
+mutant hosts-nokey-ok       "$MODELS" "$H_NOKEY" 'true || {' hosts_nokey
+mutant hosts-same-ok        "$MODELS" "$H_SAME" 'true || {' hosts_same
+mutant hosts-any-local      "$MODELS" "$H_LALLOW" 'case $LOCAL_HOST in *)' hosts_foreign
+mutant hosts-any-remote     "$MODELS" "$H_RALLOW" 'case $REMOTE_HOST in *)' hosts_swapped
+mutant hosts-no-local-id    "$MODELS" "$H_LID" 'true || {' hosts_notme
+mutant hosts-no-remote-id   "$MODELS" "$H_RID" 'true || { echo "MODELS-LEG $REMOTE_HOST ENV: ssh' hosts_remote_notme
 
 # HERMETIC: no fixture may write into a CARGO_TARGET_DIR the host exports (guard-cargo#m8 WRONG-TREE, PMAT-5817)
 rows=$((rows + 1))
