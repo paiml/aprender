@@ -708,3 +708,24 @@ mod f2_chat_note_tests {
         assert!(F2_CHAT_NOTE.contains("#3924"), "it must name its ticket: {F2_CHAT_NOTE}");
     }
 }
+
+/// #4621 root 3: the pure KV sizing is tested in aprender-serve; this guards the
+/// wiring. `OwnedQuantizedModelCuda::new` is a flat 2048-position KV, and a chat
+/// turn past it leaves the GPU for the CPU.
+#[cfg(test)]
+mod session_kv_wiring_4621 {
+    #[test]
+    fn chat_sizes_its_device_kv_for_a_session_4621() {
+        let src = include_str!("chat_load_tokenizers.rs");
+        let shipping = src.split("mod session_kv_wiring_4621").next().unwrap_or_default();
+        assert!(
+            !shipping.contains("OwnedQuantizedModelCuda::new("),
+            "apr chat must not build its CUDA model with the flat 2048 KV"
+        );
+        assert_eq!(
+            shipping.matches("OwnedQuantizedModelCuda::for_session(").count(),
+            2,
+            "both the GGUF and the .apr chat loaders size the KV for a session"
+        );
+    }
+}
