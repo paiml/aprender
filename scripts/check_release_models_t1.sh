@@ -617,27 +617,40 @@ measure_bogus() { # models_t1.sh's own refusal: autopilot never hands it a mode 
     ! grep -q '^build ' "$d/wrap.log" || { printf 'a leg built on a bad mode\n'; return 1; }
     return 0
 }
-# models_t1.sh's host-config refusals (PMAT-7497): called directly, no autopilot, nothing may build.
-# $4 is the case: "same" (LOCAL_HOST == REMOTE_HOST) or "empty-path" (MODELS_T1_HOSTS_FILE set to "").
+# models_t1.sh's host-config refusals (PMAT-7497): called directly, no autopilot, nothing may build and
+# nothing may exit 0. The conf is the fixture's COPY beside its copy of the script (no env names a conf).
+# $4 is the case: same (LOCAL_HOST == REMOTE_HOST), empty (empty conf), inject (a conf line that runs a
+# command must not run it), badchar (a host outside ^[a-z0-9-]+$), nokey (REMOTE_HOST absent while the env
+# carries one), printhosts (MODELS_T1_PRINT_HOSTS=1 with a good conf and bad args must not exit 0).
 hosts_refuse() {
-    local d="$TMP/hostsref-$1-$4" mc rc conf
+    local d="$TMP/hostsref-$1-$4" mc rc conf="$TMP/hostsref-$1-$4/repo/scripts/release/models_t1_hosts.conf" pre=""
     fixture "hostsref-$1-$4" "$2" "$3" || return 2
     : > "$d/wrap.log"; mc=$(cat "$d/mc")
     case $4 in
-        same) printf 'LOCAL_HOST=gx10\nREMOTE_HOST=gx10\n' > "$d/same.conf"; conf="$d/same.conf" ;;
-        empty-path) conf="" ;;
+        same) printf 'LOCAL_HOST=gx10\nREMOTE_HOST=gx10\n' > "$conf" ;;
+        empty) : > "$conf" ;;
+        inject) printf 'LOCAL_HOST=lambda\nREMOTE_HOST=gx10\ntouch %s/PWNED\n' "$d" > "$conf" ;;
+        badchar) printf 'LOCAL_HOST=lambda\nREMOTE_HOST=gx10;touch %s/PWNED\n' "$d" > "$conf" ;;
+        nokey) printf 'LOCAL_HOST=lambda\n' > "$conf"; pre="REMOTE_HOST=gx10" ;;
+        printhosts) mc="not-a-commit" ;;
         *) return 2 ;;
     esac
     ( cd "$d/repo" && export CARGO_HOME="$TMP/cargo-home" CARGO_TARGET_DIR="$d/target" PATH="$TMP/bin:$PATH" FX_MC="$mc" FX_GX10_HOME="$d/gx10" \
-          MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log" MODELS_T1_LOCK="$d/t1.lock" MODELS_T1_HOSTS_FILE="$conf"
+          MODELS_T1_NEED_KIB=1 FX_LOG="$d/wrap.log" MODELS_T1_LOCK="$d/t1.lock" MODELS_T1_PRINT_HOSTS=1 ${pre:+"$pre"}
       bash scripts/release/models_t1.sh 9.9.9 "$mc" "$d/ap/models-t1" ) > "$d/ap/models-t1.log" 2>&1; rc=$?
     [ "$rc" = 2 ] || { printf 'models_t1.sh exited %s, not 2\n' "$rc"; return 1; }
+    [ ! -e "$d/PWNED" ] || { printf 'a conf line was EXECUTED\n'; return 1; }
     ! grep -q '^build ' "$d/wrap.log" || { printf 'a leg built on a refused host config\n'; return 1; }
     ! grep -q 'MODELS GO' "$d/ap/models-t1.log" || { printf 'refused config still printed GO\n'; return 1; }
+    ! grep -q '^hosts ' "$d/ap/models-t1.log" || { printf 'the script printed a host pair instead of judging\n'; return 1; }
     return 0
 }
 hosts_same()  { hosts_refuse "$1" "$2" "$3" same; }
-hosts_empty() { hosts_refuse "$1" "$2" "$3" empty-path; }
+hosts_empty() { hosts_refuse "$1" "$2" "$3" empty; }
+hosts_inject() { hosts_refuse "$1" "$2" "$3" inject; }
+hosts_badchar() { hosts_refuse "$1" "$2" "$3" badchar; }
+hosts_nokey() { hosts_refuse "$1" "$2" "$3" nokey; }
+hosts_print() { hosts_refuse "$1" "$2" "$3" printhosts; }
 crux_env() { crux_green "$1-env" "$2" "$3" MODELS_T1_MEASURE=ladder; } # the policy picks the mode, not the caller's env
 policy_bad() { # a policy block the reader refuses: STOP before anything is built or measured
     local d="$TMP/polbad-$1"
@@ -687,7 +700,7 @@ for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails 
             "build-indented-text-rc101-is-build-failed r_bf_indented_101" "build-indented-text-rc28-is-build-failed r_bf_indented_28" \
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
             "stale-binary stale" "disk-refusal disk" "t1-lock-held t1_held" "gx10-lock-held gx10_held" "oom-victim oom_victim" \
-            "ladder-explicit ladder_explicit" "measure-bogus measure_bogus" "hosts-local-eq-remote-exit2 hosts_same" "hosts-empty-conf-path-refuses hosts_empty" "crux-green-pair crux_green" \
+            "ladder-explicit ladder_explicit" "measure-bogus measure_bogus" "hosts-local-eq-remote-exit2 hosts_same" "hosts-empty-conf-refuses hosts_empty" "hosts-conf-line-not-run hosts_inject" "hosts-bad-char-refused hosts_badchar" "hosts-missing-key-refused hosts_nokey" "hosts-print-hosts-no-exit0 hosts_print" "crux-green-pair crux_green" \
             "crux-no-certification crux_nocert" "crux-wrong-binary crux_wrongbin" \
             "crux-missing-gx10-receipt crux_missing" "crux-red-receipt crux_red" "crux-judge-no-policy crux_nopolicy" \
             "crux-env-cannot-override crux_env" "policy-unreadable-stops policy_bad"; do

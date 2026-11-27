@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# check_models_t1_hosts_config.sh -- PMAT-7497 (#7497): models_t1.sh takes its host pair from
-# scripts/release/models_t1_hosts.conf (override MODELS_T1_HOSTS_FILE), never a literal.
-# Operator 2026-11-27 1336Z: crux runs only on gx10, kfocus, jetson. Exit 0 all pass, 1 any fail.
+# check_models_t1_hosts_config.sh -- PMAT-7497 (#7497): models_t1.sh takes its host pair from the tracked
+# scripts/release/models_t1_hosts.conf, parsed as data, never a literal and never sourced. No env names the
+# conf and none prints the pair. The behaviour rows (conf line not run, refusals, no exit 0) are in
+# scripts/check_release_models_t1.sh. Exit 0 all pass, 1 any fail.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 T1="$root/scripts/release/models_t1.sh"
@@ -12,14 +13,10 @@ bad() { printf 'FAIL %s\n' "$1"; fail=1; }
 
 if grep -qE '^(LOCAL_HOST|REMOTE_HOST)=[a-z0-9-]+$' "$T1"; then bad "models_t1.sh still hardcodes a host literal"; else ok "models_t1.sh has no host literal"; fi
 [ -s "$CONF" ] && ok "models_t1_hosts.conf exists" || bad "models_t1_hosts.conf missing"
-grep -q 'MODELS_T1_HOSTS_FILE' "$T1" && ok "models_t1.sh honours MODELS_T1_HOSTS_FILE" || bad "no MODELS_T1_HOSTS_FILE override"
+if grep -qE 'MODELS_T1_HOSTS_FILE|MODELS_T1_PRINT_HOSTS' "$T1"; then bad "models_t1.sh has a conf override or print hook"; else ok "no conf override, no print hook"; fi
+if grep -qE '^[[:space:]]*(\.|source)[[:space:]]+"?\$' "$T1"; then bad "models_t1.sh sources a variable path"; else ok "models_t1.sh sources nothing by variable"; fi
 for k in LOCAL_HOST REMOTE_HOST; do
     grep -qE "^$k=[a-z0-9-]+$" "$CONF" && ok "conf sets $k" || bad "conf lacks $k"
 done
-# behaviour: a conf naming other hosts is what the script reports
-tmp=$(mktemp -d /mnt/nvme-raid0/tmp/t1hosts.XXXXXX)
-printf 'LOCAL_HOST=kfocus\nREMOTE_HOST=jetson\n' > "$tmp/h.conf"
-out=$(MODELS_T1_HOSTS_FILE="$tmp/h.conf" MODELS_T1_PRINT_HOSTS=1 bash "$T1" 2>&1 || true)
-case $out in *"hosts kfocus jetson"*) ok "override conf drives the host pair" ;; *) bad "override conf ignored: $out" ;; esac
-rm -rf "${tmp:?}"
+if grep -vE '^(#.*|LOCAL_HOST=[a-z0-9-]+|REMOTE_HOST=[a-z0-9-]+|)$' "$CONF" | grep -q .; then bad "conf has a line that is not data"; else ok "conf is only KEY=VALUE data and comments"; fi
 exit "$fail"

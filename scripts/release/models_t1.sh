@@ -59,15 +59,28 @@
 # usage: [MODELS_T1_MEASURE=ladder|crux] models_t1.sh <version> <release-commit> <out-dir>
 # exit:  0 GO on both hosts  ·  1 NO-GO  ·  2 usage/ENV (the caller STOPs on any non-zero)
 set -uo pipefail
-# Host pair from config (PMAT-7497): never a literal here. MODELS_T1_HOSTS_FILE overrides for the check.
-MODELS_T1_HOSTS_FILE=${MODELS_T1_HOSTS_FILE-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/models_t1_hosts.conf} # unset = the tracked default; set-but-empty REFUSES below
-[ -n "$MODELS_T1_HOSTS_FILE" ] && [ -s "$MODELS_T1_HOSTS_FILE" ] || { echo "MODELS-LEG config ENV: host config path ${MODELS_T1_HOSTS_FILE:-<empty>} missing or empty"; exit 2; }
-unset LOCAL_HOST REMOTE_HOST # an inherited value must not survive a conf that omits it
-# shellcheck disable=SC1090
-. "$MODELS_T1_HOSTS_FILE"
-: "${LOCAL_HOST:?host config sets LOCAL_HOST}" "${REMOTE_HOST:?host config sets REMOTE_HOST}"
+# Host pair from the tracked conf BESIDE this script (PMAT-7497), parsed as DATA, never sourced: a conf line
+# that is not a blank, a #comment or LOCAL_HOST=/REMOTE_HOST=<[a-z0-9-]+> is refused (exit 2) and never run.
+# No env names the conf and none prints the pair: a caller cannot redirect the gate to another file, and no
+# early exit 0 exists before the judge. The check points it elsewhere by running a COPY of this script
+# beside its own conf (scripts/check_release_models_t1.sh fixture_build).
+mt_conf="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/models_t1_hosts.conf"
+[ -f "$mt_conf" ] && [ -s "$mt_conf" ] || { echo "MODELS-LEG config ENV: host config $mt_conf missing or empty"; exit 2; }
+LOCAL_HOST="" REMOTE_HOST="" # an inherited value must not survive a conf that omits it
+while IFS= read -r mt_line || [ -n "$mt_line" ]; do
+    case $mt_line in ''|'#'*) continue ;; esac
+    case $mt_line in
+        LOCAL_HOST=*) mt_k=LOCAL_HOST ;;
+        REMOTE_HOST=*) mt_k=REMOTE_HOST ;;
+        *) echo "MODELS-LEG config ENV: $mt_conf has a line that is not LOCAL_HOST=/REMOTE_HOST=: refused, not run"; exit 2 ;;
+    esac
+    mt_v=${mt_line#*=}
+    [[ $mt_v =~ ^[a-z0-9-]+$ ]] || { echo "MODELS-LEG config ENV: $mt_k value does not match ^[a-z0-9-]+\$"; exit 2; }
+    [ -z "${!mt_k}" ] || { echo "MODELS-LEG config ENV: $mt_k set twice in $mt_conf"; exit 2; }
+    printf -v "$mt_k" '%s' "$mt_v"
+done < "$mt_conf"
+[ -n "$LOCAL_HOST" ] && [ -n "$REMOTE_HOST" ] || { echo "MODELS-LEG config ENV: $mt_conf must set LOCAL_HOST and REMOTE_HOST"; exit 2; }
 [ "$LOCAL_HOST" != "$REMOTE_HOST" ] || { echo "MODELS-LEG config ENV: LOCAL_HOST == REMOTE_HOST ($LOCAL_HOST): one host judged twice is never GO"; exit 2; }
-[ "${MODELS_T1_PRINT_HOSTS:-}" = 1 ] && { echo "hosts $LOCAL_HOST $REMOTE_HOST"; exit 0; }
 # A fresh `cargo build --release -p apr-cli --bin apr --features cuda --locked` target, in KiB: the
 # gx10 leg REFUSES up front, as ENV, when its filesystem has less free (after the sweep; the run's
 # own dir is always new, so nothing in it counts). Half-building on a 97-99% disk fails later and
