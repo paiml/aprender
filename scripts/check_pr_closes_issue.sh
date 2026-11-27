@@ -102,19 +102,27 @@ ref_kind() { # ref_kind NUM -> pr | closed | issue | unknown
     # reference read as an unresolved ISSUE and fail the body (#6158), so retry those.
     # A permanent answer (HTTP 404/410: the number does not exist) fails fast. Giving
     # up is still `unknown`, i.e. judged as an issue (fails closed).
-    _rk_try=0; _rk_out=""; _rk_err=""; _rk_f="$(mktemp)"
+    _rk_try=0; _rk_out=""; _rk_err=""; _rk_f="$(mktemp)"; _rk_b="$(mktemp)"
     while [ "$_rk_try" -lt "${PR_CLOSES_REF_TRIES:-3}" ]; do
-        if _rk_out="$(gh api "repos/${PR_CLOSES_REPO:-paiml/aprender}/issues/$1" \
-            -q 'if .pull_request then "pr" elif .state == "closed" then "closed" else "issue" end' \
-            2>"$_rk_f")" && [ -n "$_rk_out" ]; then
-            rm -f "${_rk_f:?}"; printf '%s' "$_rk_out"; return 0
+        if gh api "repos/${PR_CLOSES_REPO:-paiml/aprender}/issues/$1" > "$_rk_b" 2>"$_rk_f"; then
+            # A successful read must carry a JSON object. A 2xx with an HTML or
+            # plain-text body (a proxy error page) is not a reference we can judge:
+            # it is not_measured, never a kind and never a verdict (#7446).
+            if jq -e 'type == "object"' "$_rk_b" > /dev/null 2>&1 \
+                && _rk_out="$(jq -r 'if .pull_request then "pr" elif .state == "closed" then "closed" else "issue" end' "$_rk_b")" \
+                && [ -n "$_rk_out" ]; then
+                rm -f "${_rk_f:?}" "${_rk_b:?}"; printf '%s' "$_rk_out"; return 0
+            fi
+            rm -f "${_rk_f:?}" "${_rk_b:?}"
+            [ -n "${PR_CLOSES_NM_FLAG:-}" ] && printf '%s\n' "$1" >> "$PR_CLOSES_NM_FLAG"
+            printf 'not_measured'; return 0
         fi
         _rk_err="$(cat "$_rk_f" 2>/dev/null || true)"
         case "$_rk_err" in *"HTTP 404"*|*"HTTP 410"*) break ;; esac
         _rk_try=$((_rk_try + 1))
         [ "$_rk_try" -lt "${PR_CLOSES_REF_TRIES:-3}" ] && sleep "${PR_CLOSES_REF_SLEEP:-3}"
     done
-    rm -f "${_rk_f:?}"
+    rm -f "${_rk_f:?}" "${_rk_b:?}"
     printf 'unknown'
 }
 
@@ -198,7 +206,16 @@ check_body_text() {
         return 1
     fi
 
+    # ref_kind runs in subshells, so it reports a non-JSON read through a file.
+    PR_CLOSES_NM_FLAG="$(mktemp)"; export PR_CLOSES_NM_FLAG
     classify_refs "$body"
+    nm_hits="$(cat "$PR_CLOSES_NM_FLAG")"
+    rm -f "${PR_CLOSES_NM_FLAG:?}"; unset PR_CLOSES_NM_FLAG
+    if [ -n "$nm_hits" ]; then
+        printf 'UNMEASURED: gh api returned a non-JSON body for #%s, so the reference kind is unknown and this body was not judged (#7446).\n' \
+            "$(printf '%s' "$nm_hits" | tr '\n' ' ' | sed -E 's/ +$//; s/ /,#/g')"
+        return 0
+    fi
 
     if [ -z "$(printf '%s' "$all_nums" | tr -d '[:space:]')" ]; then
         printf 'PASS: body cites no issue.\n'
@@ -357,6 +374,25 @@ STUB
         fails=$((fails + 1))
     fi
 
+    # #7446: a read that SUCCEEDS (exit 0) but returns a non-JSON body -- an HTML
+    # or plain-text error page from a proxy -- is not a PR reference we can judge.
+    # It is UNMEASURED: the guard prints an UNMEASURED line and exits 0, the
+    # repo's not_measured convention (guard_tree.sh #3651). It is neither a PASS
+    # verdict on the body nor a FAIL. Before the fix this row exited 1 with the
+    # non-JSON text taken as a reference kind.
+    mkdir -p "${tmp}/ghhtml"
+    printf '#!/usr/bin/env bash\nprintf "Service Unavailable"\nexit 0\n' > "${tmp}/ghhtml/gh"
+    chmod +x "${tmp}/ghhtml/gh"
+    got=0
+    cases=$((cases + 1))
+    html_out="$( ( PATH="${tmp}/ghhtml:$PATH"; export PATH
+      unset PR_CLOSES_REF_KIND_CMD; PR_CLOSES_REF_SLEEP=0; export PR_CLOSES_REF_SLEEP
+      bash "$SELF_PATH" --body "${tmp}/no-gh.txt" ) 2>/dev/null )" || got=$?
+    if [ "$got" -ne 0 ] || ! grep -q '^UNMEASURED' <<<"$html_out"; then
+        printf 'FAIL case gh-nonjson-read-is-not-measured: expected exit 0 with an UNMEASURED line, got rc=%s out=%s\n' "$got" "$html_out" >&2
+        fails=$((fails + 1))
+    fi
+
     # A permanent 404 is NOT retried: gh is called exactly once.
     mkdir -p "${tmp}/gh404"
     printf '#!/usr/bin/env bash\necho x >> "%s/calls404"\necho "gh: Not Found (HTTP 404)" >&2\nexit 1\n' "${tmp}" > "${tmp}/gh404/gh"
@@ -378,7 +414,7 @@ STUB
     # `pr`, and a body citing only that number passes. Without the retry this
     # body failed on a runner API blip (#6158).
     mkdir -p "${tmp}/ghflaky"
-    printf '#!/usr/bin/env bash\nf="%s/n"; n=$(cat "$f" 2>/dev/null || echo 0); echo $((n+1)) > "$f"\n[ "$n" -ge 1 ] && { echo pr; exit 0; }\nexit 1\n' "${tmp}" > "${tmp}/ghflaky/gh"
+    printf '#!/usr/bin/env bash\nf="%s/n"; n=$(cat "$f" 2>/dev/null || echo 0); echo $((n+1)) > "$f"\n[ "$n" -ge 1 ] && { echo "{\\"pull_request\\":{}}"; exit 0; }\nexit 1\n' "${tmp}" > "${tmp}/ghflaky/gh"
     chmod +x "${tmp}/ghflaky/gh"
     got=0
     cases=$((cases + 1))
