@@ -34,7 +34,7 @@ equations:
     - 'the output is one of the cells whose hex contains the input point, or one of the two cells sharing the edge the point lies on'
   area_weighted_rasterisation:
     formula: 'a_c = area(polygon intersect hex(c)); A = area(polygon) = sum over c of a_c; value spread: v_c = V a_c / A'
-    domain: 'polygon with area A > 0 (a simple polygon, holes allowed); V finite'
+    domain: 'polygon with area A > 0 (a simple polygon, holes allowed); V in the value range the MAP-3 row states'
     codomain: 'a_c >= 0 per cell; v_c >= 0 per cell when V >= 0'
     invariants:
     - 'sum over c of a_c = A within the MAP-3 epsilon'
@@ -101,13 +101,13 @@ falsification_tests:
 - id: FALSIFY-MAP-HEX-002
   rule: Area and value are conserved by rasterisation
   prediction: 'for random polygons with area A > 0, the cell overlap areas sum to A and the spread values sum to V within the MAP-3 epsilon'
-  test: property test. Draw random simple polygons with positive area and a random finite value V. Rasterise each polygon to cells, compute the overlap areas a_c and the spread values V a_c / A, and assert both sums equal their targets within the epsilon stated in the MAP-3 reference.
+  test: property test. Draw random simple polygons with positive area and a random value V in the value range the MAP-3 row states. Rasterise each polygon to cells, compute the overlap areas a_c and the spread values V a_c / A, and assert both sums equal their targets within the epsilon stated in the MAP-3 reference.
   planted_mutation: 'the overlap is estimated by counting cell centres inside the polygon instead of computing intersection area; on polygons whose edges cut cells the area sum then differs from A, and the test is red'
   if_fails: Rasterisation loses or invents area, so a choropleth total does not match the source polygon
 - id: FALSIFY-MAP-HEX-003
   rule: Spread value sums back to the value
-  prediction: 'sum over c of V a_c / A = V for finite V'
-  test: property test. For random polygons and random finite values V, assert that the sum of the spread values equals V within the epsilon. Include a case where the polygon covers a cell only partly.
+  prediction: 'sum over c of V a_c / A = V for V in the value range the MAP-3 row states'
+  test: property test. For random polygons and random values V in the value range the MAP-3 row states, assert that the sum of the spread values equals V within the epsilon. Include a case where the polygon covers a cell only partly.
   planted_mutation: 'the spread divides by the cell area instead of the polygon area A, so v_c = V a_c / cell_area; the sum is then V times the polygon area over the cell area, and the test is red for every polygon whose area differs from the area of one cell'
   if_fails: The value spread scales with cell size rather than with covered area, so totals change with the grid
 - id: FALSIFY-MAP-HEX-004

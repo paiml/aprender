@@ -5,7 +5,7 @@ metadata:
   author: PAIML Engineering
   description: >-
     Camera for the map runtime: anchored eased zoom, flyTo between two camera states, and level-of-detail
-    tier selection by on-screen hex radius. Zooming about an anchor leaves the world point under the anchor
+    tier selection by the metric the MAP-5 row states. Zooming about an anchor leaves the world point under the anchor
     where it was, flyTo starts at the current camera and ends at the target, and each level-of-detail boundary
     selects the stated tier on both sides.
   references:

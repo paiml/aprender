@@ -37,8 +37,8 @@ equations:
     domain: '|phi| < pi/2 (latitude strictly between the poles); R > 0 is the sphere radius from the MAP-1 reference table. A narrower cutoff, if the MAP-1 row states one, replaces this domain'
     codomain: '(x, y) in R^2, projected plane units'
     invariants:
-    - 'inverse(forward(p)) = p within the epsilon stated in MAP-1 for every p with |phi| < pi/2'
-    - 'forward(p) for |phi| >= pi/2 is an error, not a number'
+    - 'inverse(forward(p)) = p within the epsilon stated in MAP-1 for every p in the valid domain'
+    - 'forward(p) for p outside the valid domain, which includes every |phi| >= pi/2, is an error, not a number'
     preconditions:
     - 'R > 0'
   equirectangular_forward:
@@ -47,7 +47,7 @@ equations:
     codomain: '(x, y) in R^2, projected plane units'
     invariants:
     - 'inverse(forward(p)) = p within the epsilon stated in MAP-1 for every p in the valid domain'
-    - 'forward(p) for |phi| > pi/2 is an error, not a number'
+    - 'forward(p) for p outside the valid domain, which includes every |phi| > pi/2, is an error, not a number'
     preconditions:
     - 'R > 0 and cos(phi_s) != 0'
 proof_obligations:
@@ -98,14 +98,14 @@ falsification_tests:
 - id: FALSIFY-MAP-PROJ-002
   rule: Out-of-domain input is an error
   prediction: 'for points outside the valid domain of each projection, forward returns an error value, not a number'
-  test: property test. Draw points just outside each projection's valid domain. For Mercator, use latitudes at or beyond the pole; for equirectangular, latitudes beyond the pole; for albers_conic_forward, points outside the domain the MAP-1 row states; for composite Albers USA, a point in no sub-region domain. Assert that each result is an error value and not a number.
+  test: property test. Draw points just outside each projection's valid domain. For Mercator and equirectangular, use points outside the stated valid domain, including the pole cases and, if MAP-1 states a narrower cutoff, latitudes between the cutoff and the pole; for albers_conic_forward, points outside the domain the MAP-1 row states; for composite Albers USA, a point in no sub-region domain. Assert that each result is an error value and not a number.
   planted_mutation: 'the domain check in the Mercator forward function is removed, so a latitude at the pole returns an infinity-valued number instead of an error; the test is red at that input'
   if_fails: A projection returns a silent non-finite or finite value outside its domain, which draws garbage on screen
 - id: FALSIFY-MAP-PROJ-003
   rule: Each projection matches its committed reference table
   prediction: 'for each projection, forward maps every committed reference point to the committed reference coordinate within the MAP-1 epsilon'
   test: table test. For each of the four projections, read its committed table of reference points and reference coordinates, apply forward to each point, and compare every output with the committed coordinate within the epsilon stated in the table.
-  planted_mutation: 'in the equirectangular forward function the cos(phi_s) factor is dropped, so the x coordinate of every reference point with lambda different from lambda0 differs from the committed value whenever cos(phi_s) is not 1; the table test is red if the MAP-1 table includes such a point, and the MAP-1 row must state a table with one'
+  planted_mutation: 'the equirectangular forward function adds ten times the MAP-1 epsilon to x, so every committed equirectangular reference point differs by more than the epsilon and the table test is red'
   if_fails: The formula, a parameter or an axis order differs from the reference; the projection is not the one the table describes
 - id: FALSIFY-MAP-PROJ-004
   rule: Composite Albers USA places each sub-region with its own parameters
