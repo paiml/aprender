@@ -10,3 +10,8 @@
 #![deny(clippy::undocumented_unsafe_blocks)]
 
 pub use aprender_ml::*;
+
+// The README's library snippet compiles as a doctest. A wrong module path in it fails `cargo test --doc`.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

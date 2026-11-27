@@ -315,7 +315,15 @@ pub(crate) struct RunResult {
 /// `offline` suppresses the HuggingFace API probe that picks the best file in a
 /// repo; the caller's own offline handling in [`resolve_model`] then reports a
 /// cache miss instead of reaching the network.
-pub(crate) fn resolve_model_source(source: &str, offline: bool) -> Result<ModelSource> {
+///
+/// `reuse_store` (off under `--force`) keeps a bare `org/repo` that the model store
+/// already holds unresolved, so [`find_cached_model`] answers it from the store
+/// instead of picking, and downloading, another file of the repo (aprender#7481).
+pub(crate) fn resolve_model_source(
+    source: &str,
+    offline: bool,
+    reuse_store: bool,
+) -> Result<ModelSource> {
     // Resolve alias if applicable
     let resolved_source =
         crate::commands::aliases::resolve_short_name(source).unwrap_or_else(|| source.to_string());
@@ -337,7 +345,8 @@ pub(crate) fn resolve_model_source(source: &str, offline: bool) -> Result<ModelS
     // (`normalize_hf_uri`), which would undo the local-path decision above and
     // turn an existing `models/tiny.gguf` into the repo `hf://models/tiny.gguf`.
     // Skipped offline as well — it is a network call.
-    let fully_resolved_source = if offline || !hf_uri.starts_with("hf://") {
+    let stored = reuse_store && crate::commands::pull::store_path_for_name(&hf_uri).is_some();
+    let fully_resolved_source = if offline || stored || !hf_uri.starts_with("hf://") {
         hf_uri
     } else {
         match crate::commands::pull::resolve_hf_model(&hf_uri) {
@@ -354,7 +363,7 @@ pub(crate) fn resolve_model_source(source: &str, offline: bool) -> Result<ModelS
 pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult> {
     let start = Instant::now();
 
-    let model_source = resolve_model_source(source, options.offline)?;
+    let model_source = resolve_model_source(source, options.offline, !options.force)?;
 
     // Resolve model path (download if needed, respecting offline mode)
     let model_path = resolve_model(&model_source, options.force, options.offline)?;
@@ -625,7 +634,13 @@ pub(crate) fn download_hf_model(org: &str, repo: &str, file: Option<&str>) -> Re
         let model_ref = format!("hf://{org}/{repo}/{filename}");
         let (_, path) =
             crate::commands::pull::build_single_cache_path(&store, &model_ref, filename);
-        download_file(&format!("{base_url}/{filename}"), &path)?;
+        // Rename only a finished download: `run` and `pull` take an existing path as cached.
+        let part = PathBuf::from(format!("{}.part", path.display()));
+        if let Err(e) = download_file(&format!("{base_url}/{filename}"), &part) {
+            std::fs::remove_file(&part).ok();
+            return Err(e);
+        }
+        std::fs::rename(&part, &path)?;
         crate::commands::pull::record_store_name(&store, &model_ref, &path)?;
         eprintln!("{}", "  Download complete!".green());
         return Ok(path);
