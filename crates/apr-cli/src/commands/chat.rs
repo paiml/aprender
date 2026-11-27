@@ -123,7 +123,7 @@ fn resolve_chat_model(path_arg: &Path, offline: bool) -> Result<std::path::PathB
         return Err(CliError::FileNotFound(path_arg.to_path_buf()));
     }
 
-    let model_source = crate::commands::run::resolve_model_source(&source_str, offline)?;
+    let model_source = crate::commands::run::resolve_model_source(&source_str, offline, true)?;
     let actual_path = crate::commands::run::resolve_model(&model_source, false, offline)?;
 
     // Validate file exists
