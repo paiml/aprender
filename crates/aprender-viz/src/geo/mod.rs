@@ -14,11 +14,15 @@ pub mod reader;
 mod reader_tests;
 
 pub use reader::{read_geojson, read_topojson, Feature, GeoReadError, Geometry, Position, Ring};
+pub mod simplify;
 
 #[cfg(test)]
 mod projection_tests;
+#[cfg(test)]
+mod simplify_tests;
 
 pub use projection::{
     AlbersEqualArea, AlbersUsa, Equirectangular, GeoError, Mercator, Projection,
     MERCATOR_MAX_LAT_DEG,
 };
+pub use simplify::{douglas_peucker, visvalingam};
