@@ -6,8 +6,9 @@
 
 use crate::color::Rgba;
 use crate::error::Error;
-use crate::geo::hex::{Cell, HexLayout};
-use crate::grammar::{GGPlot, Geom};
+use crate::geo::hex::{rasterise, AxialWindow, Cell, HexLayout};
+use crate::geo::projection::{GeoError, Projection};
+use crate::grammar::{Coord, GGPlot, Geom};
 use crate::scale::{ColorScale, Scale};
 
 /// The committed SVG of the fixture. Regenerate only with a reviewed change to the geometry.
@@ -140,4 +141,79 @@ fn non_finite_value_is_a_typed_error() {
         let err = hex_plot(cells).build().expect("builds").to_svg().expect_err("refused");
         assert!(matches!(err, Error::ScaleDomain(_)), "{bad}: got {err:?}");
     }
+}
+
+/// The `d` attribute of each `<path`, in document order.
+fn path_ds(svg: &str) -> Vec<String> {
+    svg.split(" d=\"").skip(1).map(|p| p[..p.find('"').expect("quoted d")].to_string()).collect()
+}
+
+/// The vertices of a path `d`, in order, as `(x, y)` pairs.
+fn vertices(d: &str) -> Vec<(f64, f64)> {
+    let nums: Vec<f64> = d
+        .split(|c: char| matches!(c, 'M' | 'L' | 'Z' | ' '))
+        .filter(|t| !t.is_empty())
+        .map(|t| t.parse::<f64>().expect("numeric coordinate"))
+        .collect();
+    nums.chunks_exact(2).map(|p| (p[0], p[1])).collect()
+}
+
+/// The mean pixel y of a path's vertices: the centre of a hexagon.
+fn mean_y(d: &str) -> f64 {
+    let v = vertices(d);
+    v.iter().map(|p| p.1).sum::<f64>() / v.len() as f64
+}
+
+/// The identity projection, a test double: `(lon, lat)` in, `(lon, lat)` out.
+struct Identity;
+
+impl Projection for Identity {
+    fn forward(&self, lon_deg: f64, lat_deg: f64) -> Result<(f64, f64), GeoError> {
+        Ok((lon_deg, lat_deg))
+    }
+    fn inverse(&self, x: f64, y: f64) -> Result<(f64, f64), GeoError> {
+        Ok((x, y))
+    }
+}
+
+#[test]
+fn larger_plane_y_is_drawn_higher() {
+    let ds = path_ds(&hex_svg(fixture_cells()));
+    assert_eq!(ds.len(), 3);
+    // Cell (0, 0) sits at plane y 0 and cell (0, 1) at plane y 15, so (0, 1) is drawn higher.
+    assert!(
+        mean_y(&ds[2]) < mean_y(&ds[0]),
+        "plane y 15 must land on a smaller pixel row than plane y 0"
+    );
+}
+
+#[test]
+fn hex_map_orients_like_polygon_map() {
+    let layout = HexLayout::new((0.0, 0.0), 2.0).expect("valid layout");
+    let window = AxialWindow::new(-10, 10, -10, 10).expect("valid window");
+    // Apex (5, 10) is the highest plane point; base (0, 0) and (10, 0) the lowest.
+    let tri = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+
+    let poly = GGPlot::new()
+        .geom(Geom::polygon(vec![vec![tri.clone()]]))
+        .coord(Coord::geo(Identity))
+        .dimensions(180, 180)
+        .build()
+        .expect("builds");
+    let poly_ds = path_ds(&poly.to_svg().expect("renders"));
+    let pv = vertices(&poly_ds[0]);
+    assert!(pv[2].1 < pv[0].1, "polygon map: apex must be drawn above the base, got {pv:?}");
+
+    // The same triangle rasterised to cells, each valued by its plane centre y.
+    let cells = rasterise(&layout, &window, &[tri]).expect("rasterises");
+    let valued: Vec<(Cell, f64)> = cells.iter().map(|&(c, _)| (c, layout.center(c).1)).collect();
+    let top =
+        (0..valued.len()).max_by(|&a, &b| valued[a].1.total_cmp(&valued[b].1)).expect("cells");
+    let bottom =
+        (0..valued.len()).min_by(|&a, &b| valued[a].1.total_cmp(&valued[b].1)).expect("cells");
+    let hex_ds = path_ds(&hex_svg(valued));
+    assert!(
+        mean_y(&hex_ds[top]) < mean_y(&hex_ds[bottom]),
+        "hex map: the highest-plane cell must be drawn above the lowest, as in the polygon map"
+    );
 }
