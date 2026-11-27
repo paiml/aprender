@@ -1,0 +1,155 @@
+# FIRST-RUN-UX-v1 — the first-run harness as a pv contract (U-00, #7479).
+# Source of truth for the steps: docs/roadmaps/releases/0.78.0-first-run.md §6.
+# Status is draft: the tests are RED on apr 0.75.4 by design and are NOT a
+# required check. Each test runs the step from nothing (fresh HOME and cache),
+# on whichever `apr` is first on PATH.
+
+metadata:
+  id: FIRST-RUN-UX-v1
+  version: "1.0.0-draft"
+  created: "2026-11-27"
+  author: PAIML Engineering
+  registry: false
+  kind: pattern
+  status: draft
+  category: "FIRST-RUN — a new user's first ten minutes"
+  issue: "paiml/aprender#7479"
+  parent_contracts: []
+  description: >
+    The first-run script of release 0.78.0, one falsification test per step.
+    A step passes only when it runs from nothing: a fresh HOME and a fresh
+    XDG_CACHE_HOME, the model pulled by the step itself, no state carried in.
+    On apr 0.75.4 the tests are RED; each names the step that fails.
+  references:
+  - "docs/roadmaps/releases/0.78.0-first-run.md §3 (row U-00), §6 (the script)"
+  - "docs/specifications/crux-ux-first-run-analysis-2026-11-27.md"
+  - "contracts/crux-C-01-v1.yaml (apr run one-shot)"
+  - "contracts/http-api-v1.yaml (gateway wire shape)"
+
+equations:
+  first_run_from_nothing:
+    formula: |
+      Let M = Qwen/Qwen2.5-Coder-0.5B-Instruct, P = 18080.
+      Step(i) passes iff, under HOME=D XDG_CACHE_HOME=D/.cache with D fresh,
+      the commands for README line i exit 0 and their assertion holds.
+    domain: (Environment fresh, Model M) -> Process
+    codomain: "{PASS, FAIL(step)}"
+    invariants:
+    - "every step's environment is fresh: no state from an earlier step is read"
+    - "a failing step names itself in its failure message"
+
+falsification_tests:
+- id: FALSIFY-FIRST-RUN-UX-001
+  rule: README line 1 — a one-shot run answers and is not cut off
+  prediction: "apr run hf://M prints a reply of more than 32 words and no banner"
+  test: |
+    set -euo pipefail
+    D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache
+    trap 'rm -rf "$D"' EXIT
+    cd "$D"
+    apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "Explain quicksort in three sentences." --temperature 0 > reply.txt || { echo "step 1 (apr run): exit $?"; exit 1; }
+    [ "$(wc -w < reply.txt)" -gt 32 ] || { echo "step 1 (apr run): reply has $(wc -w < reply.txt) words, need more than 32"; exit 1; }
+    ! grep -q '=== ' reply.txt || { echo "step 1 (apr run): banner leaked into the reply"; exit 1; }
+  if_fails: "step 1 (apr run hf://...) fails from nothing: the reply is missing, cut off or carries the banner"
+
+- id: FALSIFY-FIRST-RUN-UX-002
+  rule: README line 2 — the run lands in the model store and is listed
+  prediction: "after apr run, apr list shows the model id"
+  test: |
+    set -euo pipefail
+    D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache
+    trap 'rm -rf "$D"' EXIT
+    cd "$D"
+    M=Qwen/Qwen2.5-Coder-0.5B-Instruct
+    apr run hf://$M "hi" --temperature 0 > /dev/null || { echo "step 2 (apr run before apr list): exit $?"; exit 1; }
+    apr list > list.txt || { echo "step 2 (apr list): exit $?"; exit 1; }
+    grep -Fq "$M" list.txt || { echo "step 2 (apr list): $M is not listed after apr run"; exit 1; }
+  if_fails: "step 2 (apr list) fails from nothing: the run did not register the model in the store"
+
+- id: FALSIFY-FIRST-RUN-UX-003
+  rule: README line 3 — apr serve run answers /health
+  prediction: "apr serve run M answers /health with 200 within 60 s"
+  test: |
+    set -euo pipefail
+    D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache
+    S=
+    trap '[ -z "$S" ] || kill "$S" 2>/dev/null || true; rm -rf "$D"' EXIT
+    cd "$D"
+    apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct --port 18080 > serve.log 2>&1 & S=$!
+    ok=0
+    for i in $(seq 1 60); do curl -sf -o /dev/null localhost:18080/health && { ok=1; break; }; sleep 1; done
+    [ "$ok" = 1 ] || { echo "step 3 (apr serve run): /health did not answer 200 within 60 s"; exit 1; }
+  if_fails: "step 3 (apr serve run) fails from nothing: the server does not come up with /health"
+
+- id: FALSIFY-FIRST-RUN-UX-004
+  rule: README line 4 — the chat endpoint answers the question
+  prediction: "POST /v1/chat/completions answers 2+2 with a reply containing 4"
+  test: |
+    set -euo pipefail
+    D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache
+    S=
+    trap '[ -z "$S" ] || kill "$S" 2>/dev/null || true; rm -rf "$D"' EXIT
+    cd "$D"
+    M=Qwen/Qwen2.5-Coder-0.5B-Instruct
+    apr serve run $M --port 18080 > serve.log 2>&1 & S=$!
+    ok=0
+    for i in $(seq 1 60); do curl -sf -o /dev/null localhost:18080/health && { ok=1; break; }; sleep 1; done
+    [ "$ok" = 1 ] || { echo "step 4 (chat): server never came up"; exit 1; }
+    curl -sf localhost:18080/v1/chat/completions -H content-type:application/json \
+      -d '{"model":"'$M'","messages":[{"role":"user","content":"What is 2+2?"}]}' > chat.json
+    jq -e '.choices[0].message.content | test("4")' chat.json > /dev/null \
+      || { echo "step 4 (chat): reply does not contain 4"; exit 1; }
+  if_fails: "step 4 (chat/completions) fails from nothing: the chat reply is missing or wrong"
+
+- id: FALSIFY-FIRST-RUN-UX-005
+  rule: README line 5 — rm removes the model from the store
+  prediction: "after apr rm, apr list no longer shows the model"
+  test: |
+    set -euo pipefail
+    D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache
+    trap 'rm -rf "$D"' EXIT
+    cd "$D"
+    M=Qwen/Qwen2.5-Coder-0.5B-Instruct
+    apr run hf://$M "hi" --temperature 0 > /dev/null || { echo "step 5 (apr run before apr rm): exit $?"; exit 1; }
+    apr rm $M || { echo "step 5 (apr rm): exit $?"; exit 1; }
+    apr list > list.txt || { echo "step 5 (apr list): exit $?"; exit 1; }
+    ! grep -Fq "$M" list.txt || { echo "step 5 (apr rm): $M still listed after apr rm"; exit 1; }
+  if_fails: "step 5 (apr rm) fails from nothing: the model is still listed after removal"
+
+- id: FALSIFY-FIRST-RUN-UX-006
+  rule: gateway — POST /v1/messages exists and returns a message
+  prediction: "POST /v1/messages returns 200 and type = message"
+  test: |
+    set -euo pipefail
+    D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache
+    S=
+    trap '[ -z "$S" ] || kill "$S" 2>/dev/null || true; rm -rf "$D"' EXIT
+    cd "$D"
+    apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct --port 18080 > serve.log 2>&1 & S=$!
+    ok=0
+    for i in $(seq 1 60); do curl -sf -o /dev/null localhost:18080/health && { ok=1; break; }; sleep 1; done
+    [ "$ok" = 1 ] || { echo "gateway (messages): server never came up"; exit 1; }
+    code=$(curl -s -o m.json -w '%{http_code}' localhost:18080/v1/messages -H content-type:application/json \
+      -d '{"model":"m","max_tokens":64,"messages":[{"role":"user","content":"What is 2+2?"}]}')
+    [ "$code" = 200 ] || { echo "gateway (messages): HTTP $code, need 200"; exit 1; }
+    jq -e '.type == "message"' m.json > /dev/null || { echo "gateway (messages): body type is not message"; exit 1; }
+  if_fails: "gateway (POST /v1/messages) fails from nothing: the server does not start, or the route or body is wrong"
+
+- id: FALSIFY-FIRST-RUN-UX-007
+  rule: gateway — POST /v1/responses exists and returns a completed response
+  prediction: "POST /v1/responses returns 200 and status = completed"
+  test: |
+    set -euo pipefail
+    D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache
+    S=
+    trap '[ -z "$S" ] || kill "$S" 2>/dev/null || true; rm -rf "$D"' EXIT
+    cd "$D"
+    apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct --port 18080 > serve.log 2>&1 & S=$!
+    ok=0
+    for i in $(seq 1 60); do curl -sf -o /dev/null localhost:18080/health && { ok=1; break; }; sleep 1; done
+    [ "$ok" = 1 ] || { echo "gateway (responses): server never came up"; exit 1; }
+    code=$(curl -s -o r.json -w '%{http_code}' localhost:18080/v1/responses -H content-type:application/json \
+      -d '{"model":"m","input":"What is 2+2?"}')
+    [ "$code" = 200 ] || { echo "gateway (responses): HTTP $code, need 200"; exit 1; }
+    jq -e '.status == "completed"' r.json > /dev/null || { echo "gateway (responses): status is not completed"; exit 1; }
+  if_fails: "gateway (POST /v1/responses) fails from nothing: the server does not start, or the route or status is wrong"
