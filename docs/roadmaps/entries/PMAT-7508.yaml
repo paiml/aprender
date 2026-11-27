@@ -9,8 +9,8 @@
   updated: 2026-11-28T00:00:00Z
   spec: docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md
   acceptance_criteria:
-  - '[ ] `pv validate` passes on each'
-  - '[ ] each contract names a mutation that turns its test red'
+  - '[x] `pv validate` passes on each'
+  - '[x] each contract names a mutation that turns its test red'
   phases: []
   subtasks: []
   estimated_effort: null

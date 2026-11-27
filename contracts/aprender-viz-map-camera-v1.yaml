@@ -84,7 +84,7 @@ falsification_tests:
   prediction: 'for random cameras, random anchors and random s_new > 0, the scale after the zoom is s_new and the world point under the anchor is the same before and after the zoom within the MAP-5 epsilon'
   test: property test. Draw random camera states, random anchor pixels (including anchors away from the viewport centre) and random positive target scales. Compute the world point under the anchor before the zoom, apply anchored zoom, recompute the world point under the same anchor, and assert equality within the MAP-5 epsilon. Also assert that the camera scale after the zoom equals the target scale.
   planted_mutation: 'zoom pivots about the viewport centre instead of the anchor (the anchor term is replaced by screen_centre); for any anchor away from the centre the world point under the anchor moves, and the test is red. A second mutation: the zoom changes nothing; the anchor world point stays, and the test is red at the scale assertion for every s_new different from s'
-  if_fails: Zoom drifts the map away from the point under the pointer, which breaks wheel and pinch zoom
+  if_fails: Zoom drifts the map away from the point under the pointer, or does not reach the requested scale, which breaks wheel and pinch zoom
 - id: FALSIFY-MAP-CAM-002
   rule: flyTo starts at the current camera and ends at the target
   prediction: 'p(0) equals the camera at the start of the call, and p(1) has the target centre and the target scale within the MAP-5 epsilon'

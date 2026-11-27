@@ -98,7 +98,7 @@ falsification_tests:
 - id: FALSIFY-MAP-PROJ-002
   rule: Out-of-domain input is an error
   prediction: 'for points outside the valid domain of each projection, forward returns an error value, not a number'
-  test: property test. Draw points just outside each projection's valid domain. For Mercator, use points outside the stated valid domain, including both poles; for equirectangular, whose domain contains the poles, use latitudes with |phi| > pi/2; for either, if MAP-1 states a narrower cutoff, also use latitudes between the cutoff and the pole; for albers_conic_forward, points outside the domain the MAP-1 row states; for composite Albers USA, a point in no sub-region domain. Assert that each result is an error value and not a number.
+  test: property test. Draw points just outside each projection's valid domain. For Mercator, use points outside the stated valid domain, including both poles; for equirectangular, use latitudes with |phi| > pi/2 (the poles are in its domain unless MAP-1 states a narrower cutoff); for either, if MAP-1 states a narrower cutoff, also use latitudes between the cutoff and the pole; for albers_conic_forward, points outside the domain the MAP-1 row states; for composite Albers USA, a point in no sub-region domain. Assert that each result is an error value and not a number.
   planted_mutation: 'the domain check in the Mercator forward function is removed, so a latitude at the pole returns an infinity-valued number instead of an error; the test is red at that input'
   if_fails: A projection returns a silent non-finite or finite value outside its domain, which draws garbage on screen
 - id: FALSIFY-MAP-PROJ-003
