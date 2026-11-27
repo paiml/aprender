@@ -40,7 +40,7 @@ falsification_tests:
   rule: the contract exists and validates
   prediction: >-
     `pv validate contracts/first-run-ux-v1.yaml` exits 0 with no errors.
-  test: 'pv validate contracts/first-run-ux-v1.yaml'
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; pv validate contracts/first-run-ux-v1.yaml'''
   if_fails: the first-run harness is not a checkable contract; no row can be scored.
   mutation: >-
     drop the `equations:` block; validation must fail.
@@ -49,7 +49,7 @@ falsification_tests:
   prediction: >-
     from nothing, `apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0`
     exits 0 and the reply contains `4`. On apr 0.75.4 it exits 8.
-  test: 'bash -c ''D=$(mktemp -d); HOME=$D XDG_CACHE_HOME=$D/.cache apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0 | grep -q 4'''
+  test: 'bash -c ''set -o pipefail; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0 | grep 4 >/dev/null'''
   if_fails: step U-01 fails - safetensors hf:// run is not usable by a newcomer.
   mutation: >-
     replace the reply check with `true`; the contract must still name exit 8 as RED on 0.75.4.
@@ -95,7 +95,7 @@ falsification_tests:
   prediction: >-
     `apr doctor --json` exits 0 and carries the selected backend. On apr 0.75.4
     the subcommand is unrecognized.
-  test: 'bash -c ''apr doctor --json >/dev/null 2>&1'''
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr doctor --json >/dev/null 2>&1'''
   if_fails: step U-06 fails - no doctor verb, so a newcomer cannot diagnose a backend.
   mutation: >-
     make `apr doctor` exit 1 with no output; the exit-0 check must turn RED.
@@ -104,7 +104,7 @@ falsification_tests:
   prediction: >-
     without -v, stdout of a successful `apr run` is the reply only; stderr has
     no internal tag such as `[PMAT-044]`. On apr 0.75.4 the banner is on stdout.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" 2>/dev/null | grep -qE "^[[:space:]]*[Aa]ppend|Endpoints:"; test $? -ne 0'''
+  test: 'bash -c ''set -o pipefail; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" >"$D/out" 2>"$D/err"; RC=$?; test $RC -eq 0 || exit 1; ! grep -qE "=== APR Run ===|Source:" "$D/out"; ! grep -q "PMAT-044" "$D/err"'''
   if_fails: step U-07 fails - internal banner or log lines leak onto stdout.
   mutation: >-
     print the banner on stdout; the grep must match and the test must turn RED.
@@ -113,7 +113,7 @@ falsification_tests:
   prediction: >-
     `apr --help` has no match for `GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+|#[0-9]{3,}`.
     On apr 0.75.4 it has tagged lines.
-  test: 'bash -c ''apr --help | grep -qE "GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+|#[0-9]{3,}"; test $? -ne 0'''
+  test: 'bash -c ''set -o pipefail; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr --help >"$D/help"; RC=$?; test $RC -eq 0 || exit 1; test -s "$D/help" || exit 1; ! grep -qE "GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+|#[0-9]{3,}" "$D/help"'''
   if_fails: step U-08 fails - the help a newcomer reads carries ticket ids.
   mutation: >-
     add `PMAT-001` to a help line; the test must turn RED.
@@ -122,7 +122,7 @@ falsification_tests:
   prediction: >-
     the README library snippet compiles as a doctest; a planted wrong module
     path in the snippet turns the doctest RED.
-  test: 'cargo test --doc -p aprender-core README'
+  test: 'bash -c ''export RUSTUP_HOME=${RUSTUP_HOME:-$HOME/.rustup} CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; cargo test --doc -p aprender-core README'''
   if_fails: step U-10 fails - the README snippet does not match the binary.
   mutation: >-
     plant a wrong module path in the snippet; the doctest must turn RED.
