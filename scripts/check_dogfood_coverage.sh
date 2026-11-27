@@ -462,7 +462,7 @@ with open(ledger, newline="", encoding="utf-8") as fh:
             continue
         found, malformed = parse_cites(p)
         for bad in malformed:
-            problems.append(f"line {n}: malformed cite at {bad[:40]!r}")
+            problems.append(f"line {n}: malformed cite at {bad!r}")
         for f, ranges in found:
             if not os.path.isfile(os.path.join(root, f)):
                 problems.append(f"line {n}: cited file {f} does not exist")

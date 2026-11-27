@@ -10,11 +10,15 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GATE="$HERE/scripts/check_dogfood_coverage.sh"
 LEDGER="docs/audits/surface_audit.csv"
-eval "$(sed -n '/^check_cites() {$/,/^}$/p;/^material_cited_changes() {$/,/^}$/p' "$GATE")"
 
 FAILS=0
+SEQ=0
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "${SCRATCH:?}"' EXIT
+
+# Load the two functions from the gate into a scratch file and source it.
+sed -n '/^check_cites() {$/,/^}$/p;/^material_cited_changes() {$/,/^}$/p' "$GATE" > "$SCRATCH/gate_fns.sh"
+. "$SCRATCH/gate_fns.sh"
 
 # Three source files: m1 has 3 lines, m2 has 1 line, m3 has 2 lines.
 mk_root() {
@@ -46,7 +50,8 @@ expect() {
 
 # one_row NAME WANT CITE: a ledger whose only row has evidence_path CITE (quoted).
 one_row() {
-  local d="$SCRATCH/$RANDOM$RANDOM"
+  SEQ=$((SEQ + 1))
+  local d="$SCRATCH/case$SEQ"
   mk_root "$d"
   ledger_with "$d" "demo,feat,\"$3\",high"
   expect "$1" "$2" "$d"
