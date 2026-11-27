@@ -1,0 +1,129 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-27'
+  author: PAIML Engineering
+  description: >-
+    Hex grid for the aprender-viz geo kernel (geo feature): axial cell coordinates, pixel-to-cell picking,
+    and polygon-to-cell rasterisation by area-weighted sum. Picking a cell centre returns that cell, area is
+    conserved, value is conserved, and a point on a shared edge resolves deterministically to one of the two cells.
+  references:
+  - 'APR-MAP-001 rev 7, section 5, row MAP-0 and row MAP-3 (epic #7507, issues #7508 and #7511)'
+  - 'Red Blob Games, Hexagonal Grids (axial coordinates and cube rounding)'
+equations:
+  axial_cube:
+    formula: 'cell c = (q, r); cube coordinates (x, y, z) = (q, -q - r, r) so that x + y + z = 0'
+    domain: 'q, r integers; the window of axial coordinates is any finite window that includes negative and positive q and r'
+    codomain: 'integer cell coordinates with x + y + z = 0'
+    invariants:
+    - 'x + y + z = 0 for every cell'
+    - 'the six neighbours of c differ from c by one of six fixed axial offsets'
+  center_and_pick:
+    formula: 'center(c) = layout(q, r) is the pixel centre of cell c; pick(p) = cube_round(layout^-1(p)) is the cell containing pixel p'
+    domain: 'pixel point p in R^2; layout (size and orientation) is fixed by the MAP-3 reference'
+    codomain: 'a cell c in the axial window'
+    invariants:
+    - 'pick(center(c)) = c for every cell c'
+    - 'pick(p) for p on a shared edge of cells a and b returns a or b, and the same one on every call'
+  cube_round:
+    formula: 'round each of x, y, z to the nearest integer; let dx, dy, dz be the rounding errors of those three; reset the component with the largest error so that the three sum to zero'
+    domain: 'real (x, y, z) with x + y + z = 0 up to rounding'
+    codomain: 'integer (x, y, z) with x + y + z = 0'
+    invariants:
+    - 'the output satisfies x + y + z = 0 exactly'
+    - 'the output is one of the cells whose hex contains the input point, or one of the two cells sharing the edge the point lies on'
+  area_weighted_rasterisation:
+    formula: 'a_c = area(polygon intersect hex(c)); A = area(polygon) = sum over c of a_c; value spread: v_c = V a_c / A'
+    domain: 'polygon with area A > 0 (a simple polygon, holes allowed); V finite'
+    codomain: 'a_c >= 0 per cell; v_c >= 0 per cell when V >= 0'
+    invariants:
+    - 'sum over c of a_c = A within the MAP-3 epsilon'
+    - 'sum over c of v_c = V within the MAP-3 epsilon'
+    - 'a_c = 0 for every cell the polygon does not reach'
+    preconditions:
+    - 'A > 0'
+proof_obligations:
+- id: MAP-HEX-INV-001
+  type: invariant
+  property: Picking a centre returns its cell
+  formal: '∀ cell c ∈ axial window: pick(center(c)) ≡ c'
+  applies_to: all
+- id: MAP-HEX-CONS-002
+  type: conservation
+  property: Area is conserved by rasterisation
+  formal: '∀ polygon with A > 0: |Σ_c a_c − A| ≤ ε_MAP3'
+  applies_to: all
+- id: MAP-HEX-CONS-003
+  type: conservation
+  property: Value is conserved by area-weighted spread
+  formal: '∀ polygon ∀ finite V: |Σ_c V · a_c / A − V| ≤ ε_MAP3'
+  applies_to: all
+- id: MAP-HEX-EQ-004
+  type: equivalence
+  property: Committed fixture cut-cell areas
+  formal: '∀ c ∈ fixture cut cells: |a_c − ref_c| ≤ ε_MAP3 (committed fixture polygon)'
+  applies_to: all
+- id: MAP-HEX-DET-005
+  type: invariant
+  property: Edge tie-break is deterministic
+  formal: '∀ p on a shared edge of cells a, b: pick(p) ∈ {a, b} ∧ ∀ calls i, j: pick_i(p) ≡ pick_j(p)'
+  applies_to: all
+enforcement:
+  centre_round_trip:
+    description: Picking the centre of every cell returns that cell
+    check: contract_tests::FALSIFY-MAP-HEX-001
+    severity: ERROR
+  area_conservation:
+    description: Cell overlap areas sum to the polygon area, and spread values sum to the value
+    check: contract_tests::FALSIFY-MAP-HEX-002
+    severity: ERROR
+  reference_areas:
+    description: Cut-cell areas match the committed reference
+    check: contract_tests::FALSIFY-MAP-HEX-004
+    severity: ERROR
+  edge_determinism:
+    description: A shared-edge point resolves to one of its two cells, the same on every call
+    check: contract_tests::FALSIFY-MAP-HEX-005
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-MAP-HEX-001
+  rule: Picking a cell centre returns that cell
+  prediction: 'pick(center(c)) = c for every cell c in the axial window, including cells with negative q or r'
+  test: property test. Over the axial window, compute the pixel centre of each cell, pick that pixel, and assert the picked cell equals the cell that was centred.
+  planted_mutation: 'the cube rounding step rounds x, y and z but never resets the component with the largest rounding error, so the three no longer sum to zero and the picked cell is off by one for some centres; the test is red'
+  if_fails: Cube rounding drifts off the lattice, and picking lands in a neighbour cell
+- id: FALSIFY-MAP-HEX-002
+  rule: Area and value are conserved by rasterisation
+  prediction: 'for random polygons with area A > 0, the cell overlap areas sum to A and the spread values sum to V within the MAP-3 epsilon'
+  test: property test. Draw random simple polygons with positive area and a random finite value V. Rasterise each polygon to cells, compute the overlap areas a_c and the spread values V a_c / A, and assert both sums equal their targets within the epsilon stated in the MAP-3 reference.
+  planted_mutation: 'the overlap is estimated by counting cell centres inside the polygon instead of computing intersection area; on polygons whose edges cut cells the area sum then differs from A, and the test is red'
+  if_fails: Rasterisation loses or invents area, so a choropleth total does not match the source polygon
+- id: FALSIFY-MAP-HEX-003
+  rule: Spread value sums back to the value
+  prediction: 'sum over c of V a_c / A = V for finite V'
+  test: property test. For random polygons and random finite values V, assert that the sum of the spread values equals V within the epsilon. Include a case where the polygon covers a cell only partly.
+  planted_mutation: 'the spread divides by the cell area instead of the polygon area A, so v_c = V a_c / cell_area; the sum is then V times the polygon area over the cell area, and the test is red for every polygon that is not exactly one cell'
+  if_fails: The value spread scales with cell size rather than with covered area, so totals change with the grid
+- id: FALSIFY-MAP-HEX-004
+  rule: Cut-cell areas match the committed reference
+  prediction: 'each a_c of the committed fixture polygon equals the committed reference area within the MAP-3 epsilon'
+  test: fixture test. Load the committed fixture polygon that cuts several cells partly, rasterise it, and compare each cell overlap area with the committed reference area for that cell within the epsilon stated in the reference.
+  planted_mutation: 'the cell is clipped against the polygon bounding box instead of the polygon itself, so every partly covered cell at the polygon boundary gets an area larger than its committed reference; the test is red'
+  if_fails: The clip region is wrong, and boundary cells are over- or under-counted
+- id: FALSIFY-MAP-HEX-005
+  rule: A shared-edge point resolves to one of its two cells, the same on every call
+  prediction: 'for a point exactly on a shared edge, pick returns one of the two cells that share the edge, and returns the same one on every call'
+  test: fixture test with a fixed list of edge points. For each point on a shared edge, call pick several times, and assert that every result is one of the two sharing cells and that all results are equal.
+  planted_mutation: 'the edge tie-break chooses between the two cells with a random draw on each call; repeated calls on the same edge point then disagree, and the test is red'
+  if_fails: The same screen point selects different cells on different frames, so hover and selection flicker on edges
+qa_gate:
+  id: F-MAP-HEX-001
+  name: Map Hex Grid Contract
+  description: Axial coordinates, pixel-to-cell picking, area-weighted rasterisation and the shared-edge tie-break
+  checks:
+  - centre_round_trip
+  - area_conservation
+  - reference_areas
+  - edge_determinism
+  pass_criteria: All five falsification tests pass against the MAP-3 reference; the planted mutations named in each test turn them red
+  falsification: 'Estimate overlap by sampling cell centres, or make the edge tie-break random per call'

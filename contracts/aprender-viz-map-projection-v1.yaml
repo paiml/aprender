@@ -1,0 +1,117 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-27'
+  author: PAIML Engineering
+  description: >-
+    Map projections for the aprender-viz geo kernel (geo feature): Albers equal-area conic,
+    composite Albers USA, Mercator and equirectangular. Each projection has a forward map from
+    (longitude, latitude) to the plane and an inverse. Out-of-domain input is an error, never a number.
+  references:
+  - 'APR-MAP-001 rev 7, section 5, row MAP-0 and row MAP-1 (epic #7507, issues #7508 and #7509)'
+  - 'Snyder (1987) Map Projections: A Working Manual, USGS Professional Paper 1395 (Albers, Mercator, equirectangular formulas)'
+equations:
+  albers_conic_forward:
+    formula: 'n = (sin(phi1) + sin(phi2)) / 2; C = cos^2(phi1) + 2 n sin(phi1); rho(phi) = sqrt(C - 2 n sin(phi)) / n; x = rho sin(n (lambda - lambda0)); y = rho0 - rho cos(n (lambda - lambda0))'
+    domain: '(lambda, phi) in the valid domain of the projection; standard parallels phi1, phi2 and origin lambda0, phi0 are parameters from the MAP-1 reference table'
+    codomain: '(x, y) in R^2, projected plane units'
+    invariants:
+    - 'inverse(forward(p)) = p within the epsilon stated in MAP-1 for every p in the valid domain'
+    - 'forward(p) for p outside the valid domain is an error, not a finite number'
+    preconditions:
+    - 'phi1 and phi2 are finite and phi1 + phi2 != 0'
+  albers_usa_composite:
+    formula: 'forward(lambda, phi) = place_k(albers_k(lambda, phi)) where k is the sub-region whose domain contains (lambda, phi); k ranges over contiguous, Alaska, Hawaii'
+    domain: 'union of the three sub-region domains; each sub-region has its own Albers parameters and its placement (translation and scale) from the MAP-1 reference table'
+    codomain: '(x, y) in R^2, projected plane units'
+    invariants:
+    - 'each sub-region projects with its own Albers parameters before placement'
+    - 'a point in no sub-region domain is an error, not a finite number'
+    - 'inverse(forward(p)) = p within the epsilon stated in MAP-1 for every p in the union of the sub-region domains'
+  mercator_forward:
+    formula: 'x = R lambda; y = R ln(tan(pi/4 + phi/2)); inverse: lambda = x / R; phi = 2 atan(exp(y / R)) - pi/2'
+    domain: '|phi| < pi/2 (latitude strictly between the poles); R > 0 is the sphere radius from the MAP-1 reference table'
+    codomain: '(x, y) in R^2, projected plane units'
+    invariants:
+    - 'inverse(forward(p)) = p within the epsilon stated in MAP-1 for every p with |phi| < pi/2'
+    - 'forward(p) for |phi| >= pi/2 is an error, not a finite number or an infinity'
+    preconditions:
+    - 'R > 0'
+  equirectangular_forward:
+    formula: 'x = R (lambda - lambda0) cos(phi_s); y = R phi; inverse: phi = y / R; lambda = lambda0 + x / (R cos(phi_s))'
+    domain: '|phi| <= pi/2; phi_s (standard parallel) and lambda0 are parameters from the MAP-1 reference table; cos(phi_s) != 0'
+    codomain: '(x, y) in R^2, projected plane units'
+    invariants:
+    - 'inverse(forward(p)) = p within the epsilon stated in MAP-1 for every p in the valid domain'
+    - 'forward(p) for |phi| > pi/2 is an error, not a finite number'
+    preconditions:
+    - 'R > 0 and cos(phi_s) != 0'
+proof_obligations:
+- id: MAP-PROJ-BND-001
+  type: bound
+  property: Out-of-domain input is an error
+  formal: '∀ P ∀ p ∉ domain(P): forward_P(p) is an error value ≠ any finite number'
+  applies_to: all
+- id: MAP-PROJ-INV-002
+  type: invariant
+  property: Forward then inverse returns the input
+  formal: '∀ P ∀ p ∈ domain(P): |inverse_P(forward_P(p)) − p| ≤ ε_MAP1'
+  applies_to: all
+- id: MAP-PROJ-EQ-003
+  type: equivalence
+  property: Committed reference table
+  formal: '∀ P ∀ reference point r ∈ table(P): |forward_P(r) − coord(r)| ≤ ε_MAP1 (one table per projection)'
+  applies_to: all
+- id: MAP-PROJ-INV-004
+  type: invariant
+  property: Composite placement is per sub-region
+  formal: '∀ k ∀ p ∈ sub-region(k): forward_usa(p) ≡ place_k(albers_k(p)) ∧ no other sub-region parameters apply to p'
+  applies_to: albers_usa_composite
+enforcement:
+  out_of_domain_is_error:
+    description: Every projection rejects out-of-domain input with an error value
+    check: contract_tests::FALSIFY-MAP-PROJ-002
+    severity: ERROR
+  round_trip:
+    description: Inverse of forward returns the input for every in-domain point
+    check: contract_tests::FALSIFY-MAP-PROJ-001
+    severity: ERROR
+  reference_table:
+    description: Each projection matches its committed reference table
+    check: contract_tests::FALSIFY-MAP-PROJ-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-MAP-PROJ-001
+  rule: Forward then inverse returns the input
+  prediction: 'for each of the four projections, inverse(forward(p)) returns p within the MAP-1 epsilon for points drawn from that projection''s valid domain'
+  test: property test. Draw random points from the valid domain of each projection (Albers, composite Albers USA, Mercator, equirectangular), apply forward then inverse, and assert the result is within the epsilon stated in the MAP-1 reference table.
+  planted_mutation: 'in the Albers inverse, the sign of the angle term is flipped (inverse uses minus n where forward uses plus n); the round trip then fails for almost every point, and the test is red'
+  if_fails: Inverse does not undo forward; a sign, an offset or a parameter is applied in one direction only
+- id: FALSIFY-MAP-PROJ-002
+  rule: Out-of-domain input is an error
+  prediction: 'for points outside the valid domain of each projection, forward returns an error value and no finite number'
+  test: property test. Draw points just outside each projection's valid domain (for Mercator and equirectangular, latitudes at or beyond the pole; for composite Albers USA, a point in no sub-region domain) and assert the result is an error, never a finite value and never an infinity.
+  planted_mutation: 'the domain check in the Mercator forward function is removed, so a latitude at the pole returns an infinity-valued number instead of an error; the test is red at that input'
+  if_fails: A projection returns a silent non-finite or finite value outside its domain, which draws garbage on screen
+- id: FALSIFY-MAP-PROJ-003
+  rule: Each projection matches its committed reference table
+  prediction: 'for each projection, forward maps every committed reference point to the committed reference coordinate within the MAP-1 epsilon'
+  test: table test. For each of the four projections, read its committed table of reference points and reference coordinates, apply forward to each point, and compare every output with the committed coordinate within the epsilon stated in the table.
+  planted_mutation: 'in the equirectangular forward function the cos(phi_s) factor is dropped, so the x coordinate of every reference point off the equator differs from the committed value; the table test is red'
+  if_fails: The formula, a parameter or an axis order differs from the reference; the projection is not the one the table describes
+- id: FALSIFY-MAP-PROJ-004
+  rule: Composite Albers USA places each sub-region with its own parameters
+  prediction: 'a committed point in each sub-region projects to that sub-region''s Albers output followed by its placement, and to no other'
+  test: fixture test. For one committed point inside each of the three sub-regions, compare composite forward with the sub-region Albers output placed by the reference placement, and assert equality within the epsilon.
+  planted_mutation: 'the composite function applies the contiguous-region Albers parameters to every point, with no sub-region dispatch; the Alaska and Hawaii fixture points then disagree with their reference placement, and the test is red'
+  if_fails: Sub-regions share one set of parameters, so Alaska and Hawaii land on the wrong part of the plane
+qa_gate:
+  id: F-MAP-PROJ-001
+  name: Map Projection Contract
+  description: Four projections (Albers equal-area conic, composite Albers USA, Mercator, equirectangular) with forward, inverse and an error on out-of-domain input
+  checks:
+  - out_of_domain_is_error
+  - round_trip
+  - reference_table
+  pass_criteria: All four falsification tests pass against the MAP-1 reference tables; the planted mutations named in each test turn them red
+  falsification: 'Drop the Mercator latitude check, or flip the sign of the Albers angle term in the inverse'
