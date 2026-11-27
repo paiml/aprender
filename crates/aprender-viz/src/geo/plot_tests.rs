@@ -6,11 +6,11 @@
 //! 100 x 100 pixels at the origin `(40, 40)`. The fit scales the 10 x 10 box by 10 px per unit,
 //! north up: pixel `(px, py)` maps to `u = (px - 40) / 10`, `v = 10 - (py - 40) / 10`.
 
-use super::plot::POLYGON_FILL;
+use super::plot::{fit_to_area, GeoProjection, POLYGON_FILL};
 use super::projection::{GeoError, Mercator, Projection};
 use crate::color::Rgba;
 use crate::error::Error;
-use crate::grammar::{Coord, GGPlot, Geom};
+use crate::grammar::{Coord, Facet, GGPlot, Geom};
 
 /// The identity projection, used only as a test double: `(lon, lat)` in, `(lon, lat)` out.
 struct Identity;
@@ -80,4 +80,64 @@ fn non_polygon_layer_under_coord_geo_is_refused() {
         .expect("builds");
     let err = built.to_framebuffer().expect_err("only geom_polygon is drawn under coord_geo");
     assert!(matches!(err, Error::UnsupportedLayer(_)), "got {err:?}");
+}
+
+#[test]
+fn maps_are_drawn_north_up_and_east_right() {
+    // A north-west square [0,2]x[8,10] and a south-east square [8,10]x[0,2]: no mirror or flip
+    // of this pair looks like itself. Pixel (50, 50) is u = 1.05, v = 8.95.
+    let features = vec![
+        vec![vec![(0.0, 8.0), (2.0, 8.0), (2.0, 10.0), (0.0, 10.0)]],
+        vec![vec![(8.0, 0.0), (10.0, 0.0), (10.0, 2.0), (8.0, 2.0)]],
+    ];
+    let built = map_plot(Coord::geo(Identity), features).build().expect("builds");
+    let fb = built.to_framebuffer().expect("draws");
+    assert_eq!(fb.get_pixel(50, 50), Some(POLYGON_FILL), "north-west is top left");
+    assert_eq!(fb.get_pixel(130, 130), Some(POLYGON_FILL), "south-east is bottom right");
+    assert_ne!(fb.get_pixel(50, 130), Some(POLYGON_FILL), "south-west is empty");
+    assert_ne!(fb.get_pixel(130, 50), Some(POLYGON_FILL), "north-east is empty");
+}
+
+#[test]
+fn coord_geo_with_facets_is_refused() {
+    let built =
+        map_plot(Coord::geo(Identity), square_with_hole()).facet(Facet::wrap("region", 2)).build();
+    let err = match built {
+        Ok(plot) => plot.to_framebuffer().expect_err("facets are not drawn under coord_geo"),
+        Err(err) => err,
+    };
+    assert!(matches!(err, Error::UnsupportedLayer("coord_geo with facets")), "got {err:?}");
+}
+
+#[test]
+fn a_degenerate_ring_is_a_rendering_error() {
+    let features = vec![vec![vec![(0.0, 0.0), (1.0, 1.0)]]];
+    let built = map_plot(Coord::geo(Identity), features).build().expect("builds");
+    let err = built.to_framebuffer().expect_err("two vertices do not bound an area");
+    assert!(matches!(err, Error::Rendering(_)), "got {err:?}");
+}
+
+#[test]
+fn fit_of_no_vertices_gives_no_rings() {
+    assert!(fit_to_area(&Vec::new(), (0.0, 0.0, 100.0, 100.0)).is_empty());
+}
+
+#[test]
+fn fit_of_a_flat_box_uses_the_other_axis_and_centres() {
+    let plane = vec![vec![vec![(0.0, 3.0), (10.0, 3.0)]]];
+    let fitted = fit_to_area(&plane, (0.0, 0.0, 100.0, 100.0));
+    assert_eq!(fitted, vec![vec![vec![(0.0, 50.0), (100.0, 50.0)]]]);
+}
+
+#[test]
+fn fit_of_a_single_point_collapses_to_the_centre() {
+    let plane = vec![vec![vec![(7.0, 3.0), (7.0, 3.0)]]];
+    let fitted = fit_to_area(&plane, (10.0, 20.0, 100.0, 60.0));
+    assert_eq!(fitted, vec![vec![vec![(60.0, 50.0), (60.0, 50.0)]]]);
+}
+
+#[test]
+fn geo_projection_debug_names_only_the_type() {
+    assert_eq!(format!("{:?}", GeoProjection::new(Identity)), "GeoProjection");
+    assert_eq!(GeoProjection::new(Identity).projection().inverse(1.0, 2.0), Ok((1.0, 2.0)));
 }
