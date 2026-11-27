@@ -5,9 +5,8 @@
 //! `/v1/chat/completions`. The reply is reshaped into the Messages wire format. Refusals use
 //! the Anthropic error envelope `{"type":"error","error":{"type":...,"message":...}}`.
 //!
-//! Non-streaming body keys (vendored from the Messages reference, retrieved 2026-11-27,
-//! https://docs.anthropic.com/en/api/messages): `id`, `type`, `role`, `model`, `content`,
-//! `stop_reason`, `stop_sequence`, `usage.input_tokens`, `usage.output_tokens`.
+//! The non-streaming body's key set is vendored, with its source URL and date, in
+//! `anthropic_message_schema.json` and checked by `tests/messages_wire_7484.rs`.
 //! Streaming events: `message_start`, `content_block_start`, `content_block_delta`,
 //! `content_block_stop`, `message_delta`, `message_stop`.
 #![allow(unreachable_pub)] // re-exported as pub from api/mod.rs
@@ -23,8 +22,8 @@ use serde::Deserialize;
 
 use super::ollama_handlers::content_fragments;
 use super::{
-    openai_chat_completions_handler, AppState, ChatCompletionRequest, ChatCompletionResponse,
-    ChatMessage, ChoiceCount,
+    openai_chat_completions_handler, AppState, ChatChoice, ChatCompletionRequest, ChatMessage,
+    ChoiceCount, Usage,
 };
 
 /// `POST /v1/messages` request body (the fields G-01 exercises).
@@ -40,12 +39,75 @@ pub struct AnthropicMessagesRequest {
     pub system: Option<serde_json::Value>,
     #[serde(default)]
     pub stream: bool,
-    #[serde(default)]
+    /// Same domain guard as the chat request (aprender#2375). `to_chat_request` builds that
+    /// struct in Rust, so its own guard never sees a Messages request.
+    #[serde(
+        default,
+        deserialize_with = "crate::api::types::deserialize_temperature_f32"
+    )]
     pub temperature: Option<f32>,
     #[serde(default)]
     pub top_p: Option<f32>,
     #[serde(default)]
     pub top_k: Option<usize>,
+    /// The next four are parsed only so they can be refused by name.
+    #[serde(default)]
+    pub stop_sequences: Option<Vec<String>>,
+    #[serde(default)]
+    pub tools: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub tool_choice: Option<serde_json::Value>,
+    #[serde(default)]
+    pub thinking: Option<serde_json::Value>,
+}
+
+impl AnthropicMessagesRequest {
+    /// The first field that asks for behaviour this route does not have. A 200 that ignored
+    /// it would answer a different request from the one sent.
+    fn unsupported_field(&self) -> Option<&'static str> {
+        if self.stop_sequences.as_ref().is_some_and(|s| !s.is_empty()) {
+            Some("stop_sequences")
+        } else if self.tools.as_ref().is_some_and(|t| !t.is_empty()) {
+            Some("tools")
+        } else if self.tool_choice.is_some() {
+            Some("tool_choice")
+        } else if self
+            .thinking
+            .as_ref()
+            .is_some_and(|t| t.get("type").and_then(|v| v.as_str()) != Some("disabled"))
+        {
+            Some("thinking")
+        } else {
+            None
+        }
+    }
+}
+
+/// The parts of the chat reply this route reads. Narrower than `ChatCompletionResponse`:
+/// the SafeTensors CUDA backend writes its 200 body without `created`.
+#[derive(Debug, Deserialize)]
+struct ChatReply {
+    id: String,
+    choices: Vec<ChatChoice>,
+    usage: Usage,
+}
+
+/// The Messages error `type` for a status returned by the chat path.
+fn error_kind_of(status: StatusCode) -> &'static str {
+    match status {
+        StatusCode::BAD_REQUEST => "invalid_request_error",
+        StatusCode::NOT_FOUND => "not_found_error",
+        _ => "api_error",
+    }
+}
+
+/// `/v1/messages` on an embedding model: the kind refusal in the Messages envelope.
+pub async fn anthropic_embedding_kind_refusal(State(state): State<AppState>) -> Response {
+    anthropic_error(
+        StatusCode::BAD_REQUEST,
+        "invalid_request_error",
+        &super::embedding_kind_reason(&state),
+    )
 }
 
 /// One conversation turn. `content` is a string, or an array of text blocks.
@@ -220,13 +282,20 @@ pub async fn anthropic_messages_handler(
     let request: AnthropicMessagesRequest = match serde_json::from_slice(&body) {
         Ok(request) => request,
         Err(e) => {
-            return anthropic_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request_error",
-                &e.to_string(),
-            )
+            // aprender#2376(7): serde's text names our parse position. Only a reason a
+            // validator marked as client-visible is forwarded.
+            let message = super::client_visible_reason(&e.to_string())
+                .unwrap_or_else(|| "request body is not a valid Messages request".to_string());
+            return anthropic_error(StatusCode::BAD_REQUEST, "invalid_request_error", &message);
         },
     };
+    if let Some(field) = request.unsupported_field() {
+        return anthropic_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request_error",
+            &format!("{field}: not supported by this server"),
+        );
+    }
     if request.max_tokens.unwrap_or(0) == 0 {
         return anthropic_error(
             StatusCode::BAD_REQUEST,
@@ -269,14 +338,9 @@ pub async fn anthropic_messages_handler(
             .ok()
             .and_then(|v| v.get("error").and_then(|e| e.as_str().map(str::to_string)))
             .unwrap_or_else(|| "generation unavailable".to_string());
-        let kind = if status == StatusCode::BAD_REQUEST {
-            "invalid_request_error"
-        } else {
-            "api_error"
-        };
-        return anthropic_error(status, kind, &message);
+        return anthropic_error(status, error_kind_of(status), &message);
     }
-    let Ok(generated) = serde_json::from_slice::<ChatCompletionResponse>(&bytes) else {
+    let Ok(generated) = serde_json::from_slice::<ChatReply>(&bytes) else {
         return anthropic_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "api_error",
@@ -354,6 +418,28 @@ mod tests {
             parse(r#"{"model":"m","max_tokens":8,"messages":[{"role":"system","content":"x"}]}"#);
         let err = to_chat_request(&request, "m").expect_err("system is not a message role");
         assert!(err.contains("role must be"), "{err}");
+    }
+
+    #[test]
+    fn a_chat_reply_without_created_is_readable() {
+        // The shape `try_safetensors_cuda_backend` writes.
+        let reply: ChatReply = serde_json::from_str(
+            r#"{"id":"x","object":"chat.completion","model":"m",
+                "choices":[{"index":0,"message":{"role":"assistant","content":"4"},"finish_reason":"stop"}],
+                "usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#,
+        )
+        .expect("readable");
+        assert_eq!(reply.choices[0].message.content, "4");
+    }
+
+    #[test]
+    fn a_missing_model_is_not_found_not_api_error() {
+        assert_eq!(error_kind_of(StatusCode::NOT_FOUND), "not_found_error");
+        assert_eq!(
+            error_kind_of(StatusCode::BAD_REQUEST),
+            "invalid_request_error"
+        );
+        assert_eq!(error_kind_of(StatusCode::SERVICE_UNAVAILABLE), "api_error");
     }
 
     #[test]

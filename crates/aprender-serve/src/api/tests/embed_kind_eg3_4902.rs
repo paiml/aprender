@@ -141,6 +141,25 @@ async fn every_generative_route_names_the_embedding_kind_eg3() {
     }
 }
 
+/// aprender#7484: the kind refusal on `/v1/messages` keeps that route's error envelope.
+#[tokio::test]
+async fn messages_on_an_embedding_model_refuses_in_the_messages_envelope_7484() {
+    let (status, body) = post(
+        embedding_state(),
+        "/v1/messages",
+        r#"{"model":"m","max_tokens":2,"messages":[{"role":"user","content":"ab"}]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(json(&body)["type"], "error", "{body}");
+    assert_eq!(
+        json(&body)["error"]["type"],
+        "invalid_request_error",
+        "{body}"
+    );
+    assert!(body.contains("is an embedding model"), "{body}");
+}
+
 // ============================================================================
 // I-7: media is refused, never dropped
 // ============================================================================
@@ -189,7 +208,11 @@ async fn assert_media_refused(state: &AppState, server: &str) {
         r#"{"prompt": "data:image/webp;base64,UklGRhYAAABXRUJQ"}"#,
     ] {
         let (status, body) = post(state.clone(), "/api/embeddings", request).await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{server} {request}: {body}");
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{server} {request}: {body}"
+        );
         assert!(body.contains("no image encoder"), "{body}");
     }
 }
@@ -219,7 +242,12 @@ async fn an_empty_images_field_is_not_media_eg3() {
 
 #[tokio::test]
 async fn an_input_that_is_neither_text_nor_media_is_a_400_eg3() {
-    let (status, body) = post(embedding_state(), "/v1/embeddings", r#"{"input": [1, 2, 3]}"#).await;
+    let (status, body) = post(
+        embedding_state(),
+        "/v1/embeddings",
+        r#"{"input": [1, 2, 3]}"#,
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(body.contains("string or an array of strings"), "{body}");
 }

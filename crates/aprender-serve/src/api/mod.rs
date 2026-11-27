@@ -97,7 +97,7 @@ pub(crate) use openai_handlers::{
 mod ollama_handlers;
 // aprender#7484 (G-01): Anthropic Messages API, `POST /v1/messages`.
 mod anthropic_handlers;
-pub(crate) use anthropic_handlers::anthropic_messages_handler;
+pub(crate) use anthropic_handlers::{anthropic_embedding_kind_refusal, anthropic_messages_handler};
 pub(crate) use ollama_handlers::{
     ollama_chat_handler, ollama_embeddings_handler, ollama_generate_handler, ollama_show_handler,
     ollama_tags_handler, ollama_version_handler,

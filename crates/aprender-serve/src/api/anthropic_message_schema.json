@@ -1,0 +1,8 @@
+{
+  "source_url": "https://docs.anthropic.com/en/api/messages",
+  "retrieved": "2026-11-27",
+  "transcribed_from": "search excerpts of the Messages reference, not the full page",
+  "body_keys": ["content", "id", "model", "role", "stop_reason", "stop_sequence", "type", "usage"],
+  "usage_keys": ["input_tokens", "output_tokens"],
+  "content_block_keys": ["text", "type"]
+}
