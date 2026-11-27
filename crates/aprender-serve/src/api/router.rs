@@ -188,6 +188,8 @@ fn openai_routes(caps: RouteCapabilities) -> Vec<Route> {
             post(openai_chat_completions_stream_handler),
         ),
         ("POST", "/v1/embeddings", post(openai_embeddings_handler)),
+        ("POST", "/v1/messages", post(anthropic_messages_handler)),
+        // aprender#7484 (G-01): Anthropic Messages API, delegates to the chat path.
         // APR-specific API (spec §15.1)
         ("POST", "/v1/predict", post(apr_predict_handler)),
         ("POST", "/v1/explain", post(apr_explain_handler)),
@@ -246,7 +248,7 @@ fn cuda_routes() -> Vec<Route> {
 ///
 /// An embedding model has no such head. With one loaded these paths stay mounted and
 /// listed, so a client gets an answer that names the kind rather than the 404 index.
-const GENERATIVE_PATHS: [&str; 11] = [
+const GENERATIVE_PATHS: [&str; 12] = [
     "/generate",
     "/batch/generate",
     "/stream/generate",
@@ -256,6 +258,7 @@ const GENERATIVE_PATHS: [&str; 11] = [
     "/v1/chat/completions",
     "/v1/chat/completions/stream",
     "/v1/batch/completions",
+    "/v1/messages",
     "/api/chat",
     "/api/generate",
 ];

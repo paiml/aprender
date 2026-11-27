@@ -95,6 +95,9 @@ pub(crate) use openai_handlers::{
 // PMAT-923: Ollama HTTP compat (/api/chat, /api/generate) — delegates to the
 // OpenAI chat path so `apr serve` is a drop-in Ollama HTTP replacement.
 mod ollama_handlers;
+// aprender#7484 (G-01): Anthropic Messages API, `POST /v1/messages`.
+mod anthropic_handlers;
+pub(crate) use anthropic_handlers::anthropic_messages_handler;
 pub(crate) use ollama_handlers::{
     ollama_chat_handler, ollama_embeddings_handler, ollama_generate_handler, ollama_show_handler,
     ollama_tags_handler, ollama_version_handler,
@@ -435,3 +438,7 @@ mod tests_engine_identity;
 #[cfg(test)]
 #[path = "tests_streaming_sink_sse.rs"]
 mod tests_streaming_sink_sse;
+
+#[cfg(test)]
+#[path = "tests_messages_7484.rs"]
+mod tests_messages_7484;
