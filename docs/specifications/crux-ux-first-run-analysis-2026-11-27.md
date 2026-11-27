@@ -71,7 +71,7 @@ Quicksort is a divide-and-conquer algorithm that works by selecting a 'pivot' el
 
 Ollama, with the same model and prompt on this host, returned all three sentences (53 tokens) and stopped at end of turn (**measured**). `apr chat` defaults to 512.
 
-### F-05 (P2) `pull` prints a next step that is not a valid command
+### F-05 (P1) `pull` prints a next step that is not a valid command
 
 `apr pull` prints `apr serve <path>` under "Usage". `apr serve <path>` fails with `unrecognized subcommand`; the working form is `apr serve run <path>`.
 
@@ -85,7 +85,7 @@ Ollama, with the same model and prompt on this host, returned all three sentence
 - `apr serve run` prints `(PAR-111)` and `(PMAT-044)` on stdout and the same `[trueno#243]` pointer lines on stderr.
 - No ANSI escape reaches a redirected stream (probe C3 passes).
 
-### F-07 (P2) `apr run` does not say which backend it used
+### F-07 (P1) `apr run` does not say which backend it used
 
 - `apr serve run` does this well. It prints `gpu-layers: requested=all resolved=24 total=24 (backend=cuda)`, and `/health` returns `"compute_mode":"gpu"`.
 - `apr run` prints no backend line on stdout or stderr at default verbosity.
@@ -102,7 +102,7 @@ Ollama, with the same model and prompt on this host, returned all three sentence
 - `apr run` calls its argument `<SOURCE>` and accepts `hf://`; `apr chat` calls it `<FILE>` and describes it as "Path to .apr model file".
 - The typo hint is weak: `apr nonexistent` suggests `finetune`.
 
-### F-09 (P2) Two agent-facing routes return 404 on the released binary
+### F-09 (P1) Two agent-facing routes return 404 on the released binary
 
 `apr serve run` (0.75.3, and again on 0.75.4) answers these correctly: `/health`, `/metrics`, `/v1/models`, `/v1/chat/completions` (plain, streaming, `json_schema`), `/v1/completions`, `/api/chat`, `/api/tags`. A request with `tools` returns 200, but on the 0.5B model the call arrives as text inside `content`, with no `tool_calls` array. `/api/tags` answers, but reports `Q5_0` for a `q4_k_m` file.
 
@@ -123,7 +123,7 @@ Two smaller observations, both already inside #6570's scope and so not new rows:
 - `POST /v1/embeddings` returns 503 with "needs a loaded model" while a model is loaded (#6570 C-13).
 - `/api/tags` reports `quantization_level: Q5_0` for a file named `…q4_k_m.gguf`.
 
-### F-10 (P2) The README and book lag the release
+### F-10 (P1) The README and book lag the release
 
 - The library snippet (README L334) imports `aprender::linear_regression::LinearRegression`. `crates/aprender-core/src/` has `linear_model`, and no `linear_regression`.
 - The quick start (L44-46, L67, L78, L89) uses a hashed cache path, where `apr run hf://…` exists.
@@ -256,4 +256,4 @@ grep -c '^help:' Makefile
 - The nightly UX crux (`audit.sh`) did not probe aprender on 2026-11-27: its build step was refused by the memory cap. Probes C1, C2, C3 and C7 were re-run by hand here; C4, C5 and C6 are `not_measured`. That instrument, and its Ollama flag table from ollama 0.5.7, belong to the infra repo.
 - The cause of F-09 was not traced in source.
 - The raw captures are not committed. §6 regenerates them.
-- One independent review lane read rev 1 of this analysis and the plan and returned FAIL, a second lane read rev 2 and returned FAIL, and a third read rev 4 and returned FAIL. The plan's §7 lists what changed each time; this document gained §5a, the F-10 command block and the extra lines in F-03, F-06 and F-09.
+- One independent review lane read rev 1 of this analysis and the plan and returned FAIL, a second lane read rev 2 and returned FAIL, a third read rev 4 and returned FAIL, a fourth read rev 5 and returned FAIL on one line of this document, a fifth read rev 6 and returned PASS, and a sixth read the pull request and returned FAIL on counts and severities, since corrected. The plan's §7 lists what changed each time; this document gained §5a, the F-10 command block and the extra lines in F-03, F-06 and F-09.
