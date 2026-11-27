@@ -401,10 +401,7 @@ fn validate_rings(polygon: usize, rings: &Rings) -> Result<(), IndexError> {
 }
 
 /// True when `p` is on an edge or vertex of any ring, or inside by the even-odd rule.
-///
-/// Exposed to the tests as the per-polygon predicate that the brute-force oracle scans with.
-#[must_use]
-pub(crate) fn rings_contain(rings: &[Vec<(f64, f64)>], p: (f64, f64)) -> bool {
+fn rings_contain(rings: &[Vec<(f64, f64)>], p: (f64, f64)) -> bool {
     if rings.iter().any(|ring| on_boundary(ring, p)) {
         return true;
     }

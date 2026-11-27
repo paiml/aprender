@@ -1,23 +1,56 @@
 //! Tests for the spatial index (MAP-3 phase 2).
 //!
-//! The oracles are brute-force scans over every polygon or point. The polygon oracle calls
-//! `rings_contain`, the same per-polygon predicate the index applies to its candidates. These
-//! tests therefore check candidate selection, the lowest-id rule and the nearest search. The
-//! predicate itself has hand-derived unit cases below. Generated coordinates are multiples of
-//! 1/8, and edge midpoints are multiples of 1/16, so every point placed on an edge is exact.
+//! The oracles are brute-force scans over every polygon or point. The polygon oracle is
+//! `oracle_contains`, a predicate written independently of `index::rings_contain`: it casts its
+//! ray along +y where the index casts along +x, and it has its own closed-edge test. A fault in
+//! the index predicate therefore shows up as a disagreement, not as agreement with itself.
+//! Generated coordinates are multiples of 1/8, and edge midpoints are multiples of 1/16, so every
+//! point placed on an edge is exact.
 
 use proptest::prelude::*;
 
-use super::index::{rings_contain, IndexError, PointIndex, PolygonIndex, Rings};
+use super::index::{IndexError, PointIndex, PolygonIndex, Rings};
 
 /// Counter-clockwise axis-aligned rectangle as one ring.
 fn square(x0: f64, y0: f64, x1: f64, y1: f64) -> Rings {
     vec![vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1)]]
 }
 
+/// Independent point-in-polygon oracle over all rings of one polygon.
+///
+/// A point on any closed edge is inside. Otherwise the answer is the even-odd parity of edges
+/// crossed by a ray from `p` towards +y, using a half-open rule on the x-span of each edge.
+fn oracle_contains(rings: &[Vec<(f64, f64)>], p: (f64, f64)) -> bool {
+    let on_edge = rings.iter().any(|ring| {
+        (0..ring.len()).any(|i| on_closed_edge(ring[i], ring[(i + 1) % ring.len()], p))
+    });
+    if on_edge {
+        return true;
+    }
+    let mut crossings = 0_usize;
+    for ring in rings {
+        for i in 0..ring.len() {
+            let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+            let straddles = (a.0 <= p.0 && p.0 < b.0) || (b.0 <= p.0 && p.0 < a.0);
+            if straddles && a.1 + (p.0 - a.0) * (b.1 - a.1) / (b.0 - a.0) > p.1 {
+                crossings += 1;
+            }
+        }
+    }
+    crossings % 2 == 1
+}
+
+/// Closed segment test by collinearity (`(b-a) x (p-a) == 0`) and the segment's own bounds.
+fn on_closed_edge(a: (f64, f64), b: (f64, f64), p: (f64, f64)) -> bool {
+    let collinear = (b.0 - a.0) * (p.1 - a.1) == (b.1 - a.1) * (p.0 - a.0);
+    let in_x = a.0.min(b.0) <= p.0 && p.0 <= a.0.max(b.0);
+    let in_y = a.1.min(b.1) <= p.1 && p.1 <= a.1.max(b.1);
+    collinear && in_x && in_y
+}
+
 /// Brute-force pick: the lowest id of a polygon that contains `p`.
 fn brute_pick(polys: &[Rings], p: (f64, f64)) -> Option<usize> {
-    polys.iter().position(|rings| rings_contain(rings, p))
+    polys.iter().position(|rings| oracle_contains(rings, p))
 }
 
 /// Brute-force nearest: the lowest id at minimum squared distance.
