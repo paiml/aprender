@@ -363,7 +363,12 @@ fetch() {
     q="$(gql_query "$LANES" "$raw/workflows.json" "$want")"
     [ -n "$q" ] || { printf 'failed: a producer workflow is not in the workflow list\n' > "$raw/read"; return 0; }
     call_ok || { printf 'failed: call budget\n' > "$raw/read"; return 0; }
-    gh api graphql -f query="$q" > "$raw/graphql.json" 2>/dev/null || { printf 'failed: GraphQL call\n' > "$raw/read"; return 0; }
+    # one retry (#6126: the big query fails now and then on a runner and every lane read not_measured); the second try
+    #   spends one counted call, and its stderr is kept in RAW/gql.err so a failed read says why
+    gh api graphql -f query="$q" > "$raw/graphql.json" 2> "$raw/gql.err" || {
+        call_ok && sleep "${GQL_RETRY_SLEEP:-20}" && gh api graphql -f query="$q" > "$raw/graphql.json" 2>> "$raw/gql.err" \
+            || { printf 'failed: GraphQL call\n' > "$raw/read"; return 0; }
+    }
     if jq -e '(.errors // []) | length > 0' "$raw/graphql.json" > /dev/null 2>&1; then printf 'failed: GraphQL errors\n' > "$raw/read"; return 0; fi
     jq -r '(.data.repository.object // .data.repository.defaultBranchRef.target) | .oid // empty' "$raw/graphql.json" > "$raw/C" 2>/dev/null
     jq -r '(.data.repository.object // .data.repository.defaultBranchRef.target) | .tree.oid // empty' "$raw/graphql.json" > "$raw/tree" 2>/dev/null
