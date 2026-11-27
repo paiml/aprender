@@ -97,6 +97,7 @@ fn test_repl_session_record_turn() {
         usage: crate::agent::result::TokenUsage { input_tokens: 100, output_tokens: 50 },
         iterations: 2,
         tool_calls: 3,
+        input: Default::default(),
     };
     session.record_turn(&result, 0.005);
 

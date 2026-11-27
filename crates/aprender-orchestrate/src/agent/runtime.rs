@@ -13,11 +13,12 @@ use super::driver::{
     CompletionRequest, CompletionResponse, LlmDriver, Message, StreamEvent, ToolCall, ToolResultMsg,
 };
 use super::guard::{LoopGuard, LoopVerdict};
+use super::input_record::InputRecord;
 use super::manifest::AgentManifest;
 use super::memory::{MemorySource, MemorySubstrate};
 use super::phase::LoopPhase;
 use super::result::{AgentError, AgentLoopResult, StopReason};
-use super::runtime_helpers::{call_with_retry, emit, truncate_messages};
+use super::runtime_helpers::{call_with_retry, emit, retain_assistant_text, truncate_messages};
 use super::tool::ToolRegistry;
 use crate::serve::context::{
     ContextConfig, ContextManager, ContextWindow, TokenEstimator, TruncationStrategy,
@@ -57,8 +58,10 @@ pub async fn run_agent_loop_with_nudge(
         info!("no tool calls on first turn, nudging");
         let nudge =
             "Use a tool to answer. Emit a <tool_call> block with glob, file_read, or shell.";
-        return run_agent_turn(manifest, &mut history, nudge, driver, tools, memory, stream_tx)
-            .await;
+        let mut nudged =
+            run_agent_turn(manifest, &mut history, nudge, driver, tools, memory, stream_tx).await?;
+        nudged.input = r.input; // #4600: the record is the caller's prompt, not the nudge
+        return Ok(nudged);
     }
     Ok(r)
 }
@@ -124,8 +127,8 @@ pub async fn run_agent_turn(
         // ═══ REASON ═══
         emit(stream_tx.as_ref(), StreamEvent::PhaseChange { phase: LoopPhase::Reason }).await;
 
-        let response =
-            reason_step(driver, &messages, &tool_defs, manifest, &system, &context).await?;
+        let (response, input) =
+            reason_step(driver, query, &messages, &tool_defs, manifest, &system, &context).await?;
         check_verdict(guard.record_usage(&response.usage))?;
 
         // INV-005: Estimate cost and enforce budget (Muda)
@@ -153,8 +156,16 @@ pub async fn run_agent_turn(
                 if !retained.is_empty() {
                     history.push(Message::Assistant(retained));
                 }
-                return finish_loop(&response, &guard, manifest, query, memory, stream_tx.as_ref())
-                    .await;
+                return finish_loop(
+                    &response,
+                    &guard,
+                    manifest,
+                    query,
+                    input,
+                    memory,
+                    stream_tx.as_ref(),
+                )
+                .await;
             }
             StopReason::ToolUse => {
                 // PMAT-172: detect stuck loops (4+ identical tool calls → break)
@@ -172,6 +183,7 @@ pub async fn run_agent_turn(
                         &guard,
                         manifest,
                         query,
+                        input,
                         memory,
                         stream_tx.as_ref(),
                     )
@@ -198,56 +210,6 @@ pub async fn run_agent_turn(
     }
 }
 
-/// CCPA-m296: sanitize an assistant turn's text before it enters multi-turn
-/// history. Strips any lingering tool-call markup so a prior tool-using turn is
-/// NEVER re-rendered as capability-breaking raw Markdown that re-primes prose
-/// mode on the next turn.
-///
-/// Genuine text turns pass through unchanged. Turns whose entire content was
-/// tool-call markup collapse to empty (the structured `AssistantToolUse` /
-/// `ToolResult` messages already carry that turn's tool semantics into history).
-///
-/// Returns the trimmed prose with `<tool_call>...</tool_call>` / unclosed
-/// `<tool_call>` / `<tool_result>...</tool_result>` spans removed.
-fn retain_assistant_text(text: &str) -> String {
-    let mut out = text.to_string();
-
-    // Remove well-formed <tool_call>...</tool_call> spans.
-    out = strip_spans(&out, "<tool_call>", "</tool_call>");
-    // Remove <tool_result>...</tool_result> spans (model sometimes echoes them).
-    out = strip_spans(&out, "<tool_result>", "</tool_result>");
-
-    // Remove an unclosed trailing <tool_call> (small models omit the close tag):
-    // everything from the marker to end-of-string is tool-call residue, not prose.
-    if let Some(pos) = out.find("<tool_call>") {
-        out.truncate(pos);
-    }
-
-    out.trim().to_string()
-}
-
-/// Remove every `open..close` span (inclusive) from `text`. Spans without a
-/// matching close are left untouched (handled separately by the caller).
-fn strip_spans(text: &str, open: &str, close: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut cursor = text;
-    loop {
-        let Some(start) = cursor.find(open) else {
-            out.push_str(cursor);
-            break;
-        };
-        let after_open = &cursor[start + open.len()..];
-        let Some(rel_end) = after_open.find(close) else {
-            // No closing tag — leave the remainder for the caller to handle.
-            out.push_str(cursor);
-            break;
-        };
-        out.push_str(&cursor[..start]);
-        cursor = &after_open[rel_end + close.len()..];
-    }
-    out
-}
-
 fn check_verdict(verdict: LoopVerdict) -> Result<(), AgentError> {
     match verdict {
         LoopVerdict::CircuitBreak(msg) | LoopVerdict::Block(msg) => {
@@ -259,13 +221,15 @@ fn check_verdict(verdict: LoopVerdict) -> Result<(), AgentError> {
 
 async fn reason_step(
     driver: &dyn LlmDriver,
+    prompt: &str,
     messages: &[Message],
     tool_defs: &[super::driver::ToolDefinition],
     manifest: &AgentManifest,
     system: &str,
     context: &ContextManager,
-) -> Result<CompletionResponse, AgentError> {
+) -> Result<(CompletionResponse, InputRecord), AgentError> {
     let truncated_messages = truncate_messages(messages, context)?;
+    let input = InputRecord::measure(prompt, &truncated_messages, context)?;
 
     let request = CompletionRequest {
         model: String::new(),
@@ -276,7 +240,7 @@ async fn reason_step(
         system: Some(system.to_string()),
     };
 
-    call_with_retry(driver, &request).await
+    Ok((call_with_retry(driver, &request).await?, input))
 }
 
 async fn finish_loop(
@@ -284,6 +248,7 @@ async fn finish_loop(
     guard: &LoopGuard,
     manifest: &AgentManifest,
     query: &str,
+    input: InputRecord,
     memory: &dyn MemorySubstrate,
     stream_tx: Option<&mpsc::Sender<StreamEvent>>,
 ) -> Result<AgentLoopResult, AgentError> {
@@ -303,6 +268,7 @@ async fn finish_loop(
         usage: guard.usage().clone(),
         iterations: guard.current_iteration(),
         tool_calls: guard.total_tool_calls(),
+        input,
     })
 }
 

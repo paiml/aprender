@@ -22,6 +22,7 @@ fn loop_result(text: &str) -> AgentLoopResult {
         usage: crate::agent::result::TokenUsage { input_tokens: 11, output_tokens: 3 },
         iterations: 2,
         tool_calls: 1,
+        input: Default::default(),
     }
 }
 

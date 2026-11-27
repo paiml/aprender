@@ -69,6 +69,7 @@ impl CodeOutcome {
             AgentError::CircuitBreak(_) => "circuit_break",
             AgentError::MaxIterationsReached => "max_iterations_reached",
             AgentError::ContextOverflow { .. } => "context_overflow",
+            AgentError::InputNotConsumed { .. } => "input_not_consumed",
             AgentError::ManifestError(_) => "manifest_error",
             AgentError::Memory(_) => "memory_error",
         };
@@ -140,6 +141,11 @@ pub fn envelope(
         "num_turns": result.map_or(0, |r| r.iterations),
         "tokens_in": result.map_or(0, |r| r.usage.input_tokens),
         "tokens_out": result.map_or(0, |r| r.usage.output_tokens),
+        // #4600: null, never 0, when no loop result measured them.
+        "input_bytes_sent": result.map(|r| r.input.input_bytes_sent),
+        "input_bytes_consumed": result.map(|r| r.input.input_bytes_consumed),
+        "prompt_sha256": result.map(|r| r.input.prompt_sha256.as_str()),
+        "prompt_tokens": result.map(|r| r.input.prompt_tokens),
         // Local sovereign inference: cost is always zero by construction.
         "total_cost_usd": 0,
         "backend": backend.map_or(serde_json::Value::Null, BackendReport::to_json),

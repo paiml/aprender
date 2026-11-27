@@ -42,6 +42,7 @@ pub mod driver;
 pub(crate) mod env_test_support;
 pub mod guard;
 pub mod hooks;
+mod input_record;
 pub mod instructions;
 pub mod manifest;
 #[cfg(feature = "agents-mcp")]

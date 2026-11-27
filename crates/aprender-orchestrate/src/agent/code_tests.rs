@@ -788,6 +788,7 @@ mod emit_trace_tests {
             usage: TokenUsage { input_tokens: 42, output_tokens: 7 },
             iterations: 1,
             tool_calls: 0,
+            input: Default::default(),
         }
     }
 
@@ -871,6 +872,7 @@ mod non_interactive_format_tests {
             usage: TokenUsage { input_tokens: 42, output_tokens: 7 },
             iterations: 3,
             tool_calls: 1,
+            input: Default::default(),
         }
     }
 

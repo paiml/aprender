@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use super::capability::Capability;
+pub use super::input_record::InputRecord;
 
 /// Outcome of a complete agent loop invocation.
 #[derive(Debug, Clone, Serialize)]
@@ -19,6 +20,8 @@ pub struct AgentLoopResult {
     pub iterations: u32,
     /// Number of tool calls made.
     pub tool_calls: u32,
+    /// #4600: the current prompt as it was handed to the driver.
+    pub input: InputRecord,
 }
 
 /// Token usage counters.
@@ -95,6 +98,14 @@ pub enum AgentError {
         required: usize,
         /// Tokens available.
         available: usize,
+    },
+    /// #4600: the request handed to the driver carried less than the prompt sent.
+    #[error("input not consumed: {consumed} of {sent} prompt bytes reached the request")]
+    InputNotConsumed {
+        /// Prompt bytes the caller passed.
+        sent: usize,
+        /// Leading prompt bytes present in the request.
+        consumed: usize,
     },
     /// Manifest parsing error.
     #[error("manifest error: {0}")]
@@ -196,6 +207,7 @@ mod tests {
             usage: TokenUsage { input_tokens: 10, output_tokens: 5 },
             iterations: 2,
             tool_calls: 1,
+            input: InputRecord::default(),
         };
         let json = serde_json::to_string(&result).expect("serialize failed");
         assert!(json.contains("\"text\":\"hello\""));
