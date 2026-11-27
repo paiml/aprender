@@ -157,7 +157,7 @@ async fn messages_on_an_embedding_model_refuses_in_the_messages_envelope_7484() 
         "invalid_request_error",
         "{body}"
     );
-    assert!(body.contains("is an embedding model"), "{body}");
+    assert!(json(&body)["error"]["message"].as_str().is_some_and(|m| m.contains("is an embedding model")), "{body}");
 }
 
 // ============================================================================

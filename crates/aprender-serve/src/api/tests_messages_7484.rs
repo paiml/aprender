@@ -41,6 +41,12 @@ async fn messages_without_max_tokens_is_an_anthropic_error_400() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["type"], "error", "{body}");
     assert_eq!(body["error"]["type"], "invalid_request_error", "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("max_tokens")),
+        "{body}"
+    );
 }
 
 #[tokio::test]
