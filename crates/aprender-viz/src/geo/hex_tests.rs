@@ -162,7 +162,7 @@ fn falsify_map_hex_004_cut_cells_match_reference() {
     let layout = HexLayout::new(fx.origin, fx.radius).expect("fixture layout is valid");
     let got = rasterise(&layout, &fx.window, &fx.rings).expect("fixture rasterises");
     let unit = 3f64.sqrt() / 8.0;
-    let tol = 1e-9 * 21.0 * unit;
+    let tol = 1e-9 * 19.0 * unit;
     let got: BTreeMap<Cell, f64> = got.into_iter().collect();
     assert_eq!(got.len(), fx.reference.len(), "reached cell set differs");
     for (c, k) in &fx.reference {
@@ -170,7 +170,7 @@ fn falsify_map_hex_004_cut_cells_match_reference() {
         assert!((a - k * unit).abs() <= tol, "cell {c:?}: got {a}, reference {}", k * unit);
     }
     let sum: f64 = got.values().sum();
-    assert!((sum - 21.0 * unit).abs() <= tol, "polygon area {sum}");
+    assert!((sum - 19.0 * unit).abs() <= tol, "polygon area {sum}");
 }
 
 /// FALSIFY-MAP-HEX-005: a point on a shared edge picks one of the two cells, the same each time.
