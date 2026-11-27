@@ -26,82 +26,34 @@ contract_count: 1837
 
 ## Quick Start
 
-Pre-built and ready to use (Linux x86_64/aarch64 only today — other platforms fall
-through to `cargo install` below):
+The first run, end to end: pull a model, run it, list it, serve it, ask it a question over HTTP, and remove it. Install the CLI first (see [Install](#install)). The script needs `bash`, `curl` and `jq`, and it runs with a temporary `HOME`.
 
-```text
-curl -LsSf https://paiml.com/apr/install.sh | sh
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache
+S=
+trap '[ -z "$S" ] || kill "$S" 2>/dev/null || true; rm -rf "${D:?}"' EXIT
+cd "$D"
+M=Qwen/Qwen2.5-Coder-0.5B-Instruct
+
+# run
+apr run hf://$M "Explain quicksort in three sentences." --temperature 0 > reply.txt
+[ "$(wc -w < reply.txt)" -gt 32 ]   # more than 32 words is more than 32 tokens
+! grep -q '=== ' reply.txt
+# list
+apr list > list.txt; grep -Fq "$M" list.txt
+# serve, then ask over HTTP
+apr serve run $M --port 18080 & S=$!
+ok=0; for i in $(seq 1 60); do curl -sf -o /dev/null localhost:18080/health && { ok=1; break; }; sleep 1; done; [ "$ok" = 1 ]
+curl -sf localhost:18080/v1/chat/completions -H content-type:application/json \
+  -d '{"model":"'$M'","messages":[{"role":"user","content":"What is 2+2?"}]}' > chat.json
+jq -e '.choices[0].message.content | test("4")' chat.json > /dev/null
+kill "$S"; wait "$S" || true; S=
+# remove
+apr rm $M
+apr list > list.txt; ! grep -Fq "$M" list.txt
 ```
-
-To read the script before it runs, download it with `curl -LsSf https://paiml.com/apr/install.sh -o install.sh`, review it, then run `sh install.sh`. The installer is POSIX `sh` and checks the downloaded release archive against its published `.sha256` before installing.
-
-Compile and build:
-
-```text
-cargo install aprender                    # CPU ONLY - no GPU backend is compiled in
-cargo install aprender --features cuda    # NVIDIA GPU acceleration
-cargo install aprender --features full    # everything (training, visualization, zram)
-apr pull hf://Qwen/Qwen2.5-Coder-0.5B-Instruct
-apr list
-apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors "2+2?"
-```
-
-full log of output
-
-<details>
-
-```text
-
-apr pull hf://Qwen/Qwen2.5-Coder-0.5B-Instruct
-== APR Pull ===
-
-Model: hf://Qwen/Qwen2.5-Coder-0.5B-Instruct/model.safetensors
-
-Downloading (streaming)...
- 10% 20% 30% 40% 50% 60% 70% 80% 90% 100%
-✓ Downloaded successfully
-  Path: ~/.cache/pacha/models/1e3be9285aea6923.safetensors
-  Size: 942.3 MB
-...  
-Usage:
-  apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors
-  apr serve ~/.cache/pacha/models/1e3be9285aea6923.safetensors
-  
-apr list
-=== Cached Models ===
-
-NAME                                     SIZE         FORMAT       PATH
---------------------------------------------------------------------------------------------------------
-1e3be9285aea6923                         942.3 MB     SafeTensors  ~/.cache/pacha/models/1e3be9285aea6923.safetensors (orphan)
-
-Total: 1 models (0 tracked + 1 orphans), 942.3 MB used
-apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors "what is 2+2?"
-=== APR Run ===
-
-Source: ~/.cache/pacha/models/1e3be9285aea6923.safetensors
-[GH-189] Loaded tokenizer from ~/.cache/pacha/models/1e3be9285aea6923.tokenizer.json: 22 special tokens
-
-Output:
-2 + 2 equals 4.
-
-Completed in 4.82s (cached)
-
-apr run ~/.cache/pacha/models/1e3be9285aea6923.safetensors "can you help me summarize quick sort algorithm, in less than 100 words"
-=== APR Run ===
-
-Source: ~/.cache/pacha/models/1e3be9285aea6923.safetensors
-[GH-189] Loaded tokenizer from ~/.cache/pacha/models/1e3be9285aea6923.tokenizer.json: 22 special tokens
-
-Output:
-Quick sort is a divide-and-conquer algorithm that sorts an array of elements. It works by selecting a 'pivot' element from the array and partitioning the
-
-Completed in 7.03s (cached)
-$
-```
-
-</details>
-
-For release notes see [GitHub Releases](https://github.com/paiml/aprender/releases).
 
 ## What is Aprender?
 
@@ -331,12 +283,19 @@ aprender = "0.75"
 ```
 
 ```rust
-use aprender::linear_regression::LinearRegression;
+use aprender::linear_model::LinearRegression;
+use aprender::prelude::{Matrix, Vector};
 use aprender::traits::Estimator;
 
-let model = LinearRegression::new();
-model.fit(&x_train, &y_train)?;
-let predictions = model.predict(&x_test)?;
+// Train on y = 2*x + 1
+let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("valid matrix dimensions");
+let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
+
+let mut model = LinearRegression::new();
+model.fit(&x, &y).expect("linear regression fit should succeed");
+let predictions = model.predict(&x);
+let r2 = model.score(&x, &y);
+assert!(r2 > 0.99);
 ```
 
 Algorithms: Linear/Logistic Regression, Decision Trees, Random Forest, GBM,
@@ -350,7 +309,7 @@ Monorepo, flat `crates/aprender-*` layout (same pattern as
 [Burn](https://github.com/tracel-ai/burn),
 [Nushell](https://github.com/nushell/nushell)):
 
-```
+```text
 paiml/aprender/
 ├── Cargo.toml                      # Workspace root + `cargo install aprender`
 ├── crates/
