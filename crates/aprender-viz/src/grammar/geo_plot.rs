@@ -4,7 +4,7 @@
 //! The plot area is the one panel a single-panel plot gets: the theme margin on every side.
 //! Each polygon's rings are projected, fitted to that area with one uniform scale (north up),
 //! and filled even-odd. A hex map has no projection: its cells are fitted with the same uniform
-//! scale (so hexagons keep their aspect ratio), row `r` running downwards, and each hexagon is
+//! scale (so hexagons keep their aspect ratio), north up as for polygons, and each hexagon is
 //! filled with the colour of its value. The SVG carries the same rings as `fill-rule="evenodd"`
 //! paths on top of the framebuffer image. No axes or grid are drawn, since a map has no limits to
 //! label.
@@ -92,8 +92,9 @@ pub(super) fn map_shapes(
     Ok(Some(pixels.into_iter().map(|rings| (rings, crate::geo::plot::POLYGON_FILL)).collect()))
 }
 
-/// The shapes of a `geom_hex` plot: every cell's hexagon, fitted to the plot area with one
-/// uniform scale. The plane `y` is negated first, so row `r` lands lower on the panel.
+/// The shapes of a `geom_hex` plot: every cell's hexagon, fitted to the plot area with the same
+/// uniform, north-up fit as a polygon map. Larger plane `y` is drawn higher, so a hexagon's row
+/// is oriented exactly as the same plane point would be under `geom_polygon`.
 ///
 /// # Errors
 ///
@@ -128,13 +129,13 @@ fn hex_shapes(
     Ok(fitted.into_iter().zip(colours).collect())
 }
 
-/// One cell's six corners in plane coordinates, with `y` negated (see [`hex_shapes`]).
+/// One cell's six corners in plane coordinates, the same plane a polygon map projects into.
 #[cfg(feature = "geo")]
 fn hex_plane_ring(
     layout: &crate::geo::hex::HexLayout,
     cell: crate::geo::hex::Cell,
 ) -> Vec<(f64, f64)> {
-    layout.corners(cell).iter().map(|&(x, y)| (x, -y)).collect()
+    layout.corners(cell).to_vec()
 }
 
 /// The colour of each hexagon: its value on the viridis scale over the range of all values.

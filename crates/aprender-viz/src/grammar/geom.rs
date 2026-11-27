@@ -100,7 +100,8 @@ pub enum GeomType {
     /// `geom_hex` (`geo` feature): one pointy-top hexagon per cell, filled from the cell's value.
     ///
     /// The plot is drawn as a map: no axes, the hexagons fitted to the panel with one uniform
-    /// scale, so their aspect ratio is kept. Row `r` increases downwards.
+    /// scale, so their aspect ratio is kept. Larger plane `y` (row `r`) is drawn higher, as for
+    /// `geom_polygon`, so a polygon rasterised to these cells keeps its orientation.
     #[cfg(feature = "geo")]
     Hex {
         /// The grid the cells sit on.
