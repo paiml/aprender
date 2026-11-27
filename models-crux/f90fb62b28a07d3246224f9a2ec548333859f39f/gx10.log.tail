@@ -35,7 +35,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.72.3 (9c32643e7)",
+        "apr_version": "apr 0.75.4 (f90fb62b2)",
         "under_development": false,
         "development_note": null
       },
@@ -66,7 +66,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.72.3 (9c32643e7)"
+          "version": "apr 0.75.4 (f90fb62b2)"
         },
         "llama.cpp": {
           "answered": true,
@@ -124,7 +124,7 @@
         "vllm": {
           "answered": false,
           "rc": null,
-          "why": "refused: HTTPError: HTTP Error 400: Bad Request",
+          "why": "refused: RuntimeError: vllm serve exited 1 before answering (log: vllm-batch-1493209-1795780315921974982.server.log) — engine core: ValueError: Free memory on device cuda:0 (30.94/119.63 GiB) on startup is less than desired GPU memory utilization (0.5, 59.82 GiB). Decrease GPU memory utilization or reduce GPU memory used by other processes.",
           "answer": null,
           "reported": {},
           "correct": false,
@@ -150,12 +150,12 @@
   "deterministic": [],
   "greedy": [],
   "summary": {
-    "RED": 0,
-    "GREEN": 134,
+    "RED": 1,
+    "GREEN": 133,
     "ALL_WRONG": 0,
     "cells": 134,
     "judged": 134,
-    "verdict": "PASS",
+    "verdict": "RED",
     "deterministic": {
       "RED": 0,
       "GREEN": 0
