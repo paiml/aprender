@@ -18,5 +18,6 @@ if grep -qE '^[[:space:]]*(\.|source)[[:space:]]+"?\$' "$T1"; then bad "models_t
 for k in LOCAL_HOST REMOTE_HOST; do
     grep -qE "^$k=[a-z0-9-]+$" "$CONF" && ok "conf sets $k" || bad "conf lacks $k"
 done
-if grep -vE '^(#.*|LOCAL_HOST=[a-z0-9-]+|REMOTE_HOST=[a-z0-9-]+|)$' "$CONF" | grep -q .; then bad "conf has a line that is not data"; else ok "conf is only KEY=VALUE data and comments"; fi
+bad_lines=$(grep -vE '^(#.*|LOCAL_HOST=[a-z0-9-]+|REMOTE_HOST=[a-z0-9-]+|)$' "$CONF" || true)
+if [ -n "$bad_lines" ]; then bad "conf has a line that is not data"; else ok "conf is only KEY=VALUE data and comments"; fi
 exit "$fail"
