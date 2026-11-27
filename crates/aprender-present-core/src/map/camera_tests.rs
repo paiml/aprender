@@ -114,12 +114,17 @@ fn zoom_about_rejects_bad_inputs_and_leaves_camera_unchanged() {
         c.zoom_about((f64::NAN, 10.0), 2.0),
         Err(MapError::NonFinite("anchor"))
     );
-    // The new centre overflows: 400 px / 5e-324 is infinite.
     assert_eq!(
         c.zoom_about((800.0, 300.0), f64::from_bits(1)),
-        Err(MapError::NonFinite("centre"))
+        Err(MapError::OutOfRange("scale"))
     );
     assert_eq!(c, before);
+    // Zooming out about the left edge of a camera at the domain edge pushes the centre past it.
+    let mut edge = cam((1e12, 0.0), 1.0);
+    assert_eq!(
+        edge.zoom_about((0.0, 0.0), 0.5),
+        Err(MapError::OutOfRange("centre"))
+    );
 }
 
 #[test]
@@ -303,4 +308,29 @@ fn fly_to_rejects_viewport_mismatch() {
         FlyTo::new(fixture_start(), other),
         Err(MapError::ViewportMismatch)
     );
+}
+
+#[test]
+fn values_outside_the_numeric_domain_are_rejected() {
+    let view = (800.0, 600.0);
+    assert!(Camera2D::new((1e308, 0.0), 1.0, view).is_err());
+    assert!(Camera2D::new((0.0, 0.0), 1e-320, view).is_err());
+    assert!(Camera2D::new((0.0, 0.0), 1e200, view).is_err());
+    assert!(Camera2D::new((0.0, 0.0), 1.0, (1e308, 100.0)).is_err());
+    let mut camera = Camera2D::new((0.0, 0.0), 1.0, view).expect("valid camera");
+    let before = camera;
+    assert!(camera.pan(1e308, 0.0).is_err());
+    assert!(camera.zoom_about((0.0, 0.0), 1e200).is_err());
+    assert_eq!(camera, before);
+}
+
+#[test]
+fn a_rejected_animation_step_does_not_advance_the_animation() {
+    // A camera at the edge of the domain: zooming out about a corner pushes the centre past it.
+    let mut camera = Camera2D::new((1e12, 0.0), 1.0, (800.0, 600.0)).expect("valid camera");
+    let mut anim = ZoomAnim::start(&camera, (0.0, 0.0), 0.5, 1.0).expect("valid animation");
+    let (anim_before, camera_before) = (anim, camera);
+    assert!(anim.step(&mut camera, 0.5).is_err());
+    assert_eq!(anim, anim_before);
+    assert_eq!(camera, camera_before);
 }

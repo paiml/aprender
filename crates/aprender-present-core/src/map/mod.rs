@@ -19,6 +19,14 @@ pub use layers::{
 };
 pub use lod::{tier_for_radius, LodTier, BOUNDARIES_PX};
 
+/// Largest magnitude accepted for any coordinate, pixel offset or viewport size. With the scale
+/// range below, every product, quotient and difference the runtime forms stays finite.
+pub const MAX_COORD: f64 = 1e12;
+/// Smallest accepted scale, in screen pixels per world unit.
+pub const MIN_SCALE: f64 = 1e-9;
+/// Largest accepted scale, in screen pixels per world unit.
+pub const MAX_SCALE: f64 = 1e9;
+
 /// Errors from the map runtime. Constructors and mutators return these instead of panicking.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MapError {
@@ -32,6 +40,8 @@ pub enum MapError {
     InvertedBounds,
     /// The start and target cameras of a fly-to do not share a viewport size.
     ViewportMismatch,
+    /// A finite value lay outside the supported numeric domain.
+    OutOfRange(&'static str),
 }
 
 impl fmt::Display for MapError {
@@ -42,16 +52,27 @@ impl fmt::Display for MapError {
             Self::Negative(what) => write!(f, "{what} must not be negative"),
             Self::InvertedBounds => write!(f, "bounds minimum exceeds its maximum"),
             Self::ViewportMismatch => write!(f, "fly-to cameras must share a viewport size"),
+            Self::OutOfRange(what) => write!(f, "{what} is outside the supported range"),
         }
     }
 }
 
 impl std::error::Error for MapError {}
 
-/// Fails with `NonFinite(what)` unless both components of `p` are finite.
+/// Fails unless both components of `p` are finite and within `MAX_COORD`.
 pub(crate) fn check_point(p: (f64, f64), what: &'static str) -> Result<(), MapError> {
-    check_finite(p.0, what)?;
-    check_finite(p.1, what)
+    check_coord(p.0, what)?;
+    check_coord(p.1, what)
+}
+
+/// Fails unless `v` is finite and within `MAX_COORD`.
+pub(crate) fn check_coord(v: f64, what: &'static str) -> Result<(), MapError> {
+    check_finite(v, what)?;
+    if v.abs() <= MAX_COORD {
+        Ok(())
+    } else {
+        Err(MapError::OutOfRange(what))
+    }
 }
 
 /// Fails with `NonFinite(what)` unless `v` is finite.
@@ -70,6 +91,16 @@ pub(crate) fn check_scale(v: f64, what: &'static str) -> Result<f64, MapError> {
         Ok(v)
     } else {
         Err(MapError::NonPositive(what))
+    }
+}
+
+/// Returns `v` when it is a scale inside `[MIN_SCALE, MAX_SCALE]`.
+pub(crate) fn check_zoom(v: f64, what: &'static str) -> Result<f64, MapError> {
+    let v = check_scale(v, what)?;
+    if (MIN_SCALE..=MAX_SCALE).contains(&v) {
+        Ok(v)
+    } else {
+        Err(MapError::OutOfRange(what))
     }
 }
 
@@ -103,6 +134,10 @@ mod tests {
             (
                 MapError::ViewportMismatch,
                 "fly-to cameras must share a viewport size",
+            ),
+            (
+                MapError::OutOfRange("pan"),
+                "pan is outside the supported range",
             ),
         ];
         for (err, want) in cases {

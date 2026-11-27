@@ -43,12 +43,16 @@ fn initial_paint_without_lens_skips_the_lens_layer() {
 #[test]
 fn falsify_map_lc_001_idle_frame_loop_does_no_work() {
     let mut layers = with_lens(Some(1));
+    assert!(
+        layers.take_frame(),
+        "the initial paint requests its one frame"
+    );
     let mut frames = 0;
     let mut renders = Renders::default();
     // One second at 60 Hz with no input: every idle tick must request no frame and render nothing.
     for _ in 0..60 {
         let out = step(&mut layers, Event::Idle);
-        frames += u32::from(out.frame_requested);
+        frames += u32::from(out.frame_requested) + u32::from(layers.take_frame());
         renders = Renders {
             base: renders.base + out.renders.base,
             lens: renders.lens + out.renders.lens,
@@ -381,4 +385,19 @@ fn falsify_map_lc_002_prepaint_after_a_prepainted_settle_keeps_current_coverage(
         },
     );
     assert_eq!(pan.renders, r(0, 0, 0), "the settled view is still cached");
+}
+
+#[test]
+fn falsify_map_lc_002_a_pan_of_exactly_the_margin_stays_inside_it() {
+    // At scale 147 the world round trip of 160 px rounds up by one ulp.
+    let camera = Camera2D::new((0.0, 0.0), 147.0, VIEW).expect("valid camera");
+    let (mut layers, _) = Layers::new(camera, Some(1));
+    let pan = step(
+        &mut layers,
+        Event::Pan {
+            dx_px: CACHE_MARGIN_PX,
+            dy_px: 0.0,
+        },
+    );
+    assert_eq!(pan.renders, r(0, 0, 0));
 }

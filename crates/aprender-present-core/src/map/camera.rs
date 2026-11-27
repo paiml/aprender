@@ -3,7 +3,9 @@
 //! A screen point `a` maps to the world point `w(a) = c + (a - screen_centre) / s`, where `s` is
 //! screen pixels per world unit and `c` is the camera centre in world units.
 
-use super::{check_finite, check_non_negative, check_point, check_scale, MapError};
+use super::{
+    check_coord, check_finite, check_non_negative, check_point, check_scale, check_zoom, MapError,
+};
 
 /// A 2D camera: world centre, screen pixels per world unit, and viewport size in pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -17,7 +19,7 @@ impl Camera2D {
     /// Builds a camera. Rejects non-finite values, a non-positive scale and a negative viewport.
     pub fn new(centre: (f64, f64), scale: f64, viewport: (f64, f64)) -> Result<Self, MapError> {
         check_point(centre, "centre")?;
-        let scale = check_scale(scale, "scale")?;
+        let scale = check_zoom(scale, "scale")?;
         check_point(viewport, "viewport")?;
         if viewport.0 < 0.0 || viewport.1 < 0.0 {
             return Err(MapError::Negative("viewport"));
@@ -70,8 +72,8 @@ impl Camera2D {
     /// Drags the map by `(dx_px, dy_px)`: the content follows the pointer, so the centre moves
     /// by the opposite amount in world units. Leaves the camera unchanged on error.
     pub fn pan(&mut self, dx_px: f64, dy_px: f64) -> Result<(), MapError> {
-        check_finite(dx_px, "pan")?;
-        check_finite(dy_px, "pan")?;
+        check_coord(dx_px, "pan")?;
+        check_coord(dy_px, "pan")?;
         let next = (
             self.centre.0 - dx_px / self.scale,
             self.centre.1 - dy_px / self.scale,
@@ -83,7 +85,7 @@ impl Camera2D {
     /// Leaves the camera unchanged on error.
     pub fn zoom_about(&mut self, anchor: (f64, f64), new_scale: f64) -> Result<(), MapError> {
         check_point(anchor, "anchor")?;
-        let new_scale = check_scale(new_scale, "scale")?;
+        let new_scale = check_zoom(new_scale, "scale")?;
         let w = self.world_at(anchor);
         let sc = self.screen_centre();
         let centre = (
@@ -124,7 +126,7 @@ impl ZoomAnim {
         duration_s: f64,
     ) -> Result<Self, MapError> {
         check_point(anchor, "anchor")?;
-        let to = check_scale(to_scale, "scale")?;
+        let to = check_zoom(to_scale, "scale")?;
         let duration_s = check_scale(duration_s, "duration")?;
         Ok(Self {
             anchor,
@@ -144,7 +146,8 @@ impl ZoomAnim {
     /// Scale at normalised time `u` in `[0, 1]`, interpolated geometrically with ease-out.
     pub fn scale_at(&self, u: f64) -> f64 {
         let e = ease_out_cubic(u);
-        self.from * (self.to / self.from).powf(e)
+        (self.from * (self.to / self.from).powf(e))
+            .clamp(self.from.min(self.to), self.from.max(self.to))
     }
 
     /// Advances by `dt_s` seconds. Returns `Ok(true)` while still moving and `Ok(false)` on the
@@ -154,15 +157,15 @@ impl ZoomAnim {
             return Ok(false);
         }
         check_non_negative(dt_s, "dt")?;
-        self.elapsed_s += dt_s;
-        let u = self.elapsed_s / self.duration_s;
-        if u >= 1.0 {
-            camera.zoom_about(self.anchor, self.to)?;
-            self.finished = true;
-            return Ok(false);
-        }
-        camera.zoom_about(self.anchor, self.scale_at(u))?;
-        Ok(true)
+        let elapsed_s = self.elapsed_s + dt_s;
+        let u = elapsed_s / self.duration_s;
+        let done = u >= 1.0;
+        let scale = if done { self.to } else { self.scale_at(u) };
+        camera.zoom_about(self.anchor, scale)?;
+        // Committed only after the camera accepted the step.
+        self.elapsed_s = elapsed_s;
+        self.finished = done;
+        Ok(!done)
     }
 }
 
@@ -211,7 +214,8 @@ impl FlyTo {
         let (c0, c1) = (self.start.centre(), self.target.centre());
         let centre = (c0.0 + t * (c1.0 - c0.0), c0.1 + t * (c1.1 - c0.1));
         let s0 = self.start.scale();
-        let scale = s0 * (self.target.scale() / s0).powf(t);
+        let s1 = self.target.scale();
+        let scale = (s0 * (s1 / s0).powf(t)).clamp(s0.min(s1), s0.max(s1));
         Camera2D::new(centre, scale, self.start.viewport())
     }
 }

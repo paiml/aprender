@@ -31,7 +31,9 @@ pub struct Renders {
 impl Renders {
     /// Renders across all three layers.
     pub fn total(&self) -> u32 {
-        self.base + self.lens + self.overlay
+        self.base
+            .saturating_add(self.lens)
+            .saturating_add(self.overlay)
     }
 }
 
@@ -75,6 +77,9 @@ pub enum Event {
     Overlay(OverlayChange),
 }
 
+/// Rounding slack for the margin test, so a pan of exactly the margin stays inside it.
+const MARGIN_TOLERANCE_PX: f64 = 1e-6;
+
 /// A raster drawn for a camera.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Raster {
@@ -98,7 +103,8 @@ impl Raster {
         let (cx, cy) = camera.centre();
         let dx = (cx - self.centre.0) * self.scale;
         let dy = (cy - self.centre.1) * self.scale;
-        dx.abs() <= CACHE_MARGIN_PX && dy.abs() <= CACHE_MARGIN_PX
+        let limit = CACHE_MARGIN_PX + MARGIN_TOLERANCE_PX;
+        dx.abs() <= limit && dy.abs() <= limit
     }
 }
 
@@ -161,6 +167,7 @@ pub struct Layers {
     selected: Option<EntityId>,
     overlay_on: bool,
     moving: bool,
+    frame_pending: bool,
 }
 
 fn quiet() -> Outcome {
@@ -189,14 +196,23 @@ impl Layers {
             selected: None,
             overlay_on: true,
             moving: false,
+            frame_pending: false,
         };
         let renders = layers.refresh();
-        (layers, outcome(renders, false))
+        let first = outcome(renders, false);
+        layers.frame_pending = first.frame_requested;
+        (layers, first)
+    }
+
+    /// Consumes the pending frame request. The host calls this when it schedules a frame; `false`
+    /// means it must not request one.
+    pub fn take_frame(&mut self) -> bool {
+        std::mem::take(&mut self.frame_pending)
     }
 
     /// Applies one event and reports the renders and frame request it causes.
     pub fn handle(&mut self, event: Event) -> Result<Outcome, MapError> {
-        match event {
+        let out = match event {
             Event::Idle => Ok(quiet()),
             Event::Pan { dx_px, dy_px } => self.pan(dx_px, dy_px),
             Event::ZoomMotion { anchor, scale } => self.zoom_motion(anchor, scale),
@@ -205,7 +221,9 @@ impl Layers {
             Event::LensSwitch(id) => Ok(self.lens_switch(id)),
             Event::LensDelta(id) => Ok(self.lens_delta(id)),
             Event::Overlay(change) => Ok(self.overlay_change(change)),
-        }
+        }?;
+        self.frame_pending |= out.frame_requested;
+        Ok(out)
     }
 
     /// Current camera.
@@ -306,7 +324,8 @@ impl Layers {
 
     fn lens_delta(&mut self, id: LensId) -> Outcome {
         if self.active_lens != Some(id) {
-            *self.pending.entry(id).or_insert(0) += 1;
+            let count = self.pending.entry(id).or_insert(0);
+            *count = count.saturating_add(1);
             return quiet();
         }
         self.lens.invalidate();
