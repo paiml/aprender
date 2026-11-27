@@ -170,12 +170,12 @@ A non-`pass` cell names the gates the receipt records, which is not always the c
 
 <!-- RELEASE_MATRIX_END -->
 
-> **Known issue — Qwen3 MoE (30B-A3B) on GB10: not claimed for 0.70; planned for 0.70.1 (#3715).** Every verb
-> times out at 600 s on the 20k-token rung on GB10 (sm_121), so qwen3moe on GB10 is withdrawn from this
-> release's claims (`cells.declaimed`).
+> **Known issue — Qwen3 MoE (30B-A3B) on GB10: withdrawn from the claims (tracked in [#3715](https://github.com/paiml/aprender/issues/3715), open).** Every verb
+> times out at 600 s on the 20k-token rung on GB10 (sm_121), so qwen3moe on GB10 is withdrawn from the
+> claims (`cells.declaimed`); not re-measured since.
 
-> **Known issue — GB10 dense models: prompt processing unbatched; planned for 0.70.1 (#4590).** Output is correct; only prefill speed is affected. On GB10 (sm_121) every dense
-> model (Qwen2.5, Qwen3) is withdrawn from this release's claims (`cells.declaimed` in
+> **Known issue — GB10 dense models: prompt processing unbatched (#4590, closed 2026-10-14 and folded into #5327, also closed; the `cells.declaimed` entry has not been lifted).** Output is correct; only prefill speed is affected. On GB10 (sm_121) every dense
+> model (Qwen2.5, Qwen3) is withdrawn from the claims (`cells.declaimed` in
 > [`contracts/model-capability-ladder-v1.yaml`](contracts/model-capability-ladder-v1.yaml)); Qwen3.5 on
 > GB10 and every model on other hosts are still claimed and gated.
 
@@ -294,12 +294,12 @@ apr inspect --json Qwen3-Coder-30B-A3B-Instruct     # arch=qwen3moe, 30 B params
 apr tensors --json Qwen3-Coder-30B-A3B-Instruct     # 579 tensors (MoE expert layout)
 ```
 
-> **0.69.1 does not support `qwen3moe` on CUDA.** Mixture-of-experts models
+> **As of 0.69.1, `qwen3moe` is not supported on CUDA (historical note; not re-measured for 0.75).** Mixture-of-experts models
 > (`Qwen3-30B-A3B-Instruct-2507`, `Qwen3-Coder-30B-A3B-Instruct`) run on the
 > **CPU only**: `apr run <model>` works, and `apr run --gpu <model>` **refuses
 > before loading**, naming the architecture and exiting 12 rather than
 > generating on the CPU and reporting a fallback. The MoE GPU forward is
-> [#3714](https://github.com/paiml/aprender/issues/3714) and lands in 0.70.0.
+> [#3714](https://github.com/paiml/aprender/issues/3714), closed 2026-10-31.
 > Introspection above (`inspect`, `tensors`) is unaffected — it reads the
 > header, not a forward.
 
