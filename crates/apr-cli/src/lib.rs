@@ -58,6 +58,8 @@ mod accel;
 
 mod commands;
 pub mod error;
+/// U-08 (aprender#7485): the grouped `apr --help` template.
+mod help_groups;
 mod output;
 pub mod pipe;
 // #3745 S1: the surface the binary actually has, emitted by the binary.
@@ -258,7 +260,10 @@ pub fn cli_main() -> std::process::ExitCode {
         return rc;
     }
 
-    let cli = Cli::parse();
+    // U-08: the same derive, with the grouped help template on the root command.
+    let matches = help_groups::grouped_command().get_matches();
+    let cli =
+        <Cli as clap::FromArgMatches>::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
     match execute_command(&cli) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => {
