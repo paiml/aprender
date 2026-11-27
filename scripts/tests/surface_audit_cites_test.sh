@@ -198,7 +198,7 @@ help_advertises() {
   grep -q -- '--self-test' <<<"$out" && ! grep -q 'DOGFOOD COVERAGE GATE' <<<"$out"
 }
 check "--help advertises --self-test and does not run the gate" help_advertises
-check "--self-test runs this file" grep -q 'scripts/tests/surface_audit_cites_test.sh' "$GATE"
+check "--self-test runs this file" grep -qE '^[[:space:]]*bash .*tests/surface_audit_cites_test[.]sh' "$GATE"
 
 echo
 if [ "$FAILS" -eq 0 ]; then

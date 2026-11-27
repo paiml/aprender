@@ -80,6 +80,8 @@ CONTRACT="contracts/apr-dogfood-coverage-v1.yaml"
 THE44="docs/audits/dogfood-the-44.yaml"
 GATE_PY="scripts/lib/dogfood_coverage_gate.py"
 IDGUARD="scripts/check_no_cluster_id_keys.sh"
+# The one reader of evidence_path, taken from beside THIS script (#7370).
+CITES_AWK="$(dirname "$SELF")/lib/dogfood_cites.awk"
 REASSIGN="docs/audits/cluster_reassignments.yaml"
 # Declared bin renames (#4430): the comparand's rows for <old> are compared as
 # rows of <new>. They must still exist; an unapplied rename is RED.
@@ -141,25 +143,19 @@ resolve_base_ref() {
 #                                  is newer than the last commit which actually
 #                                  touched the ledger.
 # ---------------------------------------------------------------------------
+# EVERY cite in a field is evidence, not only the leading one (#7370). A row is
+# UNRESOLVED when its leading cite is not a path with a "/". Cite errors are
+# failed by material_cited_changes and check_cites. An awk that fails prints
+# nothing, and the caller fails closed on that.
 evidence_files() {
-  local root="$1"
-  python3 - "$root/$LEDGER" <<'PY'
-import csv, re, sys
-pat = re.compile(r"^([^\s:]+\.(?:rs|toml|yml|yaml|md|sh|py))(?::[\d-]+)?")
-rows = list(csv.DictReader(open(sys.argv[1], newline="", encoding="utf-8")))
-files, unresolved = set(), 0
-for r in rows:
-    m = pat.match(r["evidence_path"].strip())
-    if m and "/" in m.group(1):
-        files.add(m.group(1))
-    else:
-        unresolved += 1
-# A universe assembled by a regex must say how much it dropped. An extractor
-# that silently resolves nothing would otherwise report a perfectly fresh ledger.
-print(f"#UNRESOLVED\t{unresolved}\t{len(rows)}")
-for f in sorted(files):
-    print(f)
-PY
+  local root="$1" out
+  out="$(LC_ALL=C awk -f "$CITES_AWK" "$root/$LEDGER")" || return 2
+  LC_ALL=C awk -F'\t' '
+    $1 == "P" && index($3, "/") { lead[$2] = 1 }
+    $1 == "N" { total = $2 }
+    END { for (r in lead) good++
+          printf "#UNRESOLVED\t%d\t%d\n", total - good, total }' <<<"$out"
+  LC_ALL=C awk -F'\t' '$1 == "C" || $1 == "W" { print $3 }' <<<"$out" | LC_ALL=C sort -u
 }
 
 # A changed cited file only makes the ledger stale if a hunk lands AT OR BEFORE
@@ -170,69 +166,18 @@ PY
 # Reads the files to judge from the list file $3; prints the ones that are material.
 material_cited_changes() {
   local root="$1" base="$2" list="$3" caps f cap out
-  # evidence_path is ONE csv field, read with the csv module: a field that holds
-  # commas is quoted and must not be split on them (#7370). Each cite gives its
-  # own path the largest line in its own spec; a whole-file cite (no line) gives
-  # the whole file. Last cited line per file, over every row.
-  caps="$(python3 - "$root/$LEDGER" <<'PY'
-import csv, re, sys
-EXT = r"\.(?:rs|toml|yml|yaml|md|sh|py)"
-TOKEN = re.compile(r"(?<![A-Za-z0-9_./-])[A-Za-z0-9_./-]+")
-SPEC = re.compile(r":(\d+)(?:-(\d+))?((?:,\d+(?:-\d+)?)*)"
-                  r"(?=\s|[)\];]|\Z|,\s+[A-Za-z0-9_./-]+" + EXT + r"(?![A-Za-z0-9_./-]))")
-def parse_cites(p):
-    """(found, malformed), as check_cites reads them: same grammar, same terminators."""
-    found, malformed = [], []
-    for t in TOKEN.finditer(p):
-        tok, end = t.group(0), t.end()
-        # A line spec attempt: ":<n>", ":L<n>" or "#L<n>" right after the token.
-        attempt = re.match(r":L?\d|#L\d", p[end:])
-        if "/" not in tok and "." not in tok:
-            # A bare name ("Makefile", "Dockerfile") is a cite only with a line spec attempt.
-            if not (attempt and re.search(r"[A-Za-z]", tok)):
-                continue
-        if attempt and not p.startswith(":", end):
-            # a GitHub-style "#L<n>" anchor is not a line spec this gate reads: malformed
-            malformed.append(p[t.start():end + 40])
-            continue
-        if p.startswith(":", end):
-            m = SPEC.match(p, end)
-            if m is None or not re.search(EXT + r"$", tok):
-                malformed.append(p[t.start():end + 40])
-                continue
-            ranges = [(int(m.group(1)), int(m.group(2) or m.group(1)))]
-            ranges += [tuple(int(x) for x in s.split("-")) if "-" in s else (int(s), int(s))
-                       for s in m.group(3)[1:].split(",") if s]
-            found.append((tok, ranges))
-        elif re.search(EXT + r"$", tok):
-            found.append((tok, None))
-    return found, malformed
-caps, bad = {}, []
-with open(sys.argv[1], newline="", encoding="utf-8") as fh:
-    for r in csv.DictReader(fh):
-        p = (r.get("evidence_path") or "").strip()
-        found, malformed = parse_cites(p)
-        # a malformed, empty or overflowing cite fails closed; check_cites reports the same row
-        if malformed or not p or None in r:
-            bad.append(p or "<empty>")
-            continue
-        for f, ranges in found:
-            if ranges is None:
-                v = 999999999
-            else:
-                # the cap is the largest line in THIS cite's own spec, not any
-                # number in the field (a "#7370" note or a sibling cite is not a line)
-                if any(lo > hi for lo, hi in ranges):
-                    bad.append(p)
-                v = max(hi for _, hi in ranges)
-            caps[f] = max(caps.get(f, 0), v)
-for p in bad:
-    print("!\t" + p)
-for f in sorted(caps):
-    print(f + "\t" + str(caps[f]))
-PY
-)" || return 2
-  case "$caps" in "!"$'\t'* | *$'\n!'$'\t'*) return 2 ;; esac
+  # Cites come from the shared reader, so a quoted field holding commas is one
+  # field (#7370). Each cite gives its own path the largest line in its own spec;
+  # a whole-file cite gives the whole file. Last cited line per file, over every
+  # row. Any cite error, or a ledger with no row, fails closed.
+  caps="$(LC_ALL=C awk -f "$CITES_AWK" "$root/$LEDGER")" || return 2
+  caps="$(LC_ALL=C awk -F'\t' '
+      $1 == "E" { bad = 1 }
+      $1 == "C" && $5 + 0 > best[$3] + 0 { best[$3] = $5 }
+      $1 == "W" { best[$3] = 999999999 }
+      $1 == "N" { rows = $2 }
+      END { if (bad || !rows) exit 1
+            for (f in best) print f "\t" best[f] }' <<<"$caps")" || return 2
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     cap="$(awk -F'\t' -v f="$f" '$1 == f { print $2 }' <<<"$caps")"
@@ -404,106 +349,54 @@ check_freshness() {
 }
 
 # ---------------------------------------------------------------------------
-# The gate proper.
-# ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
 # G2.1 cites (#7370). Every evidence_path cite must name a file that exists and
-# a line range inside it (1 <= N <= M <= file length). Multi-cite fields are
-# read whole (csv module), and every "path:N[-M][,N[-M]...]" in them is checked.
-# WHAT IS NOT CHECKED (narrowed, #7370; a symbol check was judged larger than the
-# gate it would sit in, and the ledger has no symbol column to check against):
-#   - a cite that shifts to another IN-RANGE line, or names the wrong symbol,
-#     passes here (only existence, range and well-formedness are checked)
-#   - a whole-file path whose extension is not in the list above (or a bare
-#     Makefile-style name) is not read; with a ":line" spec it FAILS as malformed
-#   - an absolute or ../ path is read as given, so it can name a file outside
-#     the repo (existence and line count only; no content is judged)
+# a line range inside it (1 <= N <= M <= file length). The accepted grammar, and
+# what in a note is not read, are stated in scripts/lib/dogfood_cites.awk.
+# WHAT IS NOT CHECKED (narrowed, #7370): the ledger has no symbol column, so a
+# cite that shifts to another IN-RANGE line, or names the wrong symbol, passes.
 # ---------------------------------------------------------------------------
 check_cites() {
-  local root="$1" out rc=0
-  out="$(python3 - "$root" "$root/$LEDGER" <<'PY'
-import csv, os, re, sys
-root, ledger = sys.argv[1], sys.argv[2]
-EXT = r"\.(?:rs|toml|yml|yaml|md|sh|py)"
-TOKEN = re.compile(r"(?<![A-Za-z0-9_./-])[A-Za-z0-9_./-]+")
-# A line spec must END at a terminator: end of field, whitespace, a closing
-# bracket, or ", <next path>". Anything else ("1,2x", "1-", "1,abc", "1:9",
-# "1#L9") is malformed. It is never accepted as a shorter spec that matches.
-SPEC = re.compile(r":(\d+)(?:-(\d+))?((?:,\d+(?:-\d+)?)*)"
-                  r"(?=\s|[)\];]|\Z|,\s+[A-Za-z0-9_./-]+" + EXT + r"(?![A-Za-z0-9_./-]))")
-def parse_cites(p):
-    """(found, malformed). found: (path, ranges); ranges None = a whole-file cite.
-    Every path-like token is a cite, wherever it sits in the field."""
-    found, malformed = [], []
-    for t in TOKEN.finditer(p):
-        tok, end = t.group(0), t.end()
-        # A line spec attempt: ":<n>", ":L<n>" or "#L<n>" right after the token.
-        attempt = re.match(r":L?\d|#L\d", p[end:])
-        if "/" not in tok and "." not in tok:
-            # A bare name ("Makefile", "Dockerfile") is a cite only with a line spec attempt.
-            if not (attempt and re.search(r"[A-Za-z]", tok)):
-                continue
-        if attempt and not p.startswith(":", end):
-            # a GitHub-style "#L<n>" anchor is not a line spec this gate reads: malformed
-            malformed.append(p[t.start():end + 40])
-            continue
-        if p.startswith(":", end):
-            m = SPEC.match(p, end)
-            if m is None or not re.search(EXT + r"$", tok):
-                malformed.append(p[t.start():end + 40])
-                continue
-            ranges = [(int(m.group(1)), int(m.group(2) or m.group(1)))]
-            ranges += [tuple(int(x) for x in s.split("-")) if "-" in s else (int(s), int(s))
-                       for s in m.group(3)[1:].split(",") if s]
-            found.append((tok, ranges))
-        elif re.search(EXT + r"$", tok):
-            found.append((tok, None))
-    return found, malformed
-lengths, problems, n_cites = {}, [], 0
-def length(path):
-    if path not in lengths:
-        with open(os.path.join(root, path), encoding="utf-8", errors="replace") as fh:
-            lengths[path] = sum(1 for _ in fh)
-    return lengths[path]
-with open(ledger, newline="", encoding="utf-8") as fh:
-    for n, r in enumerate(csv.DictReader(fh), 2):
-        # csv puts fields past the header under None: an unquoted comma inside a
-        # cite would shift the rest of the row into the next column. Fail closed.
-        if None in r:
-            problems.append(f"line {n}: more fields than the header (quote a field that holds commas)")
-            continue
-        p = (r.get("evidence_path") or "").strip()
-        if not p:
-            problems.append(f"line {n}: empty evidence_path (a row with no cite is not evidence)")
-            continue
-        found, malformed = parse_cites(p)
-        for bad in malformed:
-            problems.append(f"line {n}: malformed cite at {bad!r}")
-        for f, ranges in found:
-            if not os.path.isfile(os.path.join(root, f)):
-                problems.append(f"line {n}: cited file {f} does not exist")
-                continue
-            if ranges is None:
-                n_cites += 1
-                continue
-            for lo, hi in ranges:
-                n_cites += 1
-                if lo < 1 or lo > hi or hi > length(f):
-                    problems.append(f"line {n}: {f}:{lo}-{hi} is out of range or reversed (file has {length(f)} lines)")
-if n_cites == 0 and not problems:
-    # anti-vacuity: a 0-byte, header-only or all-empty ledger checks nothing
-    problems.append("no cite was checked: the ledger is empty or header-only")
-for pr in problems:
-    print("  G2.1 cites           FAIL  " + pr)
-if problems:
-    sys.exit(1)
-print(f"  G2.1 cites           PASS  {n_cites} cited line ranges resolve inside their files")
-PY
-)" || rc=$?
-  printf '%s\n' "$out"
-  return "$rc"
+  local root="$1" recs kind row path lo hi n=0 bad=0
+  local -A lengths=()
+  if ! recs="$(LC_ALL=C awk -f "$CITES_AWK" "$root/$LEDGER")"; then
+    printf '  G2.1 cites           FAIL  the cite reader could not read the ledger\n'
+    return 1
+  fi
+  while IFS=$'\t' read -r kind row path lo hi; do
+    case "$kind" in
+      E) printf '  G2.1 cites           FAIL  line %s: %s\n' "$row" "$path"; bad=1 ;;
+      C | W)
+        if [ ! -f "$root/$path" ]; then
+          printf '  G2.1 cites           FAIL  line %s: cited file %s does not exist\n' "$row" "$path"
+          bad=1; continue
+        fi
+        n=$((n + 1))
+        [ "$kind" = C ] || continue
+        if [ -z "${lengths[$path]:-}" ]; then
+          if ! lengths[$path]="$(LC_ALL=C awk 'END { print NR }' "$root/$path")"; then
+            printf '  G2.1 cites           FAIL  line %s: cannot read %s\n' "$row" "$path"
+            return 1
+          fi
+        fi
+        if [ "$hi" -gt "${lengths[$path]}" ]; then
+          printf '  G2.1 cites           FAIL  line %s: %s:%s-%s is out of range (file has %s lines)\n' \
+            "$row" "$path" "$lo" "$hi" "${lengths[$path]}"
+          bad=1
+        fi ;;
+    esac
+  done <<<"$recs"
+  # anti-vacuity: a 0-byte or header-only ledger checks nothing
+  if [ "$n" -eq 0 ] && [ "$bad" -eq 0 ]; then
+    printf '  G2.1 cites           FAIL  no cite was checked: the ledger is empty or header-only\n'
+    bad=1
+  fi
+  [ "$bad" -eq 0 ] || return 1
+  printf '  G2.1 cites           PASS  %s cites resolve inside their files\n' "$n"
 }
 
+# ---------------------------------------------------------------------------
+# The gate proper.
+# ---------------------------------------------------------------------------
 run_gate() {
   local root="$1" resolution mode ref basecsv rc frc crc
   [ -f "$root/$LEDGER" ]   || fail "no ledger at $root/$LEDGER"
@@ -596,6 +489,7 @@ selftest_build_repo() {
   local td="$1" i
   mkdir -p "$td/docs/audits" "$td/contracts" "$td/scripts/lib" "$td/crates/demo/src"
   cp "$SELF" "$td/scripts/check_dogfood_coverage.sh"
+  cp "$CITES_AWK" "$td/scripts/lib/dogfood_cites.awk"
   cp "$REPO_ROOT/$GATE_PY" "$td/$GATE_PY"
   cp "$REPO_ROOT/$IDGUARD" "$td/$IDGUARD"
   # cp keeps the source mode: from a read-only checkout (a review snapshot) the
@@ -748,6 +642,13 @@ selftest_mutate() {
   return 0
 }
 
+# guard_tree.sh runs --self-test only for a guard whose --help names it (#7370).
+# Without this arm --help ran the gate and CI never ran the self-test.
+if [ "${1:-}" = "--help" ]; then
+  printf 'usage: check_dogfood_coverage.sh [--self-test]\n'
+  exit 0
+fi
+
 if [ "${1:-}" = "--self-test" ]; then
   TD="$(mktemp -d)"
   [ -n "${TD:-}" ] && [ -d "$TD" ] || fail "could not create a scratch dir"
@@ -758,6 +659,9 @@ if [ "${1:-}" = "--self-test" ]; then
   printf 'check_dogfood_coverage.sh --self-test\n'
   printf 'Scratch repo with a protected `main` carrying the ledger, so the ARMED\n'
   printf 'comparand path is what is under test.\n\n'
+  # The evidence_path unit cases (#7370). A missing file is a failure, not a skip.
+  bash "$(dirname "$SELF")/tests/surface_audit_cites_test.sh" || FAILED=1
+  printf '\n'
 
   # --- baseline: clean tree must be GREEN, or every RED below proves nothing.
   selftest_build_repo "$TD" || fail "could not build the fixture repository"
@@ -1052,13 +956,18 @@ if [ "${1:-}" = "--self-test" ]; then
   selftest_run "$TD" "cite shifted one line past the end" "RED" "out of range" || FAILED=1
   git -C "$TD" checkout -q -- "$LEDGER"
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
-  # A quoted field holding commas is ONE field. m3.rs is cited 1-2 inside it, so
-  # a hunk after line 2 is not material. Read by awk -F, the m3 cite was lost and
-  # the whole file counted as cited: this case is RED under that parse.
-  printf 'demo,demo delta,6,x86_64-linux,none,no,1,pair-cluster,"crates/demo/src/m1.rs:1, crates/demo/src/m3.rs:1-2",high\n' >> "$TD/$LEDGER"
-  printf 'fn f3c() {}\n' >> "$TD/crates/demo/src/m3.rs"
-  selftest_run "$TD" "quoted multi-cite field, edit after last cited line" "GREEN" || FAILED=1
-  git -C "$TD" checkout -q -- "$LEDGER" "crates/demo/src/m3.rs"
+  # A quoted field holding commas is ONE field, and each cite in it is evidence.
+  # The row is COMMITTED on main: with an uncommitted row the ledger counts as
+  # touched and freshness cannot fail, so the case would pass with or without the
+  # fix. m4.rs is cited ONLY as the second cite of this row, at lines 1-2.
+  printf 'fn f4a() {}\nfn f4b() {}\n' > "$TD/crates/demo/src/m4.rs"
+  printf 'demo,demo delta,6,x86_64-linux,none,no,1,pair-cluster,"crates/demo/src/m1.rs:1, crates/demo/src/m4.rs:1-2",high\n' >> "$TD/$LEDGER"
+  selftest_commit "$TD" 'cite m4 inside a quoted two-cite field' || fail "fixture commit failed"
+  printf 'fn f4c() {}\n' >> "$TD/crates/demo/src/m4.rs"
+  selftest_run "$TD" "quoted multi-cite, edit after last cited line" "GREEN" || FAILED=1
+  sed -i '2s/.*/fn f4b_changed() {}/' "$TD/crates/demo/src/m4.rs"
+  selftest_run "$TD" "second cite edited, ledger untouched" "RED" "cited evidence file" || FAILED=1
+  git -C "$TD" reset -q --hard HEAD~1
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   printf '\n'
 
