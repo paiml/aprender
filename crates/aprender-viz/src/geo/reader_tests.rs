@@ -298,3 +298,51 @@ fn topojson_scale_overflow_is_non_finite() {
     let err = read_topojson(&text).expect_err("10 * 1e308 is infinite");
     assert_eq!(err, GeoReadError::NonFinite);
 }
+
+// ---------------------------------------------------------------------------
+// Review round 1 (MAP-1): empty arcs and the whole-document expansion budget
+// ---------------------------------------------------------------------------
+
+#[test]
+fn empty_first_arc_does_not_drop_the_next_arcs_first_position() {
+    // Arc 0 is empty, so the ring is still empty when arc 1 starts. Arc 1 must contribute all
+    // five positions: the skip applies only to a position that repeats the ring's last one.
+    let arcs = r"[[],[[0,0],[1,0],[1,1],[0,1],[0,0]]]";
+    let text = topo_doc(arcs, r#"{"type":"Polygon","arcs":[[0,1]]}"#);
+    let features = read_topojson(&text).expect("the ring is closed and has five positions");
+    let ring = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)];
+    assert_eq!(features[0].geometry, Geometry::Polygon(vec![ring]));
+}
+
+/// The `arcs` member holding one closed arc of 10000 positions, first and last `[0,0]`.
+fn long_closed_arc() -> String {
+    let mut positions = String::from("[0,0]");
+    for i in 1..9999 {
+        positions.push_str(&format!(",[{},{}]", i % 7, i % 5));
+    }
+    positions.push_str(",[0,0]");
+    format!("[[{positions}]]")
+}
+
+/// One polygon whose single ring references arc 0 201 times: 10000 + 200 * 9999 positions.
+fn amplified_polygon() -> String {
+    let refs = vec!["0"; 201].join(",");
+    format!(r#"{{"type":"Polygon","arcs":[[{refs}]]}}"#)
+}
+
+#[test]
+fn amplified_ring_is_accepted_alone_but_refused_past_the_document_budget() {
+    // Each polygon expands to about 2.0 million positions, under the 4 million document budget.
+    // Together they expand to about 4.02 million, so the second is refused before it is copied.
+    let arcs = long_closed_arc();
+    let alone = topo_doc(&arcs, &amplified_polygon());
+    assert!(read_topojson(&alone).is_ok(), "one polygon is under the budget");
+
+    let both = format!(
+        r#"{{"type":"GeometryCollection","geometries":[{},{}]}}"#,
+        amplified_polygon(),
+        amplified_polygon()
+    );
+    let err = read_topojson(&topo_doc(&arcs, &both)).expect_err("two polygons exceed the budget");
+    assert!(err.to_string().contains("too many positions"), "{err}");
+}

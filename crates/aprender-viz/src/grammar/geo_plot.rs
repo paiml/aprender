@@ -10,10 +10,13 @@
 
 use super::coord::Coord;
 use super::facet::Facet;
+#[cfg(feature = "geo")]
 use super::geom::GeomType;
 use super::ggplot::Layer;
 use super::theme::Theme;
-use crate::error::{Error, Result};
+#[cfg(feature = "geo")]
+use crate::error::Error;
+use crate::error::Result;
 use crate::framebuffer::Framebuffer;
 use crate::output::SvgEncoder;
 

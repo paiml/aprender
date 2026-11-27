@@ -14,6 +14,10 @@ const DOMAIN_TOL: f64 = 1e-12;
 /// and refuses anything beyond it, including the poles themselves.
 pub const MERCATOR_MAX_LAT_DEG: f64 = 85.0;
 
+/// Slack, in degrees, for a plane point whose inverse lands on a sub-region box edge with
+/// rounding error. A point within this distance of a box is clamped into the box.
+const BOX_SLACK_DEG: f64 = 1e-9;
+
 /// Lon/lat boxes of the three AlbersUSA sub-regions as `[lon_min, lon_max, lat_min, lat_max]`
 /// in degrees: contiguous states, Alaska, Hawaii. The boxes do not overlap.
 pub(crate) const US_SUB_REGION_BOXES: [[f64; 4]; 3] =
@@ -155,7 +159,8 @@ fn mercator_y(lat_rad: f64) -> f64 {
 /// `[-180, 180)`; the image is the sector `|theta| <= n pi`.
 ///
 /// Conditioning: inverse latitude uses `asin`, which is ill-conditioned near the poles.
-/// Round trips are accurate to about 1e-7 degrees for `|lat| <= 89.9`.
+/// Round-trip latitude error is below 1e-7 degrees for `|lat| <= 89.9` and below 1e-5 degrees
+/// for `|lat| > 89.9`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AlbersEqualArea {
     radius: f64,
@@ -206,7 +211,7 @@ impl AlbersEqualArea {
         let s1 = std1.to_radians().sin();
         let n = (s1 + std2.to_radians().sin()) / 2.0;
         let c = 1.0 - s1 * s1 + 2.0 * n * s1;
-        let rho0 = radius * (c - 2.0 * n * lat0.to_radians().sin()).sqrt() / n;
+        let rho0 = radius * (c - 2.0 * n * lat0.to_radians().sin()).max(0.0).sqrt() / n;
         Self { radius, lon0_deg, n, c, rho0 }
     }
 }
@@ -216,7 +221,9 @@ impl Projection for AlbersEqualArea {
         let lon = finite_input(lon_deg)?;
         let lat = within("latitude", finite_input(lat_deg)?, 90.0)?;
         let theta = self.n * wrap180(lon - self.lon0_deg).to_radians();
-        let rho = self.radius * (self.c - 2.0 * self.n * lat.to_radians().sin()).sqrt() / self.n;
+        // The radicand is non-negative in exact arithmetic; rounding can push it just below zero.
+        let radicand = (self.c - 2.0 * self.n * lat.to_radians().sin()).max(0.0);
+        let rho = self.radius * radicand.sqrt() / self.n;
         finite_result(rho * theta.sin(), self.rho0 - rho * theta.cos())
     }
 
@@ -253,11 +260,16 @@ impl SubRegion {
 
     /// Inverts a composite plane point through this sub-region, if it lands in the box.
     /// A sub-projection error means "not this sub-region", so the caller tries the next one.
+    /// A point within `BOX_SLACK_DEG` of the box counts as inside and is clamped into it, so a
+    /// valid box-edge point that inverts with rounding error still round-trips.
     fn unplace(&self, x: f64, y: f64, radius: f64) -> Option<(f64, f64)> {
         let sub_x = (x - self.shift.0 * radius) / self.scale;
         let sub_y = (y - self.shift.1 * radius) / self.scale;
         let (lon, lat) = self.proj.inverse(sub_x, sub_y).ok()?;
-        self.contains(lon, lat).then_some((lon, lat))
+        let [lon_min, lon_max, lat_min, lat_max] = self.bbox;
+        let near = |v: f64, lo: f64, hi: f64| v >= lo - BOX_SLACK_DEG && v <= hi + BOX_SLACK_DEG;
+        (near(lon, lon_min, lon_max) && near(lat, lat_min, lat_max))
+            .then(|| (lon.clamp(lon_min, lon_max), lat.clamp(lat_min, lat_max)))
     }
 }
 

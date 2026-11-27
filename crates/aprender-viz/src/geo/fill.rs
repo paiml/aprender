@@ -130,7 +130,13 @@ fn crossings(rings: &[Vec<(f64, f64)>], sy: f64) -> Result<Vec<f64>, FillError> 
     for (ring_index, ring) in rings.iter().enumerate() {
         for ((ax, ay), (bx, by)) in edges(ring) {
             if (ay <= sy) != (by <= sy) {
-                let t = (sy - ay) / (by - ay);
+                // The span itself can overflow (an edge wider than f64::MAX); refuse it here,
+                // because the crossing parameter computed from an infinite span is meaningless.
+                let span = by - ay;
+                if !span.is_finite() {
+                    return Err(FillError::NonFiniteResult { ring: ring_index });
+                }
+                let t = (sy - ay) / span;
                 let x = ax + t * (bx - ax);
                 if !x.is_finite() {
                     return Err(FillError::NonFiniteResult { ring: ring_index });

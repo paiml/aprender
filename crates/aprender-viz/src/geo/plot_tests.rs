@@ -141,3 +141,22 @@ fn geo_projection_debug_names_only_the_type() {
     assert_eq!(format!("{:?}", GeoProjection::new(Identity)), "GeoProjection");
     assert_eq!(GeoProjection::new(Identity).projection().inverse(1.0, 2.0), Ok((1.0, 2.0)));
 }
+
+// ---------------------------------------------------------------------------
+// Review round 1 (MAP-1): spans that overflow f64 still fit finitely
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fit_of_an_extreme_span_stays_finite_and_inside_the_area() {
+    // x1 - x0 and y1 - y0 are 2e308, which overflow to infinity. The fit works on halved values,
+    // so every output point is finite and inside the 400 x 300 area at (10, 20). The scale is
+    // 300 / 1e308 per halved unit, so the box is 300 px wide and centred at x = 60 .. 360.
+    let plane = vec![vec![vec![(-1e308, -1e308), (1e308, 1e308), (-1e308, 1e308)]]];
+    let out = fit_to_area(&plane, (10.0, 20.0, 400.0, 300.0));
+    let points: Vec<(f64, f64)> = out.iter().flatten().flatten().copied().collect();
+    assert_eq!(points.len(), 3);
+    for (x, y) in points {
+        assert!(x.is_finite() && y.is_finite(), "({x}, {y})");
+        assert!((10.0..=410.0).contains(&x) && (20.0..=320.0).contains(&y), "({x}, {y})");
+    }
+}

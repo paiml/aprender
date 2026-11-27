@@ -4,10 +4,18 @@
 //! no point is added or moved, and the input order is preserved. The tolerance is a
 //! distance for [`douglas_peucker`] and a triangle area for [`visvalingam`].
 //!
-//! Invalid input is an error, never a number: a negative or non-finite tolerance, or a
-//! point with a non-finite coordinate, is a [`GeoError`].
+//! Invalid input is an error, never a number: a negative or non-finite tolerance, a point with
+//! a non-finite coordinate, or a coordinate whose absolute value exceeds [`MAX_COORDINATE`] is a
+//! [`GeoError`].
 
 use super::projection::GeoError;
+
+/// Largest accepted absolute value of a point coordinate, `1e150`.
+///
+/// Squared differences and triangle cross products of coordinates up to this bound stay below
+/// `f64::MAX` (about 1.8e308), so simplification cannot overflow to infinity or NaN. A point
+/// beyond the bound is refused with [`GeoError::OutOfDomain`] and `what = "coordinate"`.
+pub const MAX_COORDINATE: f64 = 1e150;
 
 /// Simplifies a polyline with the Douglas-Peucker algorithm.
 ///
@@ -23,7 +31,8 @@ use super::projection::GeoError;
 /// # Errors
 ///
 /// Returns [`GeoError::InvalidParameter`] for a negative tolerance, and
-/// [`GeoError::NonFiniteInput`] for a non-finite tolerance or point coordinate.
+/// [`GeoError::NonFiniteInput`] for a non-finite tolerance or point coordinate, and
+/// [`GeoError::OutOfDomain`] (`what = "coordinate"`) for a coordinate beyond [`MAX_COORDINATE`].
 pub fn douglas_peucker(points: &[(f64, f64)], tolerance: f64) -> Result<Vec<(f64, f64)>, GeoError> {
     validate(points, tolerance)?;
     if tolerance == 0.0 || points.len() < 3 {
@@ -58,7 +67,8 @@ pub fn douglas_peucker(points: &[(f64, f64)], tolerance: f64) -> Result<Vec<(f64
 /// # Errors
 ///
 /// Returns [`GeoError::InvalidParameter`] for a negative tolerance, and
-/// [`GeoError::NonFiniteInput`] for a non-finite tolerance or point coordinate.
+/// [`GeoError::NonFiniteInput`] for a non-finite tolerance or point coordinate, and
+/// [`GeoError::OutOfDomain`] (`what = "coordinate"`) for a coordinate beyond [`MAX_COORDINATE`].
 pub fn visvalingam(points: &[(f64, f64)], tolerance: f64) -> Result<Vec<(f64, f64)>, GeoError> {
     validate(points, tolerance)?;
     if points.len() < 3 {
@@ -75,7 +85,8 @@ pub fn visvalingam(points: &[(f64, f64)], tolerance: f64) -> Result<Vec<(f64, f6
     Ok(kept.iter().map(|&i| points[i]).collect())
 }
 
-/// Rejects a non-finite or negative tolerance and any non-finite point coordinate.
+/// Rejects a non-finite or negative tolerance, any non-finite point coordinate, and any
+/// coordinate with `|value| > MAX_COORDINATE`.
 fn validate(points: &[(f64, f64)], tolerance: f64) -> Result<(), GeoError> {
     if !tolerance.is_finite() {
         return Err(GeoError::NonFiniteInput);
@@ -83,11 +94,17 @@ fn validate(points: &[(f64, f64)], tolerance: f64) -> Result<(), GeoError> {
     if tolerance < 0.0 {
         return Err(GeoError::InvalidParameter { name: "tolerance", value: tolerance });
     }
-    if points.iter().all(|p| p.0.is_finite() && p.1.is_finite()) {
-        Ok(())
-    } else {
-        Err(GeoError::NonFiniteInput)
+    for &(x, y) in points {
+        if !(x.is_finite() && y.is_finite()) {
+            return Err(GeoError::NonFiniteInput);
+        }
+        for value in [x, y] {
+            if value.abs() > MAX_COORDINATE {
+                return Err(GeoError::OutOfDomain { what: "coordinate", value });
+            }
+        }
     }
+    Ok(())
 }
 
 /// Index of the interior point of `points[first..=last]` farthest from the chord, when that
@@ -142,19 +159,22 @@ fn improves_min(best: Option<(usize, f64)>, candidate: f64) -> bool {
 
 /// Perpendicular distance from `p` to the infinite line through `a` and `b`, or the distance
 /// to `a` when `a` and `b` coincide.
+///
+/// The chord length comes from `hypot`, which does not underflow for tiny chords. The distance
+/// is the cross product of `p - a` with the chord's unit vector, so no squared length appears.
 fn line_distance(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
-    let len = (dx * dx + dy * dy).sqrt();
+    let len = dx.hypot(dy);
     if len <= 0.0 {
         return distance(p, a);
     }
-    ((p.0 - a.0) * dy - (p.1 - a.1) * dx).abs() / len
+    let (ux, uy) = (dx / len, dy / len);
+    ((p.0 - a.0) * uy - (p.1 - a.1) * ux).abs()
 }
 
-/// Euclidean distance between two points.
+/// Euclidean distance between two points, computed with `hypot`.
 fn distance(p: (f64, f64), q: (f64, f64)) -> f64 {
-    let (dx, dy) = (p.0 - q.0, p.1 - q.1);
-    (dx * dx + dy * dy).sqrt()
+    (p.0 - q.0).hypot(p.1 - q.1)
 }
 
 /// Area of the triangle `a`, `b`, `c`.

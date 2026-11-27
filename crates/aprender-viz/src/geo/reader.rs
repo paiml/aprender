@@ -69,7 +69,22 @@ pub enum GeoReadError {
     /// A coordinate that is NaN or infinite, including after the TopoJSON transform.
     #[error("non-finite coordinate")]
     NonFinite,
+    /// The TopoJSON arcs expand to more positions than the document budget allows, summed over
+    /// every ring of every object (see `MAX_EXPANDED_POSITIONS`).
+    #[error("too many positions: the document expands past {limit}")]
+    TooManyPositions {
+        /// The budget that was exceeded.
+        limit: usize,
+    },
 }
+
+/// Budget for the positions a TopoJSON document expands to, summed over every ring of every
+/// object.
+///
+/// Arcs are shared, so each arc reference copies its positions into a ring and a small document
+/// can expand to a very large one. The budget is checked before each copy, and exceeding it is
+/// [`GeoReadError::TooManyPositions`].
+const MAX_EXPANDED_POSITIONS: usize = 4_000_000;
 
 /// Reads GeoJSON: a `FeatureCollection`, or a single `Feature`.
 ///
@@ -100,9 +115,10 @@ pub fn read_topojson(text: &str) -> Result<Vec<Feature>, GeoReadError> {
         other => return Err(GeoReadError::UnknownType(other.to_string())),
     }
     let arcs = decode_arcs(&root)?;
+    let mut budget = MAX_EXPANDED_POSITIONS;
     let mut features = Vec::new();
     for object in member_object(&root, "objects")?.values() {
-        collect_object(object, &arcs, &mut features)?;
+        collect_object(object, &arcs, &mut features, &mut budget)?;
     }
     Ok(features)
 }
@@ -243,62 +259,93 @@ fn collect_object(
     object: &Value,
     arcs: &[Vec<Position>],
     out: &mut Vec<Feature>,
+    budget: &mut usize,
 ) -> Result<(), GeoReadError> {
     if type_of(object)? == "GeometryCollection" {
         for g in member_array(object, "geometries")? {
-            out.push(topo_feature(g, arcs)?);
+            out.push(topo_feature(g, arcs, budget)?);
         }
     } else {
-        out.push(topo_feature(object, arcs)?);
+        out.push(topo_feature(object, arcs, budget)?);
     }
     Ok(())
 }
 
-fn topo_feature(g: &Value, arcs: &[Vec<Position>]) -> Result<Feature, GeoReadError> {
-    Ok(Feature { id: id_of(g)?, properties: properties_of(g)?, geometry: topo_geometry(g, arcs)? })
+fn topo_feature(
+    g: &Value,
+    arcs: &[Vec<Position>],
+    budget: &mut usize,
+) -> Result<Feature, GeoReadError> {
+    Ok(Feature {
+        id: id_of(g)?,
+        properties: properties_of(g)?,
+        geometry: topo_geometry(g, arcs, budget)?,
+    })
 }
 
-fn topo_geometry(g: &Value, arcs: &[Vec<Position>]) -> Result<Geometry, GeoReadError> {
+fn topo_geometry(
+    g: &Value,
+    arcs: &[Vec<Position>],
+    budget: &mut usize,
+) -> Result<Geometry, GeoReadError> {
     match type_of(g)? {
-        "Polygon" => Ok(Geometry::Polygon(topo_rings(member(g, "arcs")?, arcs)?)),
+        "Polygon" => Ok(Geometry::Polygon(topo_rings(member(g, "arcs")?, arcs, budget)?)),
         "MultiPolygon" => member_array(g, "arcs")?
             .iter()
-            .map(|p| topo_rings(p, arcs))
+            .map(|p| topo_rings(p, arcs, &mut *budget))
             .collect::<Result<Vec<Vec<Ring>>, GeoReadError>>()
             .map(Geometry::MultiPolygon),
         other => refuse(other),
     }
 }
 
-fn topo_rings(v: &Value, arcs: &[Vec<Position>]) -> Result<Vec<Ring>, GeoReadError> {
+fn topo_rings(
+    v: &Value,
+    arcs: &[Vec<Position>],
+    budget: &mut usize,
+) -> Result<Vec<Ring>, GeoReadError> {
     let rings = v.as_array().ok_or(GeoReadError::Malformed("arcs"))?;
-    rings.iter().map(|r| topo_ring(r, arcs)).collect()
+    rings.iter().map(|r| topo_ring(r, arcs, &mut *budget)).collect()
 }
 
-/// Joins a ring's arcs. Each arc after the first drops its first position, which repeats the
-/// previous arc's last position.
-fn topo_ring(v: &Value, arcs: &[Vec<Position>]) -> Result<Ring, GeoReadError> {
+/// Joins a ring's arcs. An arc's first position repeats the previous arc's last position, so it
+/// is dropped, except when the ring is still empty (an earlier empty arc has nothing to repeat).
+/// Each copy is charged against `budget` before it is made.
+fn topo_ring(v: &Value, arcs: &[Vec<Position>], budget: &mut usize) -> Result<Ring, GeoReadError> {
     let refs = v.as_array().ok_or(GeoReadError::Malformed("arcs"))?;
     let mut ring = Ring::new();
-    for (k, r) in refs.iter().enumerate() {
+    for r in refs {
         let index = r.as_i64().ok_or(GeoReadError::Malformed("arc index"))?;
-        ring.extend(arc_run(index, arcs)?.into_iter().skip(usize::from(k > 0)));
+        let (arc, reversed) = arc_ref(index, arcs)?;
+        let skip = usize::from(!ring.is_empty());
+        spend(budget, arc.len().saturating_sub(skip))?;
+        if reversed {
+            ring.extend(arc.iter().rev().skip(skip));
+        } else {
+            ring.extend(arc.iter().skip(skip));
+        }
     }
     check_ring(ring)
 }
 
-/// The positions of arc `index`, reversed when the index is negative (`~i`, that is `-i - 1`).
-fn arc_run(index: i64, arcs: &[Vec<Position>]) -> Result<Vec<Position>, GeoReadError> {
+/// Charges `n` positions against the document budget, refusing before any copy is made.
+fn spend(budget: &mut usize, n: usize) -> Result<(), GeoReadError> {
+    if n > *budget {
+        return Err(GeoReadError::TooManyPositions { limit: MAX_EXPANDED_POSITIONS });
+    }
+    *budget -= n;
+    Ok(())
+}
+
+/// The positions of arc `index`, and whether the reference is reversed (`~i`, that is `-i - 1`).
+/// Borrows the arc; nothing is copied.
+fn arc_ref(index: i64, arcs: &[Vec<Position>]) -> Result<(&[Position], bool), GeoReadError> {
     let (i, reversed) = if index >= 0 { (index, false) } else { (!index, true) };
     let arc = usize::try_from(i)
         .ok()
         .and_then(|i| arcs.get(i))
         .ok_or(GeoReadError::ArcOutOfRange { index, arcs: arcs.len() })?;
-    let mut run = arc.clone();
-    if reversed {
-        run.reverse();
-    }
-    Ok(run)
+    Ok((arc.as_slice(), reversed))
 }
 
 fn decode_arcs(root: &Value) -> Result<Vec<Vec<Position>>, GeoReadError> {

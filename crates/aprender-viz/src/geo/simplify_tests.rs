@@ -187,3 +187,50 @@ proptest! {
         prop_assert!(is_subsequence(&vw, &pts));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Review round 1 (MAP-1): spike separates the algorithms; overflow and underflow
+// ---------------------------------------------------------------------------
+
+/// Spike fixture: p0 (0,0), p1 (5,0), p2 (5.1,1), p3 (5.2,0), p4 (10,0). Tolerance 0.5.
+///
+/// Visvalingam: the spike p2 has neighbours p1 and p3, so its area is
+/// `|(0.1)(0) - (1)(0.2)| / 2 = 0.1 < 0.5`. It is removed first. Then p1 has neighbours p0 and
+/// p3 on the x-axis, area 0, removed. Then p3 has neighbours p0 and p4, area 0, removed.
+/// Result `[(0,0), (10,0)]`.
+///
+/// Douglas-Peucker: the chord p0-p4 is the x-axis, so p2 has distance 1 > 0.5 and is kept.
+/// Chord p0-p2 has `dx = 5.1, dy = 1, |chord| = sqrt(27.01) = 5.1971`: p1 has distance
+/// `|5 * 1 - 0 * 5.1| / 5.1971 = 0.9623 > 0.5`, kept. Chord p2-p4 has `dx = 4.9, dy = -1,
+/// |chord| = sqrt(25.01) = 5.0010`: p3 has distance `|0.1 * (-1) - (-1) * 4.9| / 5.0010 =
+/// 4.8 / 5.0010 = 0.9598 > 0.5`, kept. Result: all five points.
+const SPIKE: [(f64, f64); 5] = [(0.0, 0.0), (5.0, 0.0), (5.1, 1.0), (5.2, 0.0), (10.0, 0.0)];
+
+#[test]
+fn spike_fixture_separates_visvalingam_from_douglas_peucker() {
+    assert_same(&visvalingam(&SPIKE, 0.5).expect("valid"), &[(0.0, 0.0), (10.0, 0.0)]);
+    assert_same(&douglas_peucker(&SPIKE, 0.5).expect("valid"), &SPIKE);
+}
+
+#[test]
+fn coordinates_beyond_1e150_are_refused_not_turned_into_infinity() {
+    // Squared differences here overflow to infinity; the input is refused before any maths.
+    let huge = [(0.0, 0.0), (5e199, 1e100), (1e200, 0.0)];
+    assert!(matches!(
+        douglas_peucker(&huge, 0.5),
+        Err(GeoError::OutOfDomain { what: "coordinate", .. })
+    ));
+    assert!(matches!(
+        visvalingam(&huge, 0.5),
+        Err(GeoError::OutOfDomain { what: "coordinate", .. })
+    ));
+}
+
+#[test]
+fn tiny_coordinates_do_not_underflow_the_line_distance() {
+    // The chord has length 2e-200, so its squared length underflows to zero. The distance must
+    // come from hypot and the unit vector. p1 is 3e-200 off the chord, above the 1e-201
+    // tolerance, so all three points are kept.
+    let tiny = [(0.0, 0.0), (1e-200, 3e-200), (2e-200, 0.0)];
+    assert_same(&douglas_peucker(&tiny, 1e-201).expect("valid"), &tiny);
+}

@@ -233,3 +233,20 @@ fn fill_error_messages_name_the_ring_and_vertex() {
     let overflow = FillError::NonFiniteResult { ring: 1 };
     assert_eq!(overflow.to_string(), "ring 1: an edge crossing is not finite");
 }
+
+// ---------------------------------------------------------------------------
+// Review round 1 (MAP-1): an overflowing edge crossing is refused, not filled
+// ---------------------------------------------------------------------------
+
+#[test]
+fn edge_span_beyond_f64_max_is_refused_not_filled() {
+    // The edge (0,-1e308)-(100,1e308) spans 2e308, so by - ay overflows to infinity. The
+    // crossing parameter then collapses to 0 and yields a finite but meaningless x. The fill
+    // must refuse the ring rather than paint from that x.
+    let ring: Ring = vec![(0.0, -1e308), (100.0, 1e308), (0.0, 1e308)];
+    let mut fb = Framebuffer::new(10, 10).expect("10x10 is a valid size");
+    assert_eq!(
+        fill_polygon_even_odd(&mut fb, &[ring], Rgba::rgb(0, 0, 0)),
+        Err(FillError::NonFiniteResult { ring: 0 })
+    );
+}

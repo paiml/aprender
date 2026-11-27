@@ -75,10 +75,13 @@ pub fn fit_to_area(plane: &Features, area: (f64, f64, f64, f64)) -> Features {
         return Vec::new();
     };
     let (area_x, area_y, area_w, area_h) = area;
-    let (box_w, box_h) = (x1 - x0, y1 - y0);
-    let scale = uniform_scale(box_w, box_h, area_w, area_h);
-    let off_x = area_x + (area_w - box_w * scale) / 2.0;
-    let off_y = area_y + (area_h - box_h * scale) / 2.0;
+    // Spans are computed on halved values: `x1 - x0` can overflow f64 to infinity, while
+    // `x1 / 2 - x0 / 2` cannot. Halving is exact, so for ordinary inputs the scale and every
+    // output coordinate are bit-identical to the unhalved computation.
+    let (half_w, half_h) = (x1 / 2.0 - x0 / 2.0, y1 / 2.0 - y0 / 2.0);
+    let scale = uniform_scale(half_w, half_h, area_w, area_h);
+    let off_x = area_x + (area_w - half_w * scale) / 2.0;
+    let off_y = area_y + (area_h - half_h * scale) / 2.0;
     plane
         .iter()
         .map(|rings| {
@@ -86,7 +89,12 @@ pub fn fit_to_area(plane: &Features, area: (f64, f64, f64, f64)) -> Features {
                 .iter()
                 .map(|ring| {
                     ring.iter()
-                        .map(|&(x, y)| (off_x + (x - x0) * scale, off_y + (y1 - y) * scale))
+                        .map(|&(x, y)| {
+                            (
+                                off_x + (x / 2.0 - x0 / 2.0) * scale,
+                                off_y + (y1 / 2.0 - y / 2.0) * scale,
+                            )
+                        })
                         .collect()
                 })
                 .collect()
