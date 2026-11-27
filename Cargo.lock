@@ -247,7 +247,7 @@ dependencies = [
 
 [[package]]
 name = "apr-cli"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -280,7 +280,7 @@ dependencies = [
  "aprender-viz",
  "aprender-zram-cli",
  "aprender-zram-core",
- "arrow-array 60.0.0",
+ "arrow-array 60.2.0",
  "assert_cmd",
  "async-stream",
  "axum 0.7.9",
@@ -327,7 +327,7 @@ dependencies = [
 
 [[package]]
 name = "apr-format"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-legacy-codec",
  "cargo_metadata",
@@ -345,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "apr-cli",
  "aprender-core",
@@ -353,7 +353,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-bench-compute"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-core",
  "criterion 0.7.0",
@@ -362,7 +362,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-bench-tokenizer"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-core",
  "criterion 0.7.0",
@@ -371,14 +371,14 @@ dependencies = [
 
 [[package]]
 name = "aprender-build-sha"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "aprender-cbtop"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -403,7 +403,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cgp"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -423,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-ci-tools"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-rollup",
@@ -439,7 +439,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-common"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "clap",
  "lz4_flex 0.11.6",
@@ -448,7 +448,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-compute"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-contracts",
@@ -497,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-compute-xtask"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -511,7 +511,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-contracts-macros",
  "blake3",
@@ -531,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-cli"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-common",
@@ -547,7 +547,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-macros"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -557,7 +557,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contrastive-data"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-contracts-macros",
  "aprender-rand",
@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-core"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aes-gcm",
  "alsa",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cuda-edge"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-gpu",
  "proptest",
@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-cupti"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "bindgen",
  "bitflags 2.13.0",
@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-data"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aes-gcm",
  "aprender-build-sha",
@@ -700,7 +700,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-db"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -746,7 +746,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-decide"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-contracts-macros",
  "aprender-core",
@@ -765,7 +765,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-distribute"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-compute",
  "aprender-db",
@@ -795,7 +795,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-explain"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-gpu",
@@ -814,7 +814,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-fft"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -823,7 +823,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-gemm-codegen"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -832,7 +832,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-gpu"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-common",
  "aprender-simulate",
@@ -850,7 +850,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-graph"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-compute",
@@ -871,7 +871,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-image"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -880,14 +880,14 @@ dependencies = [
 
 [[package]]
 name = "aprender-legacy-codec"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "aprender-mcp"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "inventory",
  "jsonschema",
@@ -900,7 +900,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-monte-carlo"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender",
  "assert_cmd",
@@ -919,7 +919,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-orchestrate"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -989,7 +989,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-cli"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-contracts",
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-core"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-contracts",
  "aprender-contracts-macros",
@@ -1018,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-layout"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-present-core",
  "criterion 0.7.0",
@@ -1029,7 +1029,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-lib"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-contracts",
  "aprender-legacy-codec",
@@ -1058,7 +1058,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-terminal"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-contracts",
@@ -1080,7 +1080,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-test"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-present-core",
  "aprender-present-test-macros",
@@ -1091,7 +1091,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-test-macros"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1100,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-widgets"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-present-core",
  "aprender-present-yaml",
@@ -1112,7 +1112,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-present-yaml"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-present-core",
  "proptest",
@@ -1123,7 +1123,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-profile"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "addr2line 0.25.1",
  "anyhow",
@@ -1176,7 +1176,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-profile-core"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "hex",
  "serde",
@@ -1186,7 +1186,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-ptx-debug"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "clap",
@@ -1196,7 +1196,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-certify"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "chrono",
@@ -1208,7 +1208,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-cli"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-qa-certify",
@@ -1228,7 +1228,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-gen"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1245,7 +1245,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-report"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-qa-gen",
@@ -1263,7 +1263,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-qa-runner"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-qa-gen",
@@ -1288,7 +1288,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-quant"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "half",
  "serde_json",
@@ -1296,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-rag"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-common",
  "aprender-compute",
@@ -1325,7 +1325,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-rag-cli"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-build-sha",
@@ -1345,7 +1345,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-rand"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1354,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-registry"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "aprender-core",
@@ -1384,7 +1384,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-review-experiment"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "half",
  "regex",
@@ -1398,14 +1398,14 @@ dependencies = [
 
 [[package]]
 name = "aprender-rollup"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "aprender-serve"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "anyhow",
  "approx",
@@ -1478,7 +1478,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-shell"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-core",
  "clap",
@@ -1493,7 +1493,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-simulate"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-contracts",
@@ -1536,7 +1536,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-solve"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "criterion 0.7.0",
  "half",
@@ -1546,7 +1546,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-sparse"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1555,7 +1555,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-tensor"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "criterion 0.7.0",
  "proptest",
@@ -1564,7 +1564,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-cli"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-test-lib",
@@ -1593,7 +1593,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-derive"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1603,7 +1603,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-js-gen"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "blake3",
  "chrono",
@@ -1619,7 +1619,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-lib"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-compute",
  "aprender-legacy-codec",
@@ -1665,7 +1665,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-test-showcase"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-present-terminal",
  "aprender-test-lib",
@@ -1682,7 +1682,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "approx",
  "aprender-common",
@@ -1751,7 +1751,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-bench"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-train",
@@ -1769,7 +1769,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-common"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-viz",
  "clap",
@@ -1781,7 +1781,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-distill"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-train",
@@ -1803,7 +1803,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-inspect"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-train",
@@ -1820,7 +1820,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-lora"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-train",
@@ -1837,7 +1837,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-shell"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-train",
@@ -1854,7 +1854,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-train-wasm"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "proptest",
  "serde",
@@ -1865,7 +1865,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-tsp"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender",
  "assert_cmd",
@@ -1880,7 +1880,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-update"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "flate2",
  "semver",
@@ -1894,7 +1894,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-verify"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "chrono",
  "criterion 0.5.1",
@@ -1906,7 +1906,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-verify-ml"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-compute",
@@ -1937,7 +1937,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-viz"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "approx",
  "aprender-common",
@@ -1969,7 +1969,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-zram-adaptive",
  "aprender-zram-core",
@@ -1979,7 +1979,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-adaptive"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-zram-core",
  "proptest",
@@ -1988,7 +1988,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-cli"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-zram-adaptive",
@@ -2003,7 +2003,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-core"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-gpu",
  "criterion 0.7.0",
@@ -2015,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-zram-generator"
-version = "0.75.0"
+version = "0.75.4"
 dependencies = [
  "aprender-build-sha",
  "aprender-zram-core",
@@ -2109,17 +2109,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "234ce58e76c04e8162c2e4bc3fe53fa7c2418ef5fba7bb2838b8531b7d4fbf14"
 dependencies = [
  "arrow-arith 60.0.0",
- "arrow-array 60.0.0",
- "arrow-buffer 60.0.0",
+ "arrow-array 60.2.0",
+ "arrow-buffer 60.2.0",
  "arrow-cast 60.0.0",
  "arrow-csv",
- "arrow-data 60.0.0",
+ "arrow-data 60.2.0",
  "arrow-ipc",
  "arrow-json",
  "arrow-ord 60.0.0",
  "arrow-row 60.0.0",
- "arrow-schema 60.0.0",
- "arrow-select 60.0.0",
+ "arrow-schema 60.2.0",
+ "arrow-select 60.2.0",
  "arrow-string 60.0.0",
 ]
 
@@ -2143,10 +2143,10 @@ version = "60.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2303ebedb1071f4f72d71171e383859a9a285c94d99e4892685a96fca9890720"
 dependencies = [
- "arrow-array 60.0.0",
- "arrow-buffer 60.0.0",
- "arrow-data 60.0.0",
- "arrow-schema 60.0.0",
+ "arrow-array 60.2.0",
+ "arrow-buffer 60.2.0",
+ "arrow-data 60.2.0",
+ "arrow-schema 60.2.0",
  "chrono",
  "num-traits",
 ]
@@ -2171,14 +2171,14 @@ dependencies = [
 
 [[package]]
 name = "arrow-array"
-version = "60.0.0"
+version = "60.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51dff6e4b9f158864a0aeb6a131ad53858ecbae7a2fc8989307b9b3c6b2f122e"
+checksum = "a7a75080e8066219ed2d1e3b8fd2eb0b1a4b35d03b6fa87fb1035e93bd8dac95"
 dependencies = [
  "ahash",
- "arrow-buffer 60.0.0",
- "arrow-data 60.0.0",
- "arrow-schema 60.0.0",
+ "arrow-buffer 60.2.0",
+ "arrow-data 60.2.0",
+ "arrow-schema 60.2.0",
  "chrono",
  "half",
  "hashbrown 0.17.1",
@@ -2201,9 +2201,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-buffer"
-version = "60.0.0"
+version = "60.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7235b863533e9db3ab86905b4521251de11226275b436ff3cb2d0010558d1c5"
+checksum = "6c6bf2edf52662586214410c6030204215453eb86b8715037e8951326e173b19"
 dependencies = [
  "bytes",
  "half",
@@ -2239,12 +2239,12 @@ version = "60.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d52cf840f0c34aeeb7e8b05aba72d66878e6c001827f423331f0b260209e7b7e"
 dependencies = [
- "arrow-array 60.0.0",
- "arrow-buffer 60.0.0",
- "arrow-data 60.0.0",
+ "arrow-array 60.2.0",
+ "arrow-buffer 60.2.0",
+ "arrow-data 60.2.0",
  "arrow-ord 60.0.0",
- "arrow-schema 60.0.0",
- "arrow-select 60.0.0",
+ "arrow-schema 60.2.0",
+ "arrow-select 60.2.0",
  "atoi 3.1.1",
  "base64 0.23.1",
  "chrono",
@@ -2257,13 +2257,13 @@ dependencies = [
 
 [[package]]
 name = "arrow-cmp"
-version = "60.0.0"
+version = "60.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73a0e9adb28d95739fabcdae637261a2c14e618caf58ba1b88857120f9ee2687"
+checksum = "c7e23e1092a61d7addfe57a69bf5cde7628b7b6685adea11731c19acdfd86695"
 dependencies = [
- "arrow-array 60.0.0",
- "arrow-buffer 60.0.0",
- "arrow-schema 60.0.0",
+ "arrow-array 60.2.0",
+ "arrow-buffer 60.2.0",
+ "arrow-schema 60.2.0",
 ]
 
 [[package]]
@@ -2272,9 +2272,9 @@ version = "60.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2ad83176cc677f996096d694a3cccd7310069faeee4b3df9e2dabf92fdcf8b4b"
 dependencies = [
- "arrow-array 60.0.0",
+ "arrow-array 60.2.0",
  "arrow-cast 60.0.0",
- "arrow-schema 60.0.0",
+ "arrow-schema 60.2.0",
  "chrono",
  "csv",
  "csv-core",
@@ -2296,12 +2296,12 @@ dependencies = [
 
 [[package]]
 name = "arrow-data"
-version = "60.0.0"
+version = "60.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aa06d5e22786c4966ffc4d2f171d0cb65d95f6bdea108a14e8c335e9faa437f"
+checksum = "d0a7becabdb9bf3fa058b55845c52e0f792bedc88fd0e28d6580c9730a902b60"
 dependencies = [
- "arrow-buffer 60.0.0",
- "arrow-schema 60.0.0",
+ "arrow-buffer 60.2.0",
+ "arrow-schema 60.2.0",
  "half",
  "num-integer",
  "num-traits",
@@ -2309,15 +2309,15 @@ dependencies = [
 
 [[package]]
 name = "arrow-ipc"
-version = "60.0.0"
+version = "60.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86c523472d22e31f984df7a44fc36e6323d3c9b05ffe53d267ee4c3aa7c128d2"
+checksum = "3d6fe9198046b67abf4e3e3ef70de2d705099975bdc2a7d9f0661675a978a083"
 dependencies = [
- "arrow-array 60.0.0",
- "arrow-buffer 60.0.0",
- "arrow-data 60.0.0",
- "arrow-schema 60.0.0",
- "arrow-select 60.0.0",
+ "arrow-array 60.2.0",
+ "arrow-buffer 60.2.0",
+ "arrow-data 60.2.0",
+ "arrow-schema 60.2.0",
+ "arrow-select 60.2.0",
  "flatbuffers",
 ]
 
@@ -2327,12 +2327,12 @@ version = "60.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "342fc6600a93a48038d853431803c941436b7b51f756763e76cad9784b7e3718"
 dependencies = [
- "arrow-array 60.0.0",
- "arrow-buffer 60.0.0",
+ "arrow-array 60.2.0",
+ "arrow-buffer 60.2.0",
  "arrow-cast 60.0.0",
  "arrow-ord 60.0.0",
- "arrow-schema 60.0.0",
- "arrow-select 60.0.0",
+ "arrow-schema 60.2.0",
+ "arrow-select 60.2.0",
  "chrono",
  "half",
  "indexmap 2.14.0",
@@ -2365,12 +2365,12 @@ version = "60.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a7ac2c6a9cdc782fa9548d3763461eaec8c93347e297fddbaa44807e70a3698"
 dependencies = [
- "arrow-array 60.0.0",
- "arrow-buffer 60.0.0",
+ "arrow-array 60.2.0",
+ "arrow-buffer 60.2.0",
  "arrow-cmp",
- "arrow-data 60.0.0",
- "arrow-schema 60.0.0",
- "arrow-select 60.0.0",
+ "arrow-data 60.2.0",
+ "arrow-schema 60.2.0",
+ "arrow-select 60.2.0",
 ]
 
 [[package]]
@@ -2392,10 +2392,10 @@ version = "60.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "758b87e9648d80001e0916c083334ed93074c677a81a96144d5c84bd2d8eab2a"
 dependencies = [
- "arrow-array 60.0.0",
- "arrow-buffer 60.0.0",
- "arrow-data 60.0.0",
- "arrow-schema 60.0.0",
+ "arrow-array 60.2.0",
+ "arrow-buffer 60.2.0",
+ "arrow-data 60.2.0",
+ "arrow-schema 60.2.0",
  "half",
 ]
 
@@ -2410,9 +2410,9 @@ dependencies = [
 
 [[package]]
 name = "arrow-schema"
-version = "60.0.0"
+version = "60.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f85a9a58cd03560526b0066487574aacb9008e413504fa0ee23d61141e96c338"
+checksum = "3e7574c4175cc731e0d26a8384bc25d455c5e220250988a772c1af843592444b"
 
 [[package]]
 name = "arrow-select"
@@ -2430,16 +2430,16 @@ dependencies = [
 
 [[package]]
 name = "arrow-select"
-version = "60.0.0"
+version = "60.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba3482b7d03bf4a3bf0b195f08a7f2b071595ccd54897e35b975ac63d3104977"
+checksum = "8d6a571e56e54b485b9f2d1dac4c3c34edcaffaa2668a23a7204108b66ef163d"
 dependencies = [
  "ahash",
- "arrow-array 60.0.0",
- "arrow-buffer 60.0.0",
+ "arrow-array 60.2.0",
+ "arrow-buffer 60.2.0",
  "arrow-cmp",
- "arrow-data 60.0.0",
- "arrow-schema 60.0.0",
+ "arrow-data 60.2.0",
+ "arrow-schema 60.2.0",
  "num-traits",
 ]
 
@@ -2466,11 +2466,11 @@ version = "60.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f300b4400b1e7cd58f7cbbd5dd2a0072cc59e73bfaee2a152b3ac660e46d9dd1"
 dependencies = [
- "arrow-array 60.0.0",
- "arrow-buffer 60.0.0",
- "arrow-data 60.0.0",
- "arrow-schema 60.0.0",
- "arrow-select 60.0.0",
+ "arrow-array 60.2.0",
+ "arrow-buffer 60.2.0",
+ "arrow-data 60.2.0",
+ "arrow-schema 60.2.0",
+ "arrow-select 60.2.0",
  "memchr",
  "num-traits",
  "regex",
@@ -4285,9 +4285,9 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "cookie"
-version = "0.18.1"
+version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ddef33a339a91ea89fb53151bd0a4689cfce27055c291dfa69945475d22c747"
+checksum = "d55f2d6c30eeec7d5c6f98bd4395d4abb1895629eab97ee6522d340623615f8a"
 dependencies = [
  "percent-encoding",
  "time",
@@ -4894,9 +4894,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
+checksum = "12218662ccac37d9714f2191252553d67585b97df8c839cbe49e0bde278dc865"
 dependencies = [
  "cmov",
 ]
@@ -6267,8 +6267,8 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1",
- "windows-result 0.4.1",
+ "windows-link 0.1.3",
+ "windows-result 0.3.4",
 ]
 
 [[package]]
@@ -7151,7 +7151,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.57.0",
 ]
 
 [[package]]
@@ -9266,17 +9266,17 @@ dependencies = [
 
 [[package]]
 name = "parquet"
-version = "60.0.0"
+version = "60.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8af83d2940bc0510f9aef86d865f56fdc6095f87ab115ac885a80b7c5226d3ba"
+checksum = "6701f0dd63f5ee23a0f1f2865ff76825c301759d6ab649e3e5686cc32d066957"
 dependencies = [
  "ahash",
- "arrow-array 60.0.0",
- "arrow-buffer 60.0.0",
- "arrow-data 60.0.0",
+ "arrow-array 60.2.0",
+ "arrow-buffer 60.2.0",
+ "arrow-data 60.2.0",
  "arrow-ipc",
- "arrow-schema 60.0.0",
- "arrow-select 60.0.0",
+ "arrow-schema 60.2.0",
+ "arrow-select 60.2.0",
  "base64 0.23.1",
  "brotli",
  "bytes",
@@ -11147,7 +11147,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8050abb251097357e24aff63ba2c52a6309ecb7d23a5474023df960a02694d8"
 dependencies = [
  "annotate-snippets",
- "base64 0.23.1",
+ "base64 0.22.1",
  "encoding_rs_io",
  "granit-parser",
  "nohash-hasher",
