@@ -210,7 +210,8 @@ impl AlbersEqualArea {
     fn from_params(radius: f64, lon0_deg: f64, std1: f64, std2: f64, lat0: f64) -> Self {
         let s1 = std1.to_radians().sin();
         let n = (s1 + std2.to_radians().sin()) / 2.0;
-        let c = 1.0 - s1 * s1 + 2.0 * n * s1;
+        // Factored so that near `s1 = -1` it rounds consistently with `n`: `1 + s1` is exact there.
+        let c = (1.0 - s1) * (1.0 + s1) + 2.0 * n * s1;
         let rho0 = radius * (c - 2.0 * n * lat0.to_radians().sin()).max(0.0).sqrt() / n;
         Self { radius, lon0_deg, n, c, rho0 }
     }

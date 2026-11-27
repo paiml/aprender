@@ -504,3 +504,17 @@ fn equirectangular_matches_reference_table() {
     let proj = Equirectangular::new(30.0, 0.0, 1.0).expect("valid");
     assert_reference_table(&proj, &EQUIRECT_30_REFERENCE, "equirect");
 }
+
+/// `std1` near -90 with `std2 = 90` gives a cone constant near zero, where computing
+/// `cos^2(std1)` as `1 - sin^2(std1)` cancels and breaks the documented polar bound.
+#[test]
+fn albers_polar_bound_holds_for_a_near_degenerate_cone() {
+    for std1 in [-89.9, -89.0, -87.0, -80.0] {
+        let proj = AlbersEqualArea::new(std1, 90.0, 0.0, 0.0, 1.0).expect("n is positive");
+        for lat in [89.95, 90.0] {
+            let (x, y) = proj.forward(0.0, lat).expect("in domain");
+            let (_, got) = proj.inverse(x, y).expect("image of the domain");
+            assert!((got - lat).abs() < 1e-5, "std1 {std1} lat {lat} got {got}");
+        }
+    }
+}
