@@ -75,6 +75,8 @@ one_row "GitHub-style #L anchor"           FAIL "crates/demo/src/m2.rs:1#L99999"
 one_row "non-leading prefix, out of range"  FAIL "see crates/demo/src/m2.rs:99999"
 one_row "parenthesised reversed range"      FAIL "(crates/demo/src/m1.rs:3-1)"
 one_row "non-leading prefix, missing file"  FAIL "see crates/demo/src/nosuch.rs:1"
+one_row "bare name with a line spec, beside a valid cite" FAIL "crates/demo/src/m1.rs:1, Makefile:5"
+one_row "bare name after prose, beside a valid cite" FAIL "crates/demo/src/m1.rs:1 see Dockerfile:3"
 one_row "control: valid range plus note"    PASS "crates/demo/src/m1.rs:1-2 (fn a)"
 one_row "control: quoted two-cite field"    PASS "crates/demo/src/m1.rs:1, crates/demo/src/m3.rs:1-2"
 
