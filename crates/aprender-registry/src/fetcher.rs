@@ -405,10 +405,30 @@ impl ModelFetcher {
             if entry.path.exists() {
                 std::fs::remove_file(&entry.path).ok();
             }
-            Ok(true)
-        } else {
-            Ok(false)
+            return Ok(true);
         }
+        // aprender#7481: a download recorded under its repo name (`org/repo`) is removed by that name.
+        let name = model_ref.trim_start_matches("hf://");
+        if self.cache.contains(name, "1.0") {
+            if let Some(entry) = self.cache.remove(name, "1.0") {
+                if entry.path.exists() {
+                    std::fs::remove_file(&entry.path).ok();
+                }
+                self.save_manifest();
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Record a model file already on disk under `name` (aprender#7481: `org/repo` for an
+    /// hf download), so `list` shows it by that name and `remove(name)` deletes it.
+    pub fn record_model(&mut self, name: &str, path: &Path) -> Result<()> {
+        let size_bytes = std::fs::metadata(path)?.len();
+        let hash = String::new();
+        self.cache.add(CacheEntry::new(name, "1.0", size_bytes, hash, path.to_path_buf()));
+        self.save_manifest();
+        Ok(())
     }
 
     /// List all cached models

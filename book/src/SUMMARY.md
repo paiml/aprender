@@ -2,6 +2,13 @@
 
 [Introduction](./introduction.md)
 
+# Getting Started
+
+- [Installation](./getting-started/installation.md)
+- [First Inference](./getting-started/first-inference.md)
+- [First Server](./getting-started/first-server.md)
+- [First Training](./getting-started/first-training.md)
+
 # Reference
 
 - [Mutation Testing](./advanced-testing/mutation-testing.md)
@@ -217,10 +224,6 @@
 - [Whisper Transcribe - Audio Transcription Example](./examples/whisper-transcribe.md)
 - [Case Study: XOR Neural Network](./examples/xor-neural-network.md)
 - [Case Study: XOR Neural Network Training](./examples/xor-training.md)
-- [First Inference](./getting-started/first-inference.md)
-- [First Server](./getting-started/first-server.md)
-- [First Training](./getting-started/first-training.md)
-- [Installation](./getting-started/installation.md)
 - [The RED-GREEN-REFACTOR Cycle](./methodology/red-green-refactor.md)
 - [Test-First Philosophy](./methodology/test-first-philosophy.md)
 - [What is EXTREME TDD?](./methodology/what-is-extreme-tdd.md)
