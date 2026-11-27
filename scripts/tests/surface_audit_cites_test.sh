@@ -16,8 +16,9 @@ SEQ=0
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "${SCRATCH:?}"' EXIT
 
-# Load the two functions from the gate into a scratch file and source it.
-sed -n '/^check_cites() {$/,/^}$/p;/^material_cited_changes() {$/,/^}$/p' "$GATE" > "$SCRATCH/gate_fns.sh"
+# Load the functions under test from the gate into a scratch file and source it.
+CITES_AWK="$HERE/scripts/lib/dogfood_cites.awk"
+sed -n '/^check_cites() {$/,/^}$/p;/^material_cited_changes() {$/,/^}$/p;/^evidence_files() {$/,/^}$/p' "$GATE" > "$SCRATCH/gate_fns.sh"
 . "$SCRATCH/gate_fns.sh"
 
 # Three source files: m1 has 3 lines, m2 has 1 line, m3 has 2 lines.
@@ -116,6 +117,88 @@ if [ "$mat_out" = "crates/demo/src/m3.rs" ]; then
 else
   printf '  RED   edit of cited line 2 not reported material (got: %s)\n' "$mat_out"; FAILS=$((FAILS + 1))
 fi
+
+echo "G2.1 cites: nothing may be dropped after a cite (review of a0b1ae811)"
+one_row "';' terminator hides a number"       FAIL "crates/demo/src/m2.rs:1;99999"
+one_row "')' terminator hides a number"       FAIL "crates/demo/src/m2.rs:1)99999"
+one_row "']' terminator hides a number"       FAIL "crates/demo/src/m2.rs:1]99999"
+one_row "lower-case #l anchor"                FAIL "crates/demo/src/m2.rs#l99999"
+one_row "bare #<n> anchor"                    FAIL "crates/demo/src/m2.rs#99999"
+one_row "';' instead of ':'"                  FAIL "crates/demo/src/m2.rs;99999"
+one_row "',' instead of ':'"                  FAIL "crates/demo/src/m2.rs,99999"
+one_row "'(' instead of ':'"                  FAIL "crates/demo/src/m2.rs(99999)"
+one_row "anchor after a valid cite"           FAIL "crates/demo/src/m1.rs:1, crates/demo/src/m2.rs#l99999"
+one_row "bare name, lower-case spec"          FAIL "crates/demo/src/m1.rs:1 Makefile:l5"
+one_row "bare name, bare # spec"              FAIL "crates/demo/src/m1.rs:1 Makefile#5"
+one_row "text after the closing note"         FAIL "crates/demo/src/m1.rs:1 (a) crates/demo/src/m2.rs:99999"
+one_row "unclosed note"                       FAIL "crates/demo/src/m1.rs:1 (see"
+one_row "bad cite inside a note"              FAIL "crates/demo/src/m1.rs:1 (see crates/demo/src/m2.rs#l99999)"
+one_row "out-of-range cite inside a note"     FAIL "crates/demo/src/m1.rs:1 (see crates/demo/src/m2.rs:99999)"
+one_row "line 0"                              FAIL "crates/demo/src/m1.rs:0"
+one_row "'./' path"                           FAIL "./crates/demo/src/m2.rs:1"
+one_row "'//' path"                           FAIL "crates/demo//src/m2.rs:1"
+one_row "'../' path"                          FAIL "crates/demo/src/../src/m2.rs:1"
+one_row "absolute path"                       FAIL "/etc/hosts.sh:1"
+one_row "control: cite ending a note sentence" PASS "crates/demo/src/m1.rs:1 (see crates/demo/src/m2.rs:1.)"
+one_row "control: note with prose numbers"    PASS "crates/demo/src/m1.rs:1,2-3 (stream:true 1372,1471; framing :397-437, #7370)"
+
+d="$SCRATCH/row-no-cite"; mk_root "$d"
+ledger_with "$d" $'demo,feat1,crates/demo/src/m1.rs:1,high\ndemo,feat2,TBD,high'
+expect "a row with no cite beside a good row" FAIL "$d"
+d="$SCRATCH/short-row"; mk_root "$d"
+ledger_with "$d" $'demo,feat1,crates/demo/src/m1.rs:1,high\ndemo,feat2,crates/demo/src/m1.rs:1'
+expect "a row with fewer fields than the header" FAIL "$d"
+d="$SCRATCH/open-quote"; mk_root "$d"
+ledger_with "$d" 'demo,feat1,"crates/demo/src/m1.rs:1,high'
+expect "an unterminated quote" FAIL "$d"
+
+echo "G2.1 material: unreadable or empty evidence fails closed"
+# material_rc NAME BODY: material_cited_changes on a ledger BODY must return nonzero.
+material_rc() {
+  SEQ=$((SEQ + 1))
+  local d="$SCRATCH/mrc$SEQ"
+  mk_root "$d"; ledger_with "$d" "$2"; : > "$d.list"
+  if material_cited_changes "$d" HEAD "$d.list" >/dev/null 2>&1; then
+    printf '  RED   %s (want nonzero, got 0)\n' "$1"; FAILS=$((FAILS + 1))
+  else
+    printf '  ok    %s\n' "$1"
+  fi
+}
+material_rc "line 0 is not a cap of 0"       "demo,feat,crates/demo/src/m3.rs:0,high"
+material_rc "range 0-2"                      "demo,feat,crates/demo/src/m3.rs:0-2,high"
+material_rc "';' tail"                       'demo,feat,"crates/demo/src/m3.rs:1;2",high'
+material_rc "row with no cite"               "demo,feat,TBD,high"
+material_rc "header-only ledger"             ""
+
+echo "G2.1 freshness: EVERY cited file is evidence, not only the leading one"
+d="$SCRATCH/evfiles"; mk_root "$d"
+ledger_with "$d" 'demo,feat,"crates/demo/src/m1.rs:1, crates/demo/src/m3.rs:1-2 (see crates/demo/src/m2.rs:1)",high'
+ev_out="$(evidence_files "$d" 2>&1)"
+ev_want=$'#UNRESOLVED\t0\t1\ncrates/demo/src/m1.rs\ncrates/demo/src/m2.rs\ncrates/demo/src/m3.rs'
+if [ "$ev_out" = "$ev_want" ]; then
+  printf '  ok    secondary and note cites are listed\n'
+else
+  printf '  RED   evidence_files listed: %s\n' "$(printf '%s' "$ev_out" | tr '\n' ' ')"; FAILS=$((FAILS + 1))
+fi
+
+echo "gate shape: one parser, no inline Python, and CI reaches this file"
+# check NAME CMD...: CMD must succeed.
+check() {
+  local name="$1"; shift
+  if "$@" >/dev/null 2>&1; then printf '  ok    %s\n' "$name"
+  else printf '  RED   %s\n' "$name"; FAILS=$((FAILS + 1)); fi
+}
+no_inline_python() { ! grep -qE 'python3[[:space:]]+(-[[:space:]]|-c|.*<<)' "$GATE"; }
+check "the gate has no inline Python" no_inline_python
+check "the shared cite parser exists" test -f "$CITES_AWK"
+# guard_tree.sh runs a guard's --self-test only when its --help says "self-test".
+help_advertises() {
+  local out
+  out="$(timeout 10 bash "$GATE" --help 2>&1)" || return 1
+  grep -q -- '--self-test' <<<"$out" && ! grep -q 'DOGFOOD COVERAGE GATE' <<<"$out"
+}
+check "--help advertises --self-test and does not run the gate" help_advertises
+check "--self-test runs this file" grep -q 'scripts/tests/surface_audit_cites_test.sh' "$GATE"
 
 echo
 if [ "$FAILS" -eq 0 ]; then
