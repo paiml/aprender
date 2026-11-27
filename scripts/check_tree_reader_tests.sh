@@ -163,6 +163,25 @@ module_of() { # module_of <root> <crate> <file> [depth] -> the module path; rc 1
     return 1
 }
 
+# test_root_reads FILE [DEPTH] -- rc 0 when FILE, or a file it pulls in through
+# include!("…rs"), #[path = "…rs"] or `mod NAME;`, matches the oracle (#5028:
+# mutation_testing_tests is two include!() lines; the reads are in tests/includes/).
+# `mod NAME;` resolves beside the file (NAME.rs or NAME/mod.rs). Comment lines
+# declare nothing. Depth-capped; an unresolvable name is skipped.
+test_root_reads() {
+    local f=$1 depth=${2:-0} d code ref
+    grep -qE -- "$ORACLE" "$f" && return 0
+    [ "$depth" -lt 4 ] || return 1
+    d=${f%/*}
+    code=$(grep -vE '^[[:space:]]*(//|/\*|\*)' "$f" || true)
+    while IFS= read -r ref; do
+        [ -n "$ref" ] && [ -f "$d/$ref" ] && test_root_reads "$d/$ref" "$((depth + 1))" && return 0
+    done <<< "$( { grep -E 'include!\(|#\[path[[:space:]]*=' <<< "$code" | grep -oE '"[^"]+\.rs"' | tr -d '"'
+        grep -oE '^[[:space:]]*(pub(\([a-z]+\))?[[:space:]]+)?mod[[:space:]]+[A-Za-z0-9_]+[[:space:]]*;' <<< "$code" \
+            | sed -E 's/.*mod[[:space:]]+([A-Za-z0-9_]+)[[:space:]]*;/\1.rs\n\1\/mod.rs/'; } || true)"
+    return 1
+}
+
 derive() { # derive <repo root> -> sorted rows: crate\t--test\tname | crate\t--lib[\tmodule] | crate\t--bins
     local root=$1 f c t m
     INDEX_DIR=$(mktemp -d "${TMPDIR:-/tmp}/tree-reader-idx.XXXXXX")
@@ -178,7 +197,12 @@ derive() { # derive <repo root> -> sorted rows: crate\t--test\tname | crate\t--l
             # parameter expansion, not 4 forks per file: crates/<c>/tests/<t>.rs -> c, t
             c=${f%/*}; c=${c%/*}; c=${c##*/}; t=${f##*/}; t=${t%.rs}
             printf '%s\t--test\t%s\n' "$c" "$t"
-        done < <(grep -lZE -- "$ORACLE" "$root"/crates/*/tests/*.rs 2>/dev/null)
+        done < <(
+            grep -lZE -- "$ORACLE" "$root"/crates/*/tests/*.rs 2>/dev/null
+            # #5028: roots that match nothing themselves but pull a file in.
+            grep -LE -- "$ORACLE" "$root"/crates/*/tests/*.rs 2>/dev/null \
+                | xargs -r -d "\n" grep -lE 'include!\(|#\[path[[:space:]]*=|mod[[:space:]]+[A-Za-z0-9_]+[[:space:]]*;' \
+                | while IFS= read -r f; do if test_root_reads "$f"; then printf '%s\0' "$f"; fi; done)
         while IFS= read -r -d '' f; do
             c=${f#"$root"/crates/}; c=${c%%/*}
             # `--lib` on a crate with NO library target is a hard error, never a
@@ -382,6 +406,19 @@ self_test() {
         printf 'ok    row %-2s        a bin-only crate (cfg(test) reader, no src/lib.rs) is --bins, never --lib\n' "$n"
     else
         printf 'FAIL  row %-2s        bin-only crate mis-targeted: %s\n' "$n" "$(bash "$T" --derive "$td" 2>/dev/null | grep '^delta' | tr '\n' ';')"; red=1
+    fi
+    # theta (#5028): the root names nothing itself; its include!() and `mod` files do.
+    mkdir -p "$td/crates/theta/tests/includes" "$td/crates/theta/tests/common"
+    printf 'include!("includes/part.rs");\n' > "$td/crates/theta/tests/via_include.rs"
+    printf 'include!("deeper.rs");\n' > "$td/crates/theta/tests/includes/part.rs"
+    printf '#[test] fn t() { let _ = std::fs::read_to_string("scripts/t.sh"); }\n' > "$td/crates/theta/tests/includes/deeper.rs"
+    printf 'mod common;\n' > "$td/crates/theta/tests/via_mod.rs"
+    printf 'pub fn root() -> &str { env!("CARGO_MANIFEST_DIR") }\n' > "$td/crates/theta/tests/common/mod.rs"
+    n=$((n + 1)); out=$(bash "$T" --derive "$td" 2>/dev/null) || true
+    if grep -q '^theta	--test	via_include$' <<< "$out" && grep -q '^theta	--test	via_mod$' <<< "$out"; then
+        printf 'ok    row %-2s        a target reading the tree only through include!() (2 hops) or `mod common;` is derived (#5028)\n' "$n"
+    else
+        printf 'FAIL  row %-2s        include!()/mod reader dropped out of the derived set (#5028)\n' "$n"; red=1
     fi
     # eta (#4175): a target that reaches the tree ONLY through the shared macro,
     # with a relative path no other oracle pattern names. Moving a caller onto the

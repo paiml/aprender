@@ -145,6 +145,7 @@ aprender-contracts-cli	--test	pvl_zero_contracts
 aprender-contracts-cli	--test	repo_tree_pv
 aprender-contracts-cli	--test	shapes_vacuity
 aprender-contracts-cli	--test	sim3d_spec
+aprender-contrastive-data	--test	pair_counts
 aprender-core	--lib	format::metadata_bounds_contract_falsify
 aprender-core	--lib	format::model_family_loader
 aprender-core	--lib	format::ship_001
@@ -169,8 +170,12 @@ aprender-core	--test	beat_sklearn_nmi
 aprender-core	--test	beat_sklearn_pipeline_encoder
 aprender-core	--test	beat_sklearn_svc_accuracy
 aprender-core	--test	book_contracts
+aprender-core	--test	contract_tests
+aprender-core	--test	falsification_model_oracle_tests
 aprender-core	--test	falsification_spec_v10_tests
+aprender-core	--test	format_parity_tests
 aprender-core	--test	monorepo_invariants
+aprender-core	--test	mutation_testing_tests
 aprender-core	--test	readme_contract
 aprender-core	--test	setfit_conformance
 aprender-decide	--lib	<root>
@@ -179,6 +184,7 @@ aprender-decide	--test	demo_run
 aprender-decide	--test	fail_closed_vectors
 aprender-decide	--test	laya_parity
 aprender-decide	--test	pack_laya_smoke
+aprender-decide	--test	python_records
 aprender-distribute	--lib	executor::tls
 aprender-orchestrate	--lib	agent::contracts
 aprender-orchestrate	--lib	agent::driver::chat_template
