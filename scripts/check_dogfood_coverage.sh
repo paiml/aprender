@@ -205,8 +205,8 @@ with open(sys.argv[1], newline="", encoding="utf-8") as fh:
     for r in csv.DictReader(fh):
         p = (r.get("evidence_path") or "").strip()
         found, malformed = parse_cites(p)
-        # a malformed or empty cite fails closed; check_cites reports the same row
-        if malformed or not p:
+        # a malformed, empty or overflowing cite fails closed; check_cites reports the same row
+        if malformed or not p or None in r:
             bad.append(p or "<empty>")
             continue
         nums = [int(x) for x in re.findall(r"\d+", re.sub(PATH, " ", p))]
@@ -445,6 +445,11 @@ def length(path):
     return lengths[path]
 with open(ledger, newline="", encoding="utf-8") as fh:
     for n, r in enumerate(csv.DictReader(fh), 2):
+        # csv puts fields past the header under None: an unquoted comma inside a
+        # cite would shift the rest of the row into the next column. Fail closed.
+        if None in r:
+            problems.append(f"line {n}: more fields than the header (quote a field that holds commas)")
+            continue
         p = (r.get("evidence_path") or "").strip()
         if not p:
             problems.append(f"line {n}: empty evidence_path (a row with no cite is not evidence)")
