@@ -42,20 +42,17 @@ DEFECT_DIAGNOSTIC="literal out of range"
 
 SELF_TEST_DIR=""
 CHECK_LOG=""
-PLANT_BACKUP=""
-PLANT_TARGET=""
+PLANT_DIR=""
 
 cleanup() {
-    # Restore the planted file first: a leftover plant would turn the tree red for every later run.
-    if [ -n "${PLANT_BACKUP}" ] && [ -f "${PLANT_BACKUP}" ] && [ -n "${PLANT_TARGET}" ]; then
-        cp -p "${PLANT_BACKUP}" "${PLANT_TARGET}" || true
-        rm -f "${PLANT_BACKUP}"
-    fi
     if [ -n "${SELF_TEST_DIR}" ] && [ -d "${SELF_TEST_DIR}" ]; then
-        rm -rf "${SELF_TEST_DIR}"
+        rm -rf "${SELF_TEST_DIR:?}"
+    fi
+    if [ -n "${PLANT_DIR}" ] && [ -d "${PLANT_DIR}" ]; then
+        rm -rf "${PLANT_DIR:?}"
     fi
     if [ -n "${CHECK_LOG}" ] && [ -f "${CHECK_LOG}" ]; then
-        rm -f "${CHECK_LOG}"
+        rm -f "${CHECK_LOG:?}"
     fi
 }
 trap cleanup EXIT
@@ -76,20 +73,18 @@ ensure_target() {
         return 0
     fi
     echo "note: ${TARGET} not installed; adding it."
-    if ! rustup target add "${TARGET}" > /dev/null 2>&1; then
+    if ! rustup target add "${TARGET}" >&2; then
         echo "FAIL: could not install the ${TARGET} std component." >&2
         return 1
     fi
     return 0
 }
 
-# Same RUSTFLAGS handling as check_wasm32_core_builds.sh: appended once, never clobbering the
-# CI image's own flags, and never appended twice (that would rebuild every shared crate).
+# One fixed set of flags: inherited host flags (target-cpu, linker args) do not apply to wasm32 and
+# would move the recorded sizes. The remaps keep checkout and cargo-home path lengths out of them.
 set_wasm_rustflags() {
-    case "${RUSTFLAGS:-}" in
-        *getrandom_backend*) ;;
-        *) export RUSTFLAGS="${RUSTFLAGS:-} --cfg getrandom_backend=\"custom\"" ;;
-    esac
+    unset CARGO_ENCODED_RUSTFLAGS
+    export RUSTFLAGS="--cfg getrandom_backend=\"custom\" --remap-path-prefix=${REPO_ROOT}=/src --remap-path-prefix=${CARGO_HOME:-${HOME}/.cargo}=/cargo"
 }
 
 # Prove the toolchain still rejects the #2310 defect on this target.
@@ -122,27 +117,27 @@ literal_self_test() {
 # Plant `use std::os::unix::fs::PermissionsExt;` into a present crate and require the wasm32
 # check to FAIL for that reason. std::os::unix does not exist on wasm32-unknown-unknown, so
 # a green result here would mean the guard can no longer see a host-only import.
+# The plant goes into a COPY of the tracked files: the checkout is never edited, so a killed
+# run cannot leave the defect behind.
 plant_self_test() {
-    local rc log_ok
-    PLANT_TARGET="${REPO_ROOT}/${PLANT_REL}"
-    PLANT_BACKUP="$(mktemp)"
-    cp -p "${PLANT_TARGET}" "${PLANT_BACKUP}"
+    local rc
+    PLANT_DIR="$(mktemp -d)"
+    git ls-files -z | tar --null -T - -cf - | tar -xf - -C "${PLANT_DIR}"
+    if [ ! -f "${PLANT_DIR}/${PLANT_REL}" ]; then
+        echo "SELF-TEST FAIL: ${PLANT_REL} is not in the copied tree." >&2
+        return 1
+    fi
     CHECK_LOG="$(mktemp)"
 
     printf '\n// wasm32 self-test plant: must break the build.\nuse std::os::unix::fs::PermissionsExt;\n' \
-        >> "${PLANT_TARGET}"
+        >> "${PLANT_DIR}/${PLANT_REL}"
 
     set_wasm_rustflags
     set +e
-    cargo check -j 8 --locked -p aprender-present-core --target "${TARGET}" > "${CHECK_LOG}" 2>&1
+    (cd "${PLANT_DIR}" && CARGO_TARGET_DIR="${PLANT_DIR}/target" \
+        cargo check -j 8 --locked -p aprender-present-core --target "${TARGET}") > "${CHECK_LOG}" 2>&1
     rc=$?
     set -e
-
-    # Restore before reporting, so the tree is clean whatever the verdict below.
-    cp -p "${PLANT_BACKUP}" "${PLANT_TARGET}"
-    rm -f "${PLANT_BACKUP}"
-    PLANT_BACKUP=""
-    PLANT_TARGET=""
 
     if [ "${rc}" -eq 0 ]; then
         echo "SELF-TEST FAIL: a planted std::os::unix import COMPILED for ${TARGET}." >&2
@@ -153,14 +148,13 @@ plant_self_test() {
         report_cargo_env_failure "${CHECK_LOG}" "the planted-import self-test" >&2
         return 1
     fi
-    log_ok=0
-    grep -qE 'E0432|std::os::unix|`unix` in `os`' "${CHECK_LOG}" && log_ok=1
-    if [ "${log_ok}" -ne 1 ]; then
+    # The compiler quotes the offending source line, so the planted path must be in the log.
+    if ! grep -qE 'E0432|E0433' "${CHECK_LOG}" || ! grep -q 'std::os::unix::fs::PermissionsExt' "${CHECK_LOG}"; then
         echo "SELF-TEST FAIL: the build failed, but not on the planted std::os::unix import." >&2
         grep -E '^error' -A 4 "${CHECK_LOG}" >&2 || cat "${CHECK_LOG}" >&2
         return 1
     fi
-    echo "SELF-TEST PASS: a planted std::os::unix import breaks the ${TARGET} build (E0432)."
+    echo "SELF-TEST PASS: a planted std::os::unix import breaks the ${TARGET} build."
     return 0
 }
 
@@ -195,6 +189,10 @@ build_pkg() {
 }
 
 build_all() {
+    # A .wasm left by an earlier build must not stand in for one this build no longer emits.
+    local tdir
+    tdir="$(target_directory)"
+    rm -f "${tdir:?}/${TARGET:?}/release/aprender_present_lib.wasm" "${tdir:?}/${TARGET:?}/release/trueno_viz.wasm"
     build_pkg aprender-viz --features geo || return 1
     build_pkg aprender-present-core || return 1
     build_pkg aprender-present-layout || return 1
@@ -208,7 +206,10 @@ build_all() {
 # can both move it, so it is asked of cargo rather than guessed.
 target_directory() {
     local meta
-    meta="$(cargo metadata --format-version 1 --no-deps 2> /dev/null)" || return 1
+    if ! meta="$(cargo metadata --format-version 1 --no-deps)"; then
+        echo "FAIL: cargo metadata failed; the target directory is unknown." >&2
+        return 1
+    fi
     grep -o '"target_directory":"[^"]*"' <<< "${meta}" | head -n 1 | cut -d'"' -f4
 }
 
@@ -228,9 +229,45 @@ render_sizes() {
             echo "FAIL: expected artifact missing: ${path}" >&2
             return 1
         fi
-        size="$(gzip -9n -c "${path}" | wc -c)"
+        if ! size="$(gzip -9n -c "${path}" | wc -c)"; then
+            echo "FAIL: gzip failed on ${path}" >&2
+            return 1
+        fi
         echo "${artifact} ${size// /}"
     done
+    return 0
+}
+
+# Compare measured sizes with the committed file. Usage: compare_sizes <committed> <fresh>
+compare_sizes() {
+    if [ ! -f "$1" ]; then
+        echo "FAIL: ${SIZE_FILE_REL} is missing. Create it with: bash scripts/check_wasm32_viz_builds.sh --write" >&2
+        echo "Measured:" >&2
+        cat "$2" >&2
+        return 1
+    fi
+    if ! cmp -s "$2" "$1"; then
+        echo "FAIL: ${SIZE_FILE_REL} is STALE. Measured:" >&2
+        cat "$2" >&2
+        echo "If the size change is intended: bash scripts/check_wasm32_viz_builds.sh --write" >&2
+        return 1
+    fi
+    return 0
+}
+
+# Missing and stale must fail, equal must pass.
+compare_self_test() {
+    SELF_TEST_DIR="${SELF_TEST_DIR:-$(mktemp -d)}"
+    echo "a.wasm 10" > "${SELF_TEST_DIR}/fresh"
+    echo "a.wasm 11" > "${SELF_TEST_DIR}/stale"
+    cp "${SELF_TEST_DIR}/fresh" "${SELF_TEST_DIR}/equal"
+    if compare_sizes "${SELF_TEST_DIR}/absent" "${SELF_TEST_DIR}/fresh" 2> /dev/null \
+        || compare_sizes "${SELF_TEST_DIR}/stale" "${SELF_TEST_DIR}/fresh" 2> /dev/null \
+        || ! compare_sizes "${SELF_TEST_DIR}/equal" "${SELF_TEST_DIR}/fresh"; then
+        echo "SELF-TEST FAIL: the size comparator does not separate missing/stale/equal." >&2
+        return 1
+    fi
+    echo "SELF-TEST PASS: missing and stale size files fail, an equal one passes."
     return 0
 }
 
@@ -243,41 +280,27 @@ usage() {
 
 case "${1:-}" in
     --self-test)
-        cargo_classify_selftest || exit 1
-        ensure_target || exit 1
-        literal_self_test || exit 1
-        plant_self_test || exit 1
+        cargo_classify_selftest
+        ensure_target
+        literal_self_test
+        compare_self_test
+        plant_self_test
         ;;
     --write | "")
-        cargo_classify_selftest --quiet || exit 1
-        ensure_target || exit 1
-        literal_self_test || exit 1
-        build_all || exit 1
-        fresh="$(mktemp)"
-        if ! render_sizes > "${fresh}"; then
-            rm -f "${fresh}"
-            exit 1
-        fi
+        cargo_classify_selftest --quiet
+        ensure_target
+        literal_self_test
+        build_all
+        SELF_TEST_DIR="${SELF_TEST_DIR:-$(mktemp -d)}"
+        fresh="${SELF_TEST_DIR}/sizes"
+        render_sizes > "${fresh}"
         if [ "${1:-}" = "--write" ]; then
             cp "${fresh}" "${REPO_ROOT}/${SIZE_FILE_REL}"
-            rm -f "${fresh}"
             echo "WROTE: ${SIZE_FILE_REL}"
             cat "${REPO_ROOT}/${SIZE_FILE_REL}"
             exit 0
         fi
-        if [ ! -f "${REPO_ROOT}/${SIZE_FILE_REL}" ]; then
-            echo "FAIL: ${SIZE_FILE_REL} is missing. Create it with: bash scripts/check_wasm32_viz_builds.sh --write" >&2
-            rm -f "${fresh}"
-            exit 1
-        fi
-        if ! cmp -s "${fresh}" "${REPO_ROOT}/${SIZE_FILE_REL}"; then
-            echo "FAIL: ${SIZE_FILE_REL} is STALE. Measured:" >&2
-            cat "${fresh}" >&2
-            echo "If the size change is intended: bash scripts/check_wasm32_viz_builds.sh --write" >&2
-            rm -f "${fresh}"
-            exit 1
-        fi
-        rm -f "${fresh}"
+        compare_sizes "${REPO_ROOT}/${SIZE_FILE_REL}" "${fresh}"
         echo "PASS: wasm32 viz/present/db builds, and every .wasm size matches ${SIZE_FILE_REL}."
         ;;
     -h | --help)
