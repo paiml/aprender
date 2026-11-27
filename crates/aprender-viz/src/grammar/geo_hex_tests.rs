@@ -101,7 +101,11 @@ fn hex_framebuffer_paints_each_value_colour_inside_the_plot_area() {
 
 #[test]
 fn hex_fit_keeps_the_hexagon_aspect_ratio() {
-    let svg = hex_svg(fixture_cells());
+    // One row of three cells on the square panel: the bounding box is about 52 x 20, so a fit that
+    // scaled x and y independently would stretch the hexagons to about 0.33 instead of sqrt3 / 2.
+    let row =
+        vec![(Cell { q: 0, r: 0 }, 0.0), (Cell { q: 1, r: 0 }, 5.0), (Cell { q: 2, r: 0 }, 10.0)];
+    let svg = hex_svg(row);
     let start = svg.find(" d=\"").expect("a path") + 4;
     let d = &svg[start..start + svg[start..].find('"').expect("quoted d")];
     let nums: Vec<f64> = d
@@ -117,7 +121,7 @@ fn hex_fit_keeps_the_hexagon_aspect_ratio() {
     };
     // A pointy-top hexagon is sqrt3 * R wide and 2 * R tall.
     let ratio = span(&xs) / span(&ys);
-    assert!((ratio - 3f64.sqrt() / 2.0).abs() < 0.01, "width/height {ratio}");
+    assert!((ratio - 3f64.sqrt() / 2.0).abs() < 1e-3, "width/height {ratio}");
 }
 
 #[test]
@@ -125,7 +129,12 @@ fn all_equal_values_give_one_documented_colour_and_no_panic() {
     let cells = vec![(Cell { q: 0, r: 0 }, 2.0), (Cell { q: 1, r: 0 }, 2.0)];
     let fills = path_fills(&hex_svg(cells));
     assert_eq!(fills.len(), 2);
-    assert_eq!(fills[0], fills[1], "equal values share the midpoint colour");
+    // Documented: with no range, every hexagon takes the midpoint of the viridis scale, that is
+    // its colour at t = 0.5. That colour is #21918c, which is (33, 145, 140).
+    let mid = ColorScale::viridis((0.0, 1.0)).expect("valid domain").scale(0.5);
+    assert_eq!((mid.r, mid.g, mid.b), (33, 145, 140), "viridis midpoint is #21918c");
+    let want = "rgb(33,145,140)".to_string();
+    assert_eq!(fills, vec![want.clone(), want], "every hexagon takes the midpoint colour");
 }
 
 #[test]
@@ -216,4 +225,96 @@ fn hex_map_orients_like_polygon_map() {
         mean_y(&hex_ds[top]) < mean_y(&hex_ds[bottom]),
         "hex map: the highest-plane cell must be drawn above the lowest, as in the polygon map"
     );
+}
+
+/// Builds the plot and asserts that rendering refuses it, returning the error.
+fn refused(plot: GGPlot) -> Error {
+    plot.build().expect("builds").to_svg().expect_err("refused")
+}
+
+/// The fixture hex layer, as a layer of `plot`.
+fn with_hex(plot: GGPlot) -> GGPlot {
+    let layout = HexLayout::new((0.0, 0.0), 10.0).expect("valid layout");
+    plot.geom(Geom::hex(layout, fixture_cells()))
+}
+
+#[test]
+fn flipped_cartesian_coord_is_refused() {
+    let coord = Coord::Cartesian { xlim: None, ylim: None, flip: true };
+    let err = refused(with_hex(GGPlot::new().coord(coord).dimensions(180, 180)));
+    assert!(matches!(err, Error::UnsupportedLayer(_)), "flip: got {err:?}");
+}
+
+#[test]
+fn cartesian_axis_limits_are_refused() {
+    // Limits are not applied to hexagons, so drawing them would silently ignore the request.
+    for coord in [
+        Coord::Cartesian { xlim: Some((0.0, 5.0)), ylim: None, flip: false },
+        Coord::Cartesian { xlim: None, ylim: Some((0.0, 5.0)), flip: false },
+    ] {
+        let err = refused(with_hex(GGPlot::new().coord(coord.clone()).dimensions(180, 180)));
+        assert!(matches!(err, Error::UnsupportedLayer(_)), "{coord:?}: got {err:?}");
+    }
+}
+
+#[test]
+fn non_cartesian_coords_are_refused() {
+    let coords = [
+        Coord::geo(Identity),
+        Coord::Polar { start: 0.0, direction: 1 },
+        Coord::Fixed { ratio: 1.0 },
+    ];
+    for coord in coords {
+        let err = refused(with_hex(GGPlot::new().coord(coord).dimensions(180, 180)));
+        assert!(matches!(err, Error::UnsupportedLayer(_)), "got {err:?}");
+    }
+}
+
+#[test]
+fn faceted_hex_plot_is_refused() {
+    let facet = crate::grammar::Facet::wrap("lineage", 2);
+    let err = refused(with_hex(GGPlot::new().facet(facet).dimensions(180, 180)));
+    assert!(matches!(err, Error::UnsupportedLayer(_)), "got {err:?}");
+}
+
+#[test]
+fn hex_beside_another_layer_is_refused_in_either_order() {
+    let tri = vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0)];
+    let poly = || Geom::polygon(vec![vec![tri.clone()]]);
+    let layout = HexLayout::new((0.0, 0.0), 10.0).expect("valid layout");
+    let hex = || Geom::hex(layout, fixture_cells());
+    let hex_first = GGPlot::new().geom(hex()).geom(poly()).dimensions(180, 180);
+    let poly_first = GGPlot::new().geom(poly()).geom(hex()).dimensions(180, 180);
+    for plot in [hex_first, poly_first] {
+        let err = refused(plot);
+        assert!(matches!(err, Error::UnsupportedLayer(_)), "got {err:?}");
+    }
+}
+
+#[test]
+fn two_hex_layers_are_refused() {
+    let layout = HexLayout::new((0.0, 0.0), 10.0).expect("valid layout");
+    let plot = GGPlot::new()
+        .geom(Geom::hex(layout, fixture_cells()))
+        .geom(Geom::hex(layout, fixture_cells()))
+        .dimensions(180, 180);
+    let err = refused(plot);
+    assert!(matches!(err, Error::UnsupportedLayer(_)), "got {err:?}");
+}
+
+#[test]
+fn values_beyond_the_f32_range_are_refused() {
+    for big in [1e39, -1e39] {
+        let cells = vec![(Cell { q: 0, r: 0 }, 0.0), (Cell { q: 1, r: 0 }, big)];
+        let err = refused(hex_plot(cells));
+        assert!(matches!(err, Error::ScaleDomain(_)), "{big}: got {err:?}");
+    }
+}
+
+#[test]
+fn values_too_close_to_colour_apart_are_refused() {
+    // Distinct as f64, equal as f32: the scale cannot tell them apart.
+    let cells = vec![(Cell { q: 0, r: 0 }, 1.0), (Cell { q: 1, r: 0 }, 1.0 + 1e-12)];
+    let err = refused(hex_plot(cells));
+    assert!(matches!(err, Error::ScaleDomain(_)), "got {err:?}");
 }

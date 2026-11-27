@@ -98,8 +98,8 @@ pub(super) fn map_shapes(
 ///
 /// # Errors
 ///
-/// [`Error::UnsupportedLayer`] for a hex layer beside another layer, a facet, or any coord but
-/// the plain Cartesian one; the errors of [`hex_colours`] for the cells.
+/// [`Error::UnsupportedLayer`] for anything but exactly one `geom_hex` layer, a facet, a flipped
+/// or axis-limited Cartesian coord, or any other coord; the errors of [`hex_colours`] for the cells.
 #[cfg(feature = "geo")]
 fn hex_shapes(
     layers: &[Layer],
@@ -110,21 +110,24 @@ fn hex_shapes(
 ) -> Result<Vec<Shape>> {
     use crate::geo::plot::{fit_to_area, Features};
 
-    if !matches!(coord, Coord::Cartesian { flip: false, .. }) {
-        return Err(Error::UnsupportedLayer("geom_hex draws on the plain Cartesian coord only"));
+    if !matches!(coord, Coord::Cartesian { xlim: None, ylim: None, flip: false }) {
+        return Err(Error::UnsupportedLayer(
+            "geom_hex draws on the plain Cartesian coord, with no flip or axis limits",
+        ));
     }
     if !matches!(facet, Facet::None) {
         return Err(Error::UnsupportedLayer("geom_hex with facets"));
     }
-    let mut plane: Features = Vec::new();
-    let mut colours: Vec<Rgba> = Vec::new();
-    for layer in layers {
-        let GeomType::Hex { layout, cells } = &layer.geom.geom_type else {
-            return Err(Error::UnsupportedLayer("geom_hex draws alone, with no other layer"));
-        };
-        colours.extend(hex_colours(cells)?);
-        plane.extend(cells.iter().map(|&(cell, _)| vec![hex_plane_ring(layout, cell)]));
-    }
+    let alone = || Error::UnsupportedLayer("geom_hex draws alone: one geom_hex layer, no other");
+    let [layer] = layers else {
+        return Err(alone());
+    };
+    let GeomType::Hex { layout, cells } = &layer.geom.geom_type else {
+        return Err(alone());
+    };
+    let colours = hex_colours(cells)?;
+    let plane: Features =
+        cells.iter().map(|&(cell, _)| vec![hex_plane_ring(layout, cell)]).collect();
     let fitted = fit_to_area(&plane, plot_area(size, margin));
     Ok(fitted.into_iter().zip(colours).collect())
 }
