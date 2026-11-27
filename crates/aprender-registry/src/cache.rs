@@ -450,6 +450,12 @@ impl CacheManager {
             let _ = self.cleanup_to_target();
         }
 
+        self.insert(entry);
+    }
+
+    /// Add an entry and evict nothing. The model store uses this: eviction drops names
+    /// from the manifest but leaves their files on disk (aprender#7481).
+    pub(crate) fn insert(&mut self, entry: CacheEntry) {
         self.entries.insert(entry.key(), entry);
     }
 

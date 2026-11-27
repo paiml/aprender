@@ -210,7 +210,7 @@ impl ModelFetcher {
                 for entry in entries {
                     // Verify file still exists before adding to cache
                     if entry.path.exists() {
-                        cache.add(entry);
+                        cache.insert(entry);
                     }
                 }
             }
@@ -241,7 +241,9 @@ impl ModelFetcher {
             ))
         })?;
 
-        let cache = CacheManager::new(config.cache.clone()).with_policy(config.eviction_policy);
+        // aprender#7481: without this, every save overwrote the manifest with only its own entry.
+        let mut cache = CacheManager::new(config.cache.clone()).with_policy(config.eviction_policy);
+        Self::load_manifest(&cache_dir, &mut cache);
 
         let resolver = ModelResolver::new_default().ok();
 
@@ -405,10 +407,40 @@ impl ModelFetcher {
             if entry.path.exists() {
                 std::fs::remove_file(&entry.path).ok();
             }
-            Ok(true)
-        } else {
-            Ok(false)
+            return Ok(true);
         }
+        // aprender#7481: a download recorded under its repo name (`org/repo`) is removed by that name.
+        let name = model_ref.trim_start_matches("hf://");
+        let versions: Vec<String> = self
+            .cache
+            .list()
+            .into_iter()
+            .filter(|e| e.name == name)
+            .map(|e| e.version.clone())
+            .collect();
+        for version in &versions {
+            if let Some(entry) = self.cache.remove(name, version) {
+                if entry.path.exists() {
+                    std::fs::remove_file(&entry.path).ok();
+                }
+            }
+        }
+        if !versions.is_empty() {
+            self.save_manifest();
+        }
+        Ok(!versions.is_empty())
+    }
+
+    /// Record a model file already on disk under `name` (aprender#7481: `org/repo` for an
+    /// hf download), so `list` shows it by that name and `remove(name)` deletes it.
+    pub fn record_model(&mut self, name: &str, path: &Path) -> Result<()> {
+        let size_bytes = std::fs::metadata(path)?.len();
+        let hash = String::new();
+        // One entry per file: two files of one repo must not replace each other.
+        let version = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy().into_owned();
+        self.cache.insert(CacheEntry::new(name, &version, size_bytes, hash, path.to_path_buf()));
+        self.save_manifest();
+        Ok(())
     }
 
     /// List all cached models
