@@ -122,7 +122,7 @@ falsification_tests:
   prediction: >-
     the README library snippet compiles as a doctest; a planted wrong module
     path in the snippet turns the doctest RED.
-  test: 'cargo test --doc -p aprender-core README'
+  test: 'cargo test -p aprender-core --test readme_contract readme_library_usage_snippet_compiles'
   if_fails: step U-10 fails - the README snippet does not match the binary.
   mutation: >-
     plant a wrong module path in the snippet; the doctest must turn RED.
