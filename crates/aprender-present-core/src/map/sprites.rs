@@ -46,8 +46,8 @@ pub fn side_for_bucket(bucket: u32) -> Result<u32, MapError> {
     }
     let k = bucket / 4;
     let q = (bucket % 4) as usize;
-    // 2 * 2^(q/4) * 2^k, in thousandths, then rounded half-up to whole pixels. At the largest
-    // bucket this is 862, so the u64 product and the u32 result cannot overflow.
+    // 2 * 2^(q/4) * 2^k, in thousandths, then rounded half-up to whole pixels. The largest side
+    // is 512, at the largest bucket, so the u64 product and the u32 result cannot overflow.
     let milli = 2 * QUARTER_OCTAVE_MILLI[q] * (1u64 << k);
     Ok(((milli + 500) / 1000) as u32)
 }
