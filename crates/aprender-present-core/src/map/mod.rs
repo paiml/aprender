@@ -9,17 +9,24 @@ use std::fmt;
 
 pub mod camera;
 pub mod cull;
+pub mod hex;
+pub mod interact;
 pub mod layers;
 pub mod lod;
+pub mod pick;
+pub mod search;
 pub mod sprites;
 pub mod urlstate;
 
 pub use camera::{Camera2D, FlyTo, ZoomAnim};
 pub use cull::{visible_indices, Bounds};
+pub use hex::HexGrid;
+pub use interact::Interaction;
 pub use layers::{
     EntityId, Event, Layers, LensId, Outcome, OverlayChange, Renders, CACHE_MARGIN_PX,
 };
 pub use lod::{tier_for_radius, LodTier, BOUNDARIES_PX};
+pub use search::SearchIndex;
 pub use sprites::{generate_sprite, side_for_bucket, size_bucket, Sprite, SpriteAtlas};
 
 /// Largest magnitude accepted for any coordinate, pixel offset or viewport size. With the scale
