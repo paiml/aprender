@@ -1,0 +1,410 @@
+{
+  "ticket": "PMAT-7508",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "0980586843db61e5dc1c1b85cb5989787051bed4",
+  "diff_sha256": "d7635d9978188c2b469feebaba16a30af58d83afd59ad993bea93a1fd607ea57",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 23429,
+  "prompt_sha256": "eedb2edfe488ab095fa1044f57bd1904a338d992cc117fd2adee2f9db6818444",
+  "author": {
+    "model": "Haiku 5.5",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Verdict: PASS under PMAT-633.\n\nThe diff (`098058684`, `origin/main...HEAD`) adds a single markdown specification, `docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md` (160 lines), documenting a CRUX measurement of `karpathy.ai/usaciv`, a workspace gap audit across `aprender-viz`, `aprender-present-*`, `aprender-db`, and `aprender-serve`, a 6-point architecture design, 10 falsifiable epic rows (`MAP-0` through `MAP-9`, `#7508..#7517` under `#7507`), 5 open decisions (`D1..D5`), and 4 guarded risks.\n\nRefutation check against PMAT-633 blocking criteria:\n1. Failing tests: None. No code or test is modified, no `.quorum` gate failure is recorded, and checking the spec text against repo guards (`check_no_claim_literals.sh`, `check_perf_claims_cite_receipts.sh`, `check_row_pr_write_set.sh`, `check_spec_proposed_dated.sh`, `spec_status_headers.sh`, `spec_sweep_rules.sh`) shows zero banned claim literals, competitor ratios, or status-header violations.\n2. Security defects: None. The diff is documentation-only and introduces no code, workflow, auth, or receipt-validation loosening (and the proposed design mandates sha256 manifest verification before rendering bundle data and routes MAP-2's CI job through D3's non-blocking nightly gate rule).\n\nFour non-blocking author follow-ups (`blocking_class: none`) were measured against the repository:\n- MAP-0 scope follow-up (line 118): Ticket PMAT-7508 and MAP-0 specify both this spec and the five `pv` contracts (projection, hex grid, camera, layer cache, URL state); this PR (`Refs #7507, #7508`) ships the spec half only, so the five `pv` contracts remain owed before closing `#7508`.\n- Workspace audit correction on `check_wasm32_core_builds.sh` (line 69): `scripts/check_wasm32_core_builds.sh` (run in `guards-nightly.yml:249`) already type-checks `aprender-core`, `aprender-present-lib`, and `aprender-viz --features wasm` for `wasm32-unknown-unknown`, not `aprender-core` alone.\n- Workspace audit precision on widgets/Canvas2D (line 53): `ChartType::Histogram` already exists in `crates/aprender-present-widgets/src/chart.rs:27,973` (unbinned/unbrushable bar rendering), and `Canvas2DRenderer` (`canvas2d.rs:14,316-340`) supports `FillRule::EvenOdd` only on single-ring paths (`Vec<Point>`), which will need multi-ring support for polygons with holes.\n- Spec index & epic registry follow-up (line 1): `APR-MAP-001-realtime-wasm-maps.md` is not yet linked in `docs/specifications/TOC.md` (`contracts/unified-specs-v1.yaml`), and epic `#7507` will need registration in `docs/roadmaps/epics.yaml` once D2 is ratified.\n\nTree witness note: `<repo>/.git/worktrees/wt-7519q/paiml-lane-witness` does not exist in this lane's git directory, so `tree_witness` is omitted.",
+      "findings": [
+        {
+          "blocking_class": "none",
+          "claim": "Ticket PMAT-7508 (#7508) is titled 'MAP-0 (APR-MAP-001): pv contracts for projection, hex grid, camera, layer cache, URL state', and line 118 defines MAP-0 scope as 'This spec, plus pv contracts for projection, hex grid, camera, layer cache and URL state' with acceptance '`pv validate` passes on each; each contract names a mutation that turns its test red'. Measured via `git diff --stat origin/main...HEAD`, this commit (`Refs #7507, #7508`, explicitly scoped in its commit message as text-only under line 114's 'Each row is one ticket and one or more PRs') adds only `docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md` and zero `contracts/*.yaml` files.",
+          "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+          "fix": "Deliver the five MAP-0 `pv` contracts (projection, hex grid, camera, layer cache, URL state) passing `pv validate` with named red-turning mutations in a follow-up PR before closing PMAT-7508 (#7508).",
+          "grounding": "measured",
+          "line": 118
+        },
+        {
+          "blocking_class": "none",
+          "claim": "Line 69 states '`scripts/check_wasm32_core_builds.sh` type-checks the core crate only' and marks CI wasm32 builds for viz and present crates as '**absent**'. Measured in `scripts/check_wasm32_core_builds.sh` (lines 35-43, 184-189) and `grep -rn check_wasm32_core_builds .github/workflows/` (`.github/workflows/guards-nightly.yml:248-249`), `scripts/check_wasm32_core_builds.sh` already type-checks `aprender-core`, `aprender-present-lib` (#6888), and `aprender-viz --features wasm` (#6911) for `wasm32-unknown-unknown` in nightly CI.",
+          "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+          "fix": "Update line 69 (and lines 74-75) to reflect that `scripts/check_wasm32_core_builds.sh` already type-checks `aprender-core`, `aprender-present-lib`, and `aprender-viz` (`--features wasm`) in `guards-nightly.yml`, while `aprender-db`, `aprender-viz --features geo`, full `.wasm` linking/compressed-size recording, and browser test execution remain absent.",
+          "grounding": "measured",
+          "line": 69
+        },
+        {
+          "blocking_class": "none",
+          "claim": "Line 53 states 'No hit-testing, no brush, no histogram chart, no stat tile' for `crates/aprender-present-widgets/src/chart.rs`, and line 61 notes missing even-odd polygon fill with holes. Measured via `grep -n Histogram crates/aprender-present-widgets/src/chart.rs`, `ChartType::Histogram` already exists at `chart.rs:27,973` (delegating to `paint_bar` over pre-supplied `(x, y)` series without raw binning or brushing). In addition, `crates/aprender-present-lib/src/browser/canvas2d.rs:14,316-340` already wires `FillRule::EvenOdd` (`CanvasWindingRule::Evenodd`), but `path_cache: HashMap<u32, Vec<Point>>` stores only one ring per `path_id`, so Canvas 2D cannot yet fill multi-ring polygons with holes either.",
+          "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+          "fix": "Clarify line 53 that `ChartType::Histogram` exists as a static pre-binned bar mode lacking binning and brush interaction, and note on lines 50/61 that `Canvas2DRenderer` (`canvas2d.rs:14,316-340`) will also need multi-ring path support to fill polygons with holes under `FillRule::EvenOdd`.",
+          "grounding": "measured",
+          "line": 53
+        },
+        {
+          "blocking_class": "none",
+          "claim": "`contracts/unified-specs-v1.yaml` (`no_orphan_specs`, lines 27-35) specifies that every `.md` file in `docs/specifications/` is linked from `docs/specifications/TOC.md`. Measured via `grep aprender-viz docs/specifications/TOC.md`, all 12 existing specs under `docs/specifications/aprender-viz/` are linked in `docs/specifications/TOC.md` (currently 467 of 500 max lines), whereas `APR-MAP-001-realtime-wasm-maps.md` is omitted (`FALSIFY-SPECS-002` is not wired into an active CI test command, so no test fails). Once D2 ('New epic', `#7507`) is ratified, `#7507` and its child budget (`#7508..#7517`) will also need registration in `docs/roadmaps/epics.yaml` by the single writer per `APR-EPIC-001`.",
+          "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+          "fix": "Add `aprender-viz/APR-MAP-001-realtime-wasm-maps.md` to `docs/specifications/TOC.md` and coordinate `docs/roadmaps/epics.yaml` registration for epic `#7507` when D2 is accepted.",
+          "grounding": "measured",
+          "line": 1
+        }
+      ],
+      "raw_bytes": 15876,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-4-carbon-high",
+      "model_measured": "gemini-4-carbon-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "eedb2edfe488ab095fa1044f57bd1904a338d992cc117fd2adee2f9db6818444",
+      "trace": {
+        "input_sha256": "4a880fbef7907877d6746c3989eafcd8760557d76156279a80f1701c4a3372da",
+        "output_sha256": "a6d16e4dd94a4eb0a40afed2e75692e969ac605be618f8055d4d722e66b6c683",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-4-carbon-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-4-carbon-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PASS under PMAT-633: the diff adds only the APR-MAP-001 specification document (docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md), contains no failing tests or security defects, and accurately cites existing workspace files in Section 3. Remaining MAP-0 pv contracts and roadmap entry updates are recorded as non-blocking author follow-ups (blocking_class: none).",
+      "findings": [
+        {
+          "blocking_class": "none",
+          "claim": "Line 118 defines MAP-0 (#7508) scope as '| MAP-0 | none | This spec, plus `pv` contracts for projection, hex grid, camera, layer cache and URL state | `pv validate` passes on each; each contract names a mutation that turns its test red |', matching PMAT-7508's title. This PR (Refs #7507, #7508) delivers the specification document only ('Each row is one ticket and one or more PRs', line 114); the five pv contracts remain as an author follow-up before PMAT-7508 can be closed.",
+          "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+          "fix": "Add the five pv contracts (projection, hex grid, camera, layer cache, URL state) under contracts/ with mutation tests in a follow-up PR for PMAT-7508.",
+          "grounding": "cited",
+          "line": 118
+        },
+        {
+          "blocking_class": "none",
+          "claim": "PMAT-7508 is at Status: Planned (0%), and git status --short in the workspace shows docs/roadmaps/entries/PMAT-7508.yaml (with spec: null) is untracked and not included in commit 098058684.",
+          "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+          "fix": "Commit docs/roadmaps/entries/PMAT-7508.yaml with spec pointed to docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md and update ticket status as MAP-0 progresses.",
+          "grounding": "measured",
+          "line": 4
+        }
+      ],
+      "raw_bytes": 5053,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "role": "independent",
+      "model": "gemini-4-argon-high",
+      "model_measured": "gemini-4-argon-high",
+      "model_source": "measured",
+      "family": "gemini",
+      "executor": "agy",
+      "brief_sha256": "eedb2edfe488ab095fa1044f57bd1904a338d992cc117fd2adee2f9db6818444",
+      "trace": {
+        "input_sha256": "a398170a3e5e8df7766378c8b63563f603e7dd36b8fa99e2ab780ba7dd16ecaa",
+        "output_sha256": "0cf5422f593ef47e4810e82d8b32194cab71f7818e1df8e9664230590cbf462e",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "gemini-4-argon-high",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "gemini-4-argon-high",
+            "family": "gemini",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      }
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PASS: under the PMAT-633 ruling I found no named failing test and no security defect. The diff adds one Markdown spec, with no code, workflow or gate changes. It does not complete PMAT-7508 (MAP-0): the pv contracts and their mutations are missing. That is an author follow-up, and #7508 should not be closed by this diff alone. I ran no build or test, and the prompt included no recorded gate result. I only spot-checked the spec's claims about the repository, using file search: some cited paths exist, a search of .github/workflows for wasm32 or wasm-pack matched only the aprender-core check in guards-nightly.yml, and a search of aprender-serve/src for WebSocket found nothing. I did not verify its measurements of the external reference site. I left tree_witness out because no paiml-lane-witness file was found in the worktree's git dir (<repo>/.git/worktrees/wt-7519q).",
+      "findings": [
+        {
+          "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+          "line": 118,
+          "claim": "The MAP-0 row requires \"This spec, plus `pv` contracts for projection, hex grid, camera, layer cache and URL state\", with `pv validate` passing and a mutation named in each contract. The supplied diff adds only the spec and no files under contracts/. A filename search of contracts/ for these topics returned only unrelated projection contracts (rex-pilot, linear, fused-qkv). PMAT-7508's acceptance criteria are therefore not met by this diff.",
+          "grounding": "measured",
+          "blocking_class": "none",
+          "fix": "Add the five contracts, each naming a mutation that turns its test red, in this PR or a follow-up. Until then, reference #7508 without a closing keyword and leave the ticket open."
+        },
+        {
+          "file": "docs/roadmaps/entries/PMAT-7508.yaml",
+          "line": 5,
+          "claim": "The roadmap entry reads `status: planned` with both acceptance boxes unchecked. The session's git status snapshot showed the file as untracked, and it is not in the supplied diff.",
+          "grounding": "measured",
+          "blocking_class": "none",
+          "fix": "Commit the entry if the repository expects it to ship with the ticket's PR, and update its status when the contracts land."
+        }
+      ],
+      "raw_bytes": 5376,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "executor": "claude-code",
+      "grounding_check": "parity",
+      "role": "counted",
+      "model": "claude-sonnet-5-5",
+      "model_measured": "claude-sonnet-5-5",
+      "model_source": "flag",
+      "family": "claude",
+      "brief_sha256": "eedb2edfe488ab095fa1044f57bd1904a338d992cc117fd2adee2f9db6818444",
+      "trace": {
+        "input_sha256": "0d0c62ab0a0733c2aa9e19fd1e8a25b54063415f4c35e2ab7d47232842108d11",
+        "output_sha256": "eb015c8252aec4b5c702a0116fafdc6fba841753b167d3d1baa1225e4e81a059",
+        "store": null,
+        "store_why": "almacen not provisioned yet (infra-27): the blobs stay in the round's gitignored .lanes dir"
+      },
+      "fallback": {
+        "judged_by": "claude-sonnet-5-5",
+        "exhausted": false,
+        "attempts": [
+          {
+            "model": "claude-sonnet-5-5",
+            "family": "claude",
+            "outcome": "answered"
+          }
+        ],
+        "skipped": []
+      },
+      "queue": {
+        "state": "done",
+        "queued_at": "2026-11-27T22:45:32Z",
+        "position": 1,
+        "running": 1,
+        "bound": 1,
+        "lock": "<tmp>/paiml-cc-lane.lock",
+        "owner": 1289696,
+        "pid": 1290974,
+        "slot": 0,
+        "wait_s": 44.131,
+        "run_s": 25.024
+      }
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/entries/PMAT-7508.yaml",
+      "line": 5,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The roadmap entry reads `status: planned` with both acceptance boxes unchecked. The session's git status snapshot showed the file as untracked, and it is not in the supplied diff."
+      ]
+    },
+    {
+      "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+      "line": 1,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "`contracts/unified-specs-v1.yaml` (`no_orphan_specs`, lines 27-35) specifies that every `.md` file in `docs/specifications/` is linked from `docs/specifications/TOC.md`. Measured via `grep aprender-viz docs/specifications/TOC.md`, all 12 existing specs under `docs/specifications/aprender-viz/` are linked in `docs/specifications/TOC.md` (currently 467 of 500 max lines), whereas `APR-MAP-001-realtime-wasm-maps.md` is omitted (`FALSIFY-SPECS-002` is not wired into an active CI test command, so no test fails). Once D2 ('New epic', `#7507`) is ratified, `#7507` and its child budget (`#7508..#7517`) will also need registration in `docs/roadmaps/epics.yaml` by the single writer per `APR-EPIC-001`."
+      ]
+    },
+    {
+      "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+      "line": 4,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "PMAT-7508 is at Status: Planned (0%), and git status --short in the workspace shows docs/roadmaps/entries/PMAT-7508.yaml (with spec: null) is untracked and not included in commit 098058684."
+      ]
+    },
+    {
+      "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+      "line": 53,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Line 53 states 'No hit-testing, no brush, no histogram chart, no stat tile' for `crates/aprender-present-widgets/src/chart.rs`, and line 61 notes missing even-odd polygon fill with holes. Measured via `grep -n Histogram crates/aprender-present-widgets/src/chart.rs`, `ChartType::Histogram` already exists at `chart.rs:27,973` (delegating to `paint_bar` over pre-supplied `(x, y)` series without raw binning or brushing). In addition, `crates/aprender-present-lib/src/browser/canvas2d.rs:14,316-340` already wires `FillRule::EvenOdd` (`CanvasWindingRule::Evenodd`), but `path_cache: HashMap<u32, Vec<Point>>` stores only one ring per `path_id`, so Canvas 2D cannot yet fill multi-ring polygons with holes either."
+      ]
+    },
+    {
+      "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+      "line": 69,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Line 69 states '`scripts/check_wasm32_core_builds.sh` type-checks the core crate only' and marks CI wasm32 builds for viz and present crates as '**absent**'. Measured in `scripts/check_wasm32_core_builds.sh` (lines 35-43, 184-189) and `grep -rn check_wasm32_core_builds .github/workflows/` (`.github/workflows/guards-nightly.yml:248-249`), `scripts/check_wasm32_core_builds.sh` already type-checks `aprender-core`, `aprender-present-lib` (#6888), and `aprender-viz --features wasm` (#6911) for `wasm32-unknown-unknown` in nightly CI."
+      ]
+    },
+    {
+      "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
+      "line": 118,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "Line 118 defines MAP-0 (#7508) scope as '| MAP-0 | none | This spec, plus `pv` contracts for projection, hex grid, camera, layer cache and URL state | `pv validate` passes on each; each contract names a mutation that turns its test red |', matching PMAT-7508's title. This PR (Refs #7507, #7508) delivers the specification document only ('Each row is one ticket and one or more PRs', line 114); the five pv contracts remain as an author follow-up before PMAT-7508 can be closed.",
+        "The MAP-0 row requires \"This spec, plus `pv` contracts for projection, hex grid, camera, layer cache and URL state\", with `pv validate` passing and a mutation named in each contract. The supplied diff adds only the spec and no files under contracts/. A filename search of contracts/ for these topics returned only unrelated projection contracts (rex-pilot, linear, fused-qkv). PMAT-7508's acceptance criteria are therefore not met by this diff.",
+        "Ticket PMAT-7508 (#7508) is titled 'MAP-0 (APR-MAP-001): pv contracts for projection, hex grid, camera, layer cache, URL state', and line 118 defines MAP-0 scope as 'This spec, plus pv contracts for projection, hex grid, camera, layer cache and URL state' with acceptance '`pv validate` passes on each; each contract names a mutation that turns its test red'. Measured via `git diff --stat origin/main...HEAD`, this commit (`Refs #7507, #7508`, explicitly scoped in its commit message as text-only under line 114's 'Each row is one ticket and one or more PRs') adds only `docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md` and zero `contracts/*.yaml` files."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "fallback": {
+    "same_family_width": 2,
+    "chain": [
+      {
+        "model": "gemini-4-carbon-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "gemini-4-argon-high",
+        "family": "gemini",
+        "disposition": "configured"
+      },
+      {
+        "model": "claude-sonnet-5-5",
+        "family": "claude",
+        "disposition": "claude-code",
+        "why": "run by Claude Code on its own budget: a configured seat runs every round, a fallback step only when every non-Claude family is measured out (PMAT-360, operator standing rule)"
+      },
+      {
+        "model": "claude-haiku-5-5",
+        "family": "claude",
+        "disposition": "excluded-self-review",
+        "why": "the author's own model id (Haiku 5.5) — a model never reviews its own diff, at any width (R-15a identity bar)"
+      },
+      {
+        "model": "qwen3.5",
+        "family": "qwen",
+        "disposition": "not-run",
+        "why": "no quorum.local_lane in the config — the aprender lane has no model to load"
+      }
+    ],
+    "precheck": [
+      {
+        "family": "gemini",
+        "model": "gemini-4-carbon-high",
+        "probe": 1,
+        "outcome": "live"
+      }
+    ],
+    "degraded": null,
+    "prah": {
+      "source": "none",
+      "path": null,
+      "why": "no --prah, none on PATH, and no install receipt at <scratch>/install-receipt.json"
+    },
+    "bucket": {
+      "ledger": "<home>/.local/state/paiml-implement/agy-bucket.jsonl",
+      "window_s": 18000,
+      "pace": "off",
+      "buckets": {
+        "gemini": {
+          "bucket": "gemini",
+          "state": "unmeasured",
+          "reason": "agy-bucket.sh could not read the ledger; the bucket is not consulted this round"
+        }
+      },
+      "closed": []
+    },
+    "cc_queue": {
+      "lanes": 1,
+      "queued_s": 44.131,
+      "run_s": 25.024,
+      "max_wait_s": 44.131,
+      "bound": 1
+    }
+  },
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "cheap_seat": "claude-sonnet-5-5",
+  "advisory_lane": {
+    "state": "unavailable",
+    "counts": false,
+    "row": {
+      "NotRun": "Busy"
+    },
+    "verdict": "unavailable",
+    "why": "no host answered inside the budget",
+    "served_by": null,
+    "gpu_proof": null,
+    "apr": null,
+    "apr_binary_sha256": null,
+    "apr_tag": null,
+    "apr_commit": null,
+    "apr_build_why": null,
+    "model": null,
+    "model_sha256": null,
+    "rc": 2,
+    "wall_s": 0,
+    "collected_s": 365,
+    "budget_s": 196,
+    "budget_basis": "ledger: 2 x p95 98 s over 126 gx10-cuda Verdict rows",
+    "brief": {
+      "bytes": 23429,
+      "sent_bytes": 23598,
+      "max_bytes": 196608
+    },
+    "trace": {
+      "input_sha256": "9563d566b095200d4e3e327d54fab78a31d3abb9ae5c4182a5fd743596f0c650",
+      "raw": "advisory.json"
+    },
+    "attempts": [
+      {
+        "host": "gx10",
+        "ok": false,
+        "wall_s": 0,
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=<tmp>/apr-gpu.priority)",
+        "ts": "2026-11-27T22:44:37.269Z",
+        "wall_ms": 341,
+        "request_id": "01a21f2e-9912-7366-9134-48ee04a467b2",
+        "load1": 5.89,
+        "cold": null
+      }
+    ],
+    "ledger": "<home>/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "raw": "advisory.json",
+    "agrees_with_counted": null,
+    "counted": "PASS"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Haiku 5.5/claude same_family=1/2"
+  }
+}
