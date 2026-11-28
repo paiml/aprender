@@ -4,8 +4,8 @@
 //! `*-lint`, with ticket ids (`GH-243`, `PMAT-741`, `CRUX-G-05`, `#3856`) in
 //! the one-line summaries. This module renders the same root command with its
 //! verbs under headings, and strips the ticket ids from the summaries shown in
-//! that list. No verb is renamed or moved: the names and the dispatch are the
-//! clap derive's, and the per-verb `--help` text is unchanged.
+//! that root list and its options. No verb is renamed or moved: the names and
+//! the dispatch are the clap derive's. Per-verb `--help` text is unchanged.
 
 use clap::{Command, CommandFactory};
 
@@ -235,19 +235,20 @@ pub fn strip_ticket_ids(summary: &str) -> String {
 /// The root `apr` command with the grouped help template. The verbs, their
 /// arguments and their dispatch come from the same clap derive as `Cli`.
 pub fn grouped_command() -> Command {
-    // Global args (the root's `--skip-contract`) are stripped here too, and clap
-    // copies them into every subcommand's --help; help_shows_no_ticket_ids checks
-    // the root options block, so the strip is global on purpose.
-    let mut root = Cli::command().mut_args(|a| {
+    // Clap adds the built-in `help` subcommand and copies the global args into
+    // every subcommand during build(). Build first, so each verb's `--help`
+    // keeps the original text, and the rows below can list `help`.
+    let mut root = Cli::command();
+    root.build();
+    // Only the root's own copies are stripped, so `apr --help` shows no ticket
+    // ids while `apr <verb> --help` is byte-identical to before.
+    let mut root = root.mut_args(|a| {
         let stripped = a.get_help().map(|h| strip_ticket_ids(&h.to_string()));
         match stripped {
             Some(text) => a.help(text),
             None => a,
         }
     });
-    // Clap adds the built-in `help` subcommand during build(); the rows below
-    // are read before get_matches() runs that, so build now to list it.
-    root.build();
 
     // One row per visible verb: (heading, name, summary without ticket ids).
     let mut rows: Vec<(&'static str, String, String)> = Vec::new();
