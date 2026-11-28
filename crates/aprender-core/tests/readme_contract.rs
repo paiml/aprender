@@ -866,8 +866,9 @@ fn test_readme_has_no_overdue_release_promise() {
 }
 
 /// Compiled witness for the README "## Library usage" snippet (F-FR-U00-010).
-/// The mirror file is compiled as part of this test target, so the snippet is
-/// type-checked and run here, not only text-matched.
+/// The mirror file is compiled into this test target, so the snippet is
+/// type-checked here. `readme_library_snippet` is never called, so it is
+/// compiled but not executed: this is a compile witness, not a run.
 #[allow(dead_code)]
 mod readme_library_snippet_witness {
     include!("readme_snippets/library_usage.rs");
