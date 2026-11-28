@@ -1,0 +1,67 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  created: '2026-11-28'
+  author: PAIML Engineering
+  description: Layer cache for the APR-MAP-001 runtime (MAP-0 contract; claims only from the spec)
+  references:
+  - docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md (section 4 item 3, section 5 MAP-5 row)
+
+equations:
+  three_layers:
+    formula: the map has three layers, each with its own raster cache - base, lens, overlay
+    invariants:
+    - "base layer holds data-independent geometry: outlines, borders, terrain, sprites (spec section 4 item 3)"
+    - "lens layer holds the choropleth fill of the active lens (spec section 4 item 3)"
+    - "overlay holds hover, selection and point or line entities (spec section 4 item 3)"
+  settle_rerender:
+    formula: a camera settle or a pan past the margin re-renders each layer once, except a layer whose raster for the new camera is already cached
+    invariants:
+    - "a settle re-renders each of the three layers once unless its raster is cached (spec section 4 item 3)"
+    - "after the idle pre-paint has run, settling one zoom step performs 0 base renders (spec section 5 MAP-5)"
+  lens_switch:
+    formula: a lens switch or a delta to the active lens re-renders the lens layer only, once per switch or per delta message
+    invariants:
+    - "lens switch re-renders the lens layer only (spec section 4 item 3)"
+    - "delta to a lens that is not active renders nothing until that lens is selected (spec section 4 item 3)"
+  overlay_rerender:
+    formula: a hover, a selection or a layer toggle re-renders the overlay only, exactly once, with 0 base and 0 lens renders
+    invariants:
+    - "hover, selection and layer toggle each perform 0 base renders, 0 lens renders and exactly 1 overlay render (spec section 5 MAP-6)"
+
+proof_obligations:
+- id: MAP-0-LC-001
+  type: invariant
+  property: Three independent caches
+  formal: "each layer in {base, lens, overlay} has its own raster cache key"
+  applies_to: all
+- id: MAP-0-LC-002
+  type: bound
+  property: Settle renders bound
+  formal: "settle => renders(layer) == 1 for each layer without a cached raster, 0 otherwise"
+  applies_to: all
+- id: MAP-0-LC-003
+  type: invariant
+  property: Lens and overlay isolation
+  formal: "lens_switch => renders(base) == 0 and renders(overlay) == 0 and renders(lens) == 1"
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-MAP-0-LC-001
+  name: shared_cache_key
+  prediction: each layer keeps its own raster cache
+  mutation: "give the base and overlay layers one shared cache key"
+  expected_output: "cache-isolation test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."
+- id: FALSIFY-MAP-0-LC-002
+  name: lens_switch_rerenders_base
+  prediction: a lens switch performs 0 base renders
+  mutation: "invalidate the base layer on every lens switch"
+  expected_output: "lens-switch render-count test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."
+- id: FALSIFY-MAP-0-LC-003
+  name: hover_rerenders_lens
+  prediction: a hover performs 0 lens renders and exactly 1 overlay render
+  mutation: "invalidate the lens layer on every hover"
+  expected_output: "overlay-render test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."

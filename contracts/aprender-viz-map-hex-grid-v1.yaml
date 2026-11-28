@@ -1,0 +1,71 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  created: '2026-11-28'
+  author: PAIML Engineering
+  description: Hex grid for the APR-MAP-001 spatial kernel (MAP-0 contract; claims only from the spec)
+  references:
+  - docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md (section 5 MAP-3 and MAP-5 rows)
+
+equations:
+  hex_pick_center:
+    formula: pick(center(c)) == c for every cell c
+    domain: every cell c in the axial-coordinate grid
+    codomain: cell id
+    invariants:
+    - "pick(center(c)) == c for every cell (spec section 5 MAP-3)"
+  hex_edge_tie:
+    formula: a point on a shared hex edge resolves to one of the two cells sharing that edge, the same one on every call
+    domain: points on a shared hex edge
+    codomain: one of the two adjacent cell ids
+    invariants:
+    - "result is one of the two cells that share the edge (spec section 5 MAP-3)"
+    - "result is identical on every call for the same point (spec section 5 MAP-3)"
+  hex_area_weighting:
+    formula: sum_c a_c == A and sum_c V * a_c / A == V, within a stated epsilon, for a fixture polygon of area A
+    domain: polygons rasterised to cells by area-weighted overlap
+    invariants:
+    - "overlap areas a_c of the cells of a fixture polygon sum to its area A within a stated epsilon (spec section 5 MAP-3)"
+    - "a value V spread as V * a_c / A sums back to V within a stated epsilon (spec section 5 MAP-3)"
+  hex_grid_size:
+    formula: columns * rows == 10530 cells for the reference-size map
+    domain: the map size named in spec section 5 MAP-5
+    invariants:
+    - "the 10,530-cell map is the size used for the MAP-5 timing record (spec section 5 MAP-5)"
+
+proof_obligations:
+- id: MAP-0-HEX-001
+  type: invariant
+  property: Pick of a cell centre returns that cell
+  formal: "pick(center(c)) == c for all cells c"
+  applies_to: all
+- id: MAP-0-HEX-002
+  type: invariant
+  property: Shared edge resolves deterministically to an adjacent cell
+  formal: "shared_edge(p) implies pick(p) in {c1, c2} and pick(p) == pick(p) on repeated calls"
+  applies_to: all
+- id: MAP-0-HEX-003
+  type: invariant
+  property: Area-weighted overlap conserves area and value
+  formal: "|sum_c a_c - A| <= epsilon and |sum_c V * a_c / A - V| <= epsilon"
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-MAP-0-HEX-001
+  name: centre_pick_mismatch
+  prediction: pick(center(c)) == c for every cell
+  mutation: "swap the axial rounding rule so a centre rounds to a neighbour"
+  expected_output: "centre-pick property test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."
+- id: FALSIFY-MAP-0-HEX-002
+  name: edge_tie_nondeterministic
+  prediction: a shared-edge point resolves to one fixed adjacent cell on every call
+  mutation: "break the edge tie with a random or call-order-dependent choice"
+  expected_output: "edge-tie determinism test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."
+- id: FALSIFY-MAP-0-HEX-003
+  name: area_not_conserved
+  prediction: overlap areas sum to the polygon area within epsilon
+  mutation: "drop one cell's overlap term from the area-weighted sum"
+  expected_output: "area-conservation test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."

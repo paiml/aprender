@@ -1,0 +1,61 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  created: '2026-11-28'
+  author: PAIML Engineering
+  description: Map projections for the APR-MAP-001 geo kernel (MAP-0 contract; claims only from the spec)
+  references:
+  - docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md (section 4 item 1, section 5 MAP-1 row)
+
+equations:
+  projection_forward_inverse:
+    formula: inverse(forward(p)) == p within a stated epsilon, for p inside the projection's valid domain
+    domain: p in the stated valid domain of each projection (lon, lat)
+    codomain: planar coordinates; a point outside the valid domain returns an error, not a number
+    invariants:
+    - "round trip: |inverse(forward(p)) - p| <= epsilon for every p in the valid domain (spec section 5 MAP-1)"
+    - "outside the valid domain, forward returns an error and no finite number (spec section 5 MAP-1)"
+    preconditions:
+    - "projection is one of: Albers equal-area conic, composite Albers USA, Mercator, equirectangular (spec section 5 MAP-1)"
+  reference_points:
+    formula: forward(ref_point) == committed_reference_coordinate within a stated epsilon
+    domain: one committed reference table per projection
+    invariants:
+    - "each projection maps its committed reference table to committed reference coordinates within a stated epsilon (spec section 5 MAP-1)"
+
+proof_obligations:
+- id: MAP-0-PROJ-001
+  type: invariant
+  property: Round trip inside the valid domain
+  formal: "|inverse(forward(p)) - p| <= epsilon for all p in valid_domain"
+  applies_to: all
+- id: MAP-0-PROJ-002
+  type: bound
+  property: Error outside the valid domain
+  formal: "p not in valid_domain implies forward(p) is Err"
+  applies_to: all
+- id: MAP-0-PROJ-003
+  type: equivalence
+  property: Reference table match
+  formal: "|forward(ref_i) - ref_coord_i| <= epsilon for every committed reference pair i"
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-MAP-0-PROJ-001
+  name: round_trip_breaks
+  prediction: inverse(forward(p)) returns p within epsilon for every p in the valid domain
+  mutation: "replace inverse with an identity function, or perturb one projection constant"
+  expected_output: "round-trip property test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."
+- id: FALSIFY-MAP-0-PROJ-002
+  name: outside_domain_returns_number
+  prediction: forward on a point outside the valid domain returns an error
+  mutation: "remove the domain check so forward returns a finite number outside the domain"
+  expected_output: "domain-error property test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."
+- id: FALSIFY-MAP-0-PROJ-003
+  name: reference_table_drift
+  prediction: forward maps each committed reference point to its committed coordinate within epsilon
+  mutation: "change one standard parallel or central meridian constant"
+  expected_output: "reference-table test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."

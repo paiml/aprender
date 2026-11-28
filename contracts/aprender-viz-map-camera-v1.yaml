@@ -1,0 +1,70 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  created: '2026-11-28'
+  author: PAIML Engineering
+  description: Camera for the APR-MAP-001 runtime (MAP-0 contract; claims only from the spec)
+  references:
+  - docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md (section 2 Camera row, section 5 MAP-5 row)
+
+equations:
+  anchored_zoom:
+    formula: the world point under the anchor is unchanged by a zoom about that anchor
+    domain: anchor point a in screen space, zoom factor z > 0
+    invariants:
+    - "world point under the anchor is fixed by an anchored zoom (spec section 5 MAP-5, property test)"
+    - "camera is in world units in km (spec section 2 Camera row)"
+  fly_to:
+    formula: flyTo starts at the current camera and ends at the target centre and zoom within a stated epsilon
+    domain: current camera state and target (centre, zoom)
+    invariants:
+    - "flyTo starts at the current camera (spec section 5 MAP-5)"
+    - "flyTo ends at the target centre and zoom within a stated epsilon (spec section 5 MAP-5)"
+    - "flyTo follows the van Wijk and Nuij path (spec section 2 Camera row)"
+  zoom_renders:
+    formula: a zoom performs 0 renders while moving and exactly 1 render of each layer on settle when no pre-painted raster exists
+    invariants:
+    - "0 renders while the camera is moving (spec section 5 MAP-5)"
+    - "exactly 1 render of each layer on settle when no pre-painted raster exists (spec section 5 MAP-5)"
+  pan_renders:
+    formula: a pan inside the margin performs 0 renders; a pan past the margin performs exactly 1 render of each layer
+    invariants:
+    - "pan inside the margin: 0 renders of any of the three layers (spec section 5 MAP-5)"
+    - "pan past the margin: exactly 1 render of each of the three layers (spec section 5 MAP-5)"
+
+proof_obligations:
+- id: MAP-0-CAM-001
+  type: invariant
+  property: Anchored zoom fixes the anchor point
+  formal: "world(a) before zoom == world(a) after zoom for every anchor a"
+  applies_to: all
+- id: MAP-0-CAM-002
+  type: invariant
+  property: flyTo endpoints
+  formal: "|camera(0) - current| == 0 and |camera(T) - target| <= epsilon"
+  applies_to: all
+- id: MAP-0-CAM-003
+  type: bound
+  property: Render counts per camera event
+  formal: "moving => renders == 0; settle_without_prepaint => renders == 1 per layer; pan_inside_margin => renders == 0"
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-MAP-0-CAM-001
+  name: anchor_drifts
+  prediction: the world point under the anchor is fixed by an anchored zoom
+  mutation: "zoom about the viewport centre instead of the anchor"
+  expected_output: "anchored-zoom property test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."
+- id: FALSIFY-MAP-0-CAM-002
+  name: flyto_wrong_endpoint
+  prediction: flyTo ends at the target centre and zoom within epsilon
+  mutation: "stop the flyTo interpolation one step short of the target"
+  expected_output: "flyTo endpoint test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."
+- id: FALSIFY-MAP-0-CAM-003
+  name: render_on_move
+  prediction: a zoom performs 0 renders while moving
+  mutation: "re-render the base layer on every frame during the zoom"
+  expected_output: "render-count test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."

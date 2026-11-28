@@ -1,0 +1,67 @@
+metadata:
+  kind: schema
+  version: 1.0.0
+  created: '2026-11-28'
+  author: PAIML Engineering
+  description: URL state codec for the APR-MAP-001 runtime (MAP-0 contract; claims only from the spec)
+  references:
+  - docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md (section 2 URL state row, section 5 MAP-6 row)
+
+equations:
+  state_round_trip:
+    formula: decode(encode(s)) == s for every state s; encode(decode(encode(s))) == encode(s)
+    domain: every map state s
+    invariants:
+    - "decode(encode(s)) == s for every state (spec section 5 MAP-6, property test)"
+    - "encode(decode(encode(s))) == encode(s) (spec section 5 MAP-6, property test)"
+  unknown_keys:
+    formula: a key no extension registered survives decode then encode
+    invariants:
+    - "unregistered key is preserved through decode then encode (spec section 5 MAP-6)"
+    - "extensions register their own keys (spec section 2 URL state row)"
+  url_format:
+    formula: hash has the form #lens=..&city=..&state=..&at=x,y,zoom&advisor=..&layers=..
+    invariants:
+    - "at is the centre in km and log2 of scale over home scale (spec section 2 URL state row)"
+  history_policy:
+    formula: lens and selection use pushState; camera uses a 350 ms debounced replaceState
+    invariants:
+    - "a camera drag adds 0 history entries; after the debounce the hash decodes to the new camera (spec section 5 MAP-6)"
+    - "a selection adds 1 history entry and the hash then decodes to the new selection (spec section 5 MAP-6)"
+
+proof_obligations:
+- id: MAP-0-URL-001
+  type: invariant
+  property: Codec round trip
+  formal: "decode(encode(s)) == s and encode(decode(encode(s))) == encode(s) for all s"
+  applies_to: all
+- id: MAP-0-URL-002
+  type: invariant
+  property: Unknown keys survive
+  formal: "k not in registered_keys implies encode(decode(h)) contains k with the same value"
+  applies_to: all
+- id: MAP-0-URL-003
+  type: bound
+  property: History entry counts
+  formal: "camera_drag => history_delta == 0; selection => history_delta == 1"
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-MAP-0-URL-001
+  name: codec_not_inverse
+  prediction: decode(encode(s)) == s for every state
+  mutation: "round the camera zoom to two decimals in encode only"
+  expected_output: "round-trip property test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."
+- id: FALSIFY-MAP-0-URL-002
+  name: unknown_key_dropped
+  prediction: an unregistered key survives decode then encode
+  mutation: "drop keys not in the registered set during decode"
+  expected_output: "unknown-key test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."
+- id: FALSIFY-MAP-0-URL-003
+  name: camera_pushes_history
+  prediction: a camera drag adds 0 history entries
+  mutation: "use pushState for the camera instead of debounced replaceState"
+  expected_output: "history-count test fails"
+  if_fails: "Re-derive the expected value from the spec section cited in equations and fix the implementation, not the test."
