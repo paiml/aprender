@@ -2,15 +2,15 @@
   github_issue: 7508
   item_type: task
   title: 'MAP-0 (APR-MAP-001): pv contracts for projection, hex grid, camera, layer cache, URL state'
-  status: completed
+  status: planned
   priority: medium
   assigned_to: null
   created: 2026-11-27T19:37:30Z
-  updated: 2026-11-28T00:00:00Z
-  spec: docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md
+  updated: 2026-11-27T19:37:30Z
+  spec: null
   acceptance_criteria:
-  - '[x] `pv validate` passes on each'
-  - '[x] each contract names a mutation that turns its test red'
+  - '[ ] `pv validate` passes on each'
+  - '[ ] each contract names a mutation that turns its test red'
   phases: []
   subtasks: []
   estimated_effort: null
