@@ -236,7 +236,36 @@ fn run_script() -> Run {
 
 /// Committed table: one entry per row, in script order. Filled from the measured run and
 /// checked against the brute-force cull and the layer-cache rules by the tests below.
-const EXPECTED: &[Expect] = &[];
+const EXPECTED: &[Expect] = &[
+    ("init", (1, 1, 1), true, 10530, LodTier::Far, 4),
+    ("pan_1", (0, 0, 0), true, 10530, LodTier::Far, 4),
+    ("pan_2", (0, 0, 0), true, 10530, LodTier::Far, 4),
+    ("pan_3", (0, 0, 0), true, 10530, LodTier::Far, 4),
+    ("pan_4", (0, 0, 0), true, 10530, LodTier::Far, 4),
+    ("pan_5", (0, 0, 0), true, 10530, LodTier::Far, 4),
+    ("pan_6", (0, 0, 0), true, 10530, LodTier::Far, 4),
+    ("pan_7", (0, 0, 0), true, 10530, LodTier::Far, 4),
+    ("pan_8", (0, 0, 0), true, 10530, LodTier::Far, 4),
+    ("pan_9", (1, 1, 1), true, 10530, LodTier::Far, 4),
+    ("zoom_4", (0, 0, 0), true, 9405, LodTier::Far, 8),
+    ("zoom_8", (0, 0, 0), true, 3752, LodTier::Far, 12),
+    ("settle_8", (1, 1, 1), true, 3752, LodTier::Far, 12),
+    ("pan_at_8", (0, 0, 0), true, 3652, LodTier::Far, 12),
+    ("prepaint_16", (1, 0, 0), false, 3652, LodTier::Far, 12),
+    ("zoom_16", (0, 0, 0), true, 1050, LodTier::Mid, 16),
+    ("settle_16", (0, 1, 1), true, 1050, LodTier::Mid, 16),
+    ("zoom_40", (0, 0, 0), true, 233, LodTier::Near, 21),
+    ("settle_40", (1, 1, 1), true, 233, LodTier::Near, 21),
+    ("zoom_80", (0, 0, 0), true, 74, LodTier::Close, 25),
+    ("settle_80", (1, 1, 1), true, 74, LodTier::Close, 25),
+    ("hover", (0, 0, 1), true, 74, LodTier::Close, 25),
+    ("select", (0, 0, 1), true, 74, LodTier::Close, 25),
+    ("toggle", (0, 0, 1), true, 74, LodTier::Close, 25),
+    ("delta_inactive", (0, 0, 0), false, 74, LodTier::Close, 25),
+    ("lens_switch_b", (0, 1, 0), true, 74, LodTier::Close, 25),
+    ("delta_active", (0, 1, 0), true, 74, LodTier::Close, 25),
+    ("idle", (0, 0, 0), false, 74, LodTier::Close, 25),
+];
 
 fn renders_of(rows: &[Row], name: &str) -> (u32, u32, u32) {
     rows.iter()

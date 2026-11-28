@@ -11,7 +11,41 @@ const GOLDEN_KEY: &str = "hex-cell";
 const GOLDEN_SEED: u64 = 42;
 
 /// Committed hashes, one per bucket `0..=32`. Regenerate only with a reviewed rasteriser change.
-const BUCKET_GOLDEN: [u64; 33] = [0; 33];
+const BUCKET_GOLDEN: [u64; 33] = [
+    0x7a1bac4f24f9e885,
+    0x65396d674b024abe,
+    0x5e7af89e39708817,
+    0xaa72ac56c51a864b,
+    0xbfc3e025cfef15df,
+    0x2d6f4935ced35f84,
+    0x63f9d46bed6c5305,
+    0xfebba9b54f3691e0,
+    0x3bd43420032fe54b,
+    0x8aab6178d242e851,
+    0x1bba2e4cd01f53bf,
+    0x3a3d5a376ce92e52,
+    0xb512316297181deb,
+    0xee0f9bf4fe7d6f8c,
+    0x2e8e47fdbb5fbff5,
+    0x9cb97ef5961f3be4,
+    0x467ba8b143e19dff,
+    0x026acd9be5ae12f1,
+    0x5897b67310d9acf5,
+    0x961cce19b6d85c4e,
+    0x004250561346e736,
+    0x48571065c59d4635,
+    0x342387f38b111848,
+    0x11112a4a9583a94a,
+    0xdd0dad96891e22a1,
+    0x66012925a90d5305,
+    0x008a0bbdf91dafc3,
+    0x1f2edd27efef08f0,
+    0x3025e613f94cb7f4,
+    0x95718e2e3a639e58,
+    0x226b692128022514,
+    0xad2997af55d88beb,
+    0xf0fe6ee964044f2c,
+];
 
 /// Relative offset used to probe each side of a quarter-octave edge.
 const EDGE_EPSILON: f64 = 1e-9;
