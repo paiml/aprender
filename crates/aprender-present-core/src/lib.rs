@@ -82,6 +82,7 @@ mod geometry;
 pub mod gesture;
 pub mod history;
 pub mod lifecycle;
+pub mod map_url;
 mod runtime;
 pub mod shortcut;
 pub mod simd;
