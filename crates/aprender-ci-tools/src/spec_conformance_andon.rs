@@ -83,6 +83,19 @@ pub fn is_lab(expires_cell: &str) -> bool {
     word == "LAB"
 }
 
+/// A LAB cell is exempt from D6 only if it cites the ruling that moved it to LAB: `Appendix D`,
+/// where the spec records operator rulings, and a ticket `#<digits>`, the one ticket C324 gives
+/// every LAB row. For PMAT-7534 the ruling is the operator's of 2026-11-28 (Appendix D 3.1),
+/// which covers rows 13 and 15-21. A bare `LAB`, or one that cites only one of the two, is still
+/// an andon, so marking a row LAB cannot clear its D6 by itself.
+#[must_use]
+pub fn cites_lab_ruling(expires_cell: &str) -> bool {
+    let names_ticket = expires_cell
+        .match_indices('#')
+        .any(|(i, _)| expires_cell[i + 1..].starts_with(|c: char| c.is_ascii_digit()));
+    expires_cell.contains("Appendix D") && names_ticket
+}
+
 /// `_dag_document` + `_compare_derived`: every record the §12 scan emits, in Python's order.
 /// `spec` is the whole spec text, `source` the spec path as the report names it, `today` the
 /// date D6 compares against (ISO `YYYY-MM-DD`).
@@ -160,7 +173,7 @@ fn andon(row: &Row, exp: &Expiry, today: &str) -> Option<Record> {
     if exp.discharged || date >= today {
         return None;
     }
-    if is_lab(&row.expires_cell) {
+    if is_lab(&row.expires_cell) && cites_lab_ruling(&row.expires_cell) {
         return Some(Record::Lab {
             row: row.key.clone(),
             message: format!("expired {date} (today is {today}); LAB, cannot block (C324)"),
