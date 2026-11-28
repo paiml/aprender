@@ -10,6 +10,8 @@ mod state;
 #[cfg(test)]
 mod falsify_tests;
 #[cfg(test)]
+mod fuzz_tests;
+#[cfg(test)]
 mod generators;
 
 pub use codec::{decode, encode};

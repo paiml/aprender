@@ -188,10 +188,32 @@ fn fresh() -> (HistoryPolicy, FakeHistory) {
     )
 }
 
+/// Asserts that `actual` is present and equal to `expected` bit for bit. The
+/// expected value must come from the test's own input, never from the policy.
+fn assert_camera_bits(actual: Option<Camera>, expected: Camera, what: &str) {
+    let Some(actual) = actual else {
+        panic!("{what}: camera is missing");
+    };
+    assert_eq!(
+        (
+            actual.x.to_bits(),
+            actual.y.to_bits(),
+            actual.log2_zoom.to_bits()
+        ),
+        (
+            expected.x.to_bits(),
+            expected.y.to_bits(),
+            expected.log2_zoom.to_bits()
+        ),
+        "{what}"
+    );
+}
+
 #[test]
 fn falsify_map_url_004_camera_drag_adds_no_entries_and_replaces_after_debounce() {
     let (mut policy, mut history) = fresh();
     let before = history.entries();
+    let mut last_input: Option<Camera> = None;
     for i in 0_u32..20 {
         let tick = u64::from(i);
         let camera = Camera {
@@ -199,9 +221,8 @@ fn falsify_map_url_004_camera_drag_adds_no_entries_and_replaces_after_debounce()
             y: f64::from(i) * -0.5,
             log2_zoom: 3.0 + f64::from(i) / 7.0,
         };
-        policy
-            .camera_move(tick, camera, &mut history)
-            .expect("camera is finite");
+        policy.camera_move(tick, camera).expect("camera is finite");
+        last_input = Some(camera);
         assert!(
             !policy.tick(tick, &mut history).expect("tick encodes"),
             "replace fired before the debounce"
@@ -221,10 +242,16 @@ fn falsify_map_url_004_camera_drag_adds_no_entries_and_replaces_after_debounce()
         "no replace 5 ticks after the last move"
     );
     assert_eq!(history.entries(), before, "replace added an entry");
+    let last_input = last_input.expect("the drag made moves");
     let decoded = decode(history.current_hash()).expect("hash decodes");
+    assert_camera_bits(
+        decoded.camera,
+        last_input,
+        "replaced URL hash does not carry the last camera passed to camera_move",
+    );
     assert!(
         decoded.bitwise_eq(policy.state()),
-        "URL hash does not decode to the final camera: {}",
+        "URL hash does not decode to the policy state: {}",
         history.current_hash()
     );
 }
@@ -269,9 +296,7 @@ fn falsify_map_url_004_selection_after_drag_carries_the_camera() {
         y: -2.25,
         log2_zoom: 4.125,
     };
-    policy
-        .camera_move(0, camera, &mut history)
-        .expect("camera is finite");
+    policy.camera_move(0, camera).expect("camera is finite");
     policy
         .select(Some("Austin"), &mut history)
         .expect("selection encodes");
@@ -285,9 +310,14 @@ fn falsify_map_url_004_selection_after_drag_carries_the_camera() {
         "selection push should absorb the pending camera replace"
     );
     let decoded = decode(history.current_hash()).expect("hash decodes");
+    assert_camera_bits(
+        decoded.camera,
+        camera,
+        "pushed URL hash does not carry the camera passed to camera_move",
+    );
     assert!(
         decoded.bitwise_eq(policy.state()),
-        "pushed hash lost the camera"
+        "pushed hash does not decode to the policy state"
     );
 }
 

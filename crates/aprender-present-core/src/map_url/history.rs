@@ -88,17 +88,13 @@ impl HistoryPolicy {
         self.camera_moved_at.is_some()
     }
 
-    /// Records a camera move at tick `now`. Writes no history entry; the
-    /// history sink is taken so the no-write rule is part of the signature.
+    /// Records a camera move at tick `now`. Takes no history sink: a move can
+    /// only set the pending camera, and history is written by `tick` or by a
+    /// push event.
     ///
     /// # Errors
     /// Returns `NonFinite` for a non-finite camera.
-    pub fn camera_move<H: HistorySink>(
-        &mut self,
-        now: u64,
-        camera: Camera,
-        _history: &mut H,
-    ) -> Result<(), MapUrlError> {
+    pub fn camera_move(&mut self, now: u64, camera: Camera) -> Result<(), MapUrlError> {
         if !camera.is_finite() {
             return Err(MapUrlError::NonFinite);
         }
