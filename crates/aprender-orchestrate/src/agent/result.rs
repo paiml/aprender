@@ -107,6 +107,14 @@ pub enum AgentError {
         /// Leading prompt bytes present in the request.
         consumed: usize,
     },
+    /// #4600: the prompt is larger than the recorded-input cap and is refused, not truncated.
+    #[error("input too large: {bytes} prompt bytes exceeds the {max}-byte cap")]
+    InputTooLarge {
+        /// Prompt bytes the caller passed.
+        bytes: usize,
+        /// The cap in bytes.
+        max: usize,
+    },
     /// Manifest parsing error.
     #[error("manifest error: {0}")]
     ManifestError(String),

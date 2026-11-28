@@ -42,6 +42,10 @@ pub async fn run_agent_loop(
     run_agent_turn(manifest, &mut history, query, driver, tools, memory, stream_tx).await
 }
 
+/// PMAT-177: the prompt sent on the retry when the first turn made no tool call.
+pub(crate) const TOOL_NUDGE: &str =
+    "Use a tool to answer. Emit a <tool_call> block with glob, file_read, or shell.";
+
 /// PMAT-177: Agent loop with tool-use nudge. If first turn has no tool calls, retries once.
 pub async fn run_agent_loop_with_nudge(
     manifest: &AgentManifest,
@@ -56,12 +60,17 @@ pub async fn run_agent_loop_with_nudge(
         .await?;
     if r.tool_calls == 0 && tools.len() > 0 {
         info!("no tool calls on first turn, nudging");
-        let nudge =
-            "Use a tool to answer. Emit a <tool_call> block with glob, file_read, or shell.";
-        let mut nudged =
-            run_agent_turn(manifest, &mut history, nudge, driver, tools, memory, stream_tx).await?;
-        nudged.input = r.input; // #4600: the record is the caller's prompt, not the nudge
-        return Ok(nudged);
+        // #4600: the record is the request that produced the answer, which is the nudge's own.
+        return run_agent_turn(
+            manifest,
+            &mut history,
+            TOOL_NUDGE,
+            driver,
+            tools,
+            memory,
+            stream_tx,
+        )
+        .await;
     }
     Ok(r)
 }

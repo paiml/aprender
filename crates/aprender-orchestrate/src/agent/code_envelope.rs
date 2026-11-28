@@ -70,6 +70,7 @@ impl CodeOutcome {
             AgentError::MaxIterationsReached => "max_iterations_reached",
             AgentError::ContextOverflow { .. } => "context_overflow",
             AgentError::InputNotConsumed { .. } => "input_not_consumed",
+            AgentError::InputTooLarge { .. } => "input_too_large",
             AgentError::ManifestError(_) => "manifest_error",
             AgentError::Memory(_) => "memory_error",
         };

@@ -10,6 +10,10 @@ use super::driver::Message;
 use super::result::AgentError;
 use crate::serve::context::ContextManager;
 
+/// #4600: the largest prompt whose input is recorded. Larger prompts are refused with
+/// [`AgentError::InputTooLarge`]; nothing is truncated.
+pub const MAX_RECORDED_INPUT_BYTES: usize = 1024 * 1024;
+
 /// Input accounting for the current turn's prompt.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct InputRecord {
@@ -34,21 +38,26 @@ impl InputRecord {
         request: &[Message],
         context: &ContextManager,
     ) -> Result<Self, AgentError> {
+        let sent = prompt.len();
+        if sent > MAX_RECORDED_INPUT_BYTES {
+            return Err(AgentError::InputTooLarge { bytes: sent, max: MAX_RECORDED_INPUT_BYTES });
+        }
         let message = request.iter().rev().find(|m| matches!(m, Message::User(_)));
         let carried = match message {
             Some(Message::User(text)) => text.as_bytes(),
             _ => &[],
         };
-        let sent = prompt.len();
-        let consumed = prompt.bytes().zip(carried).take_while(|(a, b)| a == *b).count();
-        let prompt_tokens = message.map_or(0, |m| context.estimate_tokens(&[m.to_chat_message()]));
-        if consumed < sent {
+        // Exact match: the request's current-turn message must be the prompt, byte for byte.
+        // A request that carries extra bytes past the prompt is not the prompt and is refused.
+        if carried != prompt.as_bytes() {
+            let consumed = prompt.bytes().zip(carried).take_while(|(a, b)| a == *b).count();
             return Err(AgentError::InputNotConsumed { sent, consumed });
         }
+        let prompt_tokens = message.map_or(0, |m| context.estimate_tokens(&[m.to_chat_message()]));
         Ok(Self {
             input_bytes_sent: sent,
-            input_bytes_consumed: consumed,
-            prompt_sha256: format!("{:x}", Sha256::digest(&prompt.as_bytes()[..consumed])),
+            input_bytes_consumed: sent,
+            prompt_sha256: format!("{:x}", Sha256::digest(prompt.as_bytes())),
             prompt_tokens,
         })
     }

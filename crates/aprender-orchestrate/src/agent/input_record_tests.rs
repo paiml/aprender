@@ -9,7 +9,7 @@ use crate::agent::manifest::AgentManifest;
 use crate::agent::memory::InMemorySubstrate;
 use crate::agent::result::AgentLoopResult;
 use crate::agent::result::{StopReason, TokenUsage};
-use crate::agent::runtime::{run_agent_loop, run_agent_loop_with_nudge};
+use crate::agent::runtime::{run_agent_loop, run_agent_loop_with_nudge, TOOL_NUDGE};
 use crate::agent::tool::{Tool, ToolRegistry, ToolResult};
 use crate::serve::backends::PrivacyTier;
 use crate::serve::context::{ContextConfig, ContextWindow};
@@ -180,9 +180,9 @@ impl Tool for NoopTool {
     }
 }
 
-/// FALSIFY-4600-005: after the tool-use nudge, the record is still the caller's prompt.
+/// FALSIFY-4600-005: after the tool-use nudge, the record is the request that answered (the nudge).
 #[tokio::test]
-async fn falsify_4600_005_nudge_keeps_the_callers_record() {
+async fn falsify_4600_005_nudge_records_the_answering_request() {
     let driver = MockDriver::new(vec![answer("first"), answer("second")]);
     let mut tools = ToolRegistry::new();
     tools.register(Box::new(NoopTool));
@@ -197,7 +197,51 @@ async fn falsify_4600_005_nudge_keeps_the_callers_record() {
     .await
     .expect("runs");
     assert_eq!(r.text, "second", "the nudge turn ran");
-    assert_eq!(r.input.input_bytes_sent, "caller prompt".len());
+    assert_eq!(r.input.input_bytes_sent, TOOL_NUDGE.len());
+}
+
+/// FALSIFY-4600-007: the nudge record's hash is the hash of the nudge text the answer came from,
+/// never the caller's first prompt.
+#[tokio::test]
+async fn falsify_4600_007_nudge_record_hash_is_the_nudge_text() {
+    let driver = MockDriver::new(vec![answer("first"), answer("second")]);
+    let mut tools = ToolRegistry::new();
+    tools.register(Box::new(NoopTool));
+    let r = run_agent_loop_with_nudge(
+        &AgentManifest::default(),
+        "caller prompt",
+        &driver,
+        &tools,
+        &InMemorySubstrate::new(),
+        None,
+    )
+    .await
+    .expect("runs");
+    assert_eq!(r.input.prompt_sha256, format!("{:x}", Sha256::digest(TOOL_NUDGE.as_bytes())));
+    assert_ne!(r.input.prompt_sha256, format!("{:x}", Sha256::digest(b"caller prompt")));
+}
+
+/// FALSIFY-4600-008: a prompt over the recorded-input cap is refused with a typed error, and
+/// the cap is a named constant.
+#[test]
+fn falsify_4600_008_oversized_input_is_refused() {
+    let prompt = "a".repeat(MAX_RECORDED_INPUT_BYTES + 1);
+    let err = InputRecord::measure(&prompt, &[Message::User(prompt.clone())], &context())
+        .expect_err("an oversized prompt was recorded");
+    assert!(
+        matches!(err, AgentError::InputTooLarge { bytes, max }
+            if bytes == MAX_RECORDED_INPUT_BYTES + 1 && max == MAX_RECORDED_INPUT_BYTES),
+        "got {err:?}"
+    );
+}
+
+/// FALSIFY-4600-009: a request that carries more bytes than the prompt is not an exact match and
+/// is refused, not recorded as consumed.
+#[test]
+fn falsify_4600_009_longer_request_is_not_an_exact_match() {
+    let err = InputRecord::measure("abc", &[Message::User("abcd".into())], &context())
+        .expect_err("a longer request matched the prompt exactly");
+    assert!(matches!(err, AgentError::InputNotConsumed { sent: 3, .. }), "got {err:?}");
 }
 
 fn answer(text: &str) -> CompletionResponse {
