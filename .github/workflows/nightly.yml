@@ -87,6 +87,7 @@ jobs:
           python3 scripts/nightly_manifest.py --self-test
           bash scripts/nightly_prune_release.sh --self-test
           bash scripts/nightly_gate_retry.sh --self-test
+          bash scripts/nightly_green_sha.sh --self-test
 
       # ci-pending is asked again the same night, for the same sha (#5053): run
       # 38016007449 gated main 2m after its push, skipped every build and ended
@@ -99,7 +100,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          NIGHTLY_SHA=$(git rev-parse HEAD)
+          # #7462: the newest first-parent main commit whose 'ci / gate' is green
+          # (walk <= 20). HEAD green or pending -> HEAD; none green -> HEAD too,
+          # so the gate still reports red-ci for it.
+          PICK=$(bash scripts/nightly_green_sha.sh live)
+          if [ "$PICK" = red-ci ]; then NIGHTLY_SHA=$(git rev-parse HEAD); else NIGHTLY_SHA=$PICK; fi
           echo "sha=$NIGHTLY_SHA" >> "$GITHUB_OUTPUT"
           # A missing manifest (first run) is "no previous verdict", not an error.
           bash scripts/nightly_fetch_manifest.sh prev-manifest.json
