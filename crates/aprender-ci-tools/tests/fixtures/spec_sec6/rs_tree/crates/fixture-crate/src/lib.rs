@@ -3,6 +3,8 @@
 #[test]
 fn alpha_ok() {}
 
+// spacer a
+// spacer b
 pub fn not_a_test() {}
 
 #[test]
