@@ -77,50 +77,97 @@ impl UrlState {
         if key.is_empty() || reserved {
             return Err(MapError::Malformed("url key"));
         }
-        self.extra.insert(key.to_owned(), value.to_owned());
+        // Bound the escaped sizes before anything is allocated; escaping only grows a string, so
+        // a raw part within the bound also keeps the owned copies below within it.
+        check_escaped_len(key)?;
+        check_escaped_len(value)?;
+        let prev = self.extra.insert(key.to_owned(), value.to_owned());
+        if let Err(err) = encode(self) {
+            match prev {
+                Some(old) => {
+                    self.extra.insert(key.to_owned(), old);
+                }
+                None => {
+                    self.extra.remove(key);
+                }
+            }
+            return Err(err);
+        }
         Ok(())
     }
 }
 
+/// Fails with `OutOfRange("url")` when `raw`, percent-encoded, would exceed [`MAX_URL_LEN`].
+/// Stops counting at the first byte past the bound, so the work is bounded too.
+fn check_escaped_len(raw: &str) -> Result<(), MapError> {
+    raw.bytes()
+        .try_fold(0_usize, |len, byte| {
+            let next = len + escaped_width(byte);
+            if next > MAX_URL_LEN {
+                Err(MapError::OutOfRange("url"))
+            } else {
+                Ok(next)
+            }
+        })
+        .map(|_| ())
+}
+
+/// Bytes a single input byte occupies once percent-encoded.
+fn escaped_width(byte: u8) -> usize {
+    if is_unreserved(byte) {
+        1
+    } else {
+        3
+    }
+}
+
+fn is_unreserved(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~')
+}
+
 /// Encodes a state as a URL hash without the leading `#`.
 ///
-/// Fails with `OutOfRange("url")` when the result would exceed [`MAX_URL_LEN`].
+/// Fails with `OutOfRange("url")` when the result would exceed [`MAX_URL_LEN`]. The output is
+/// built under that bound, so a state that cannot fit is refused without a larger allocation.
 pub fn encode(state: &UrlState) -> Result<String, MapError> {
     let mut out = String::new();
     if let Some(cam) = state.camera {
-        push_raw(&mut out, KEY_CAMERA, &camera_value(&cam));
+        push_raw(&mut out, KEY_CAMERA, &camera_value(&cam))?;
     }
     if let Some(sel) = state.selection {
-        push_raw(&mut out, KEY_SELECTION, &sel.to_string());
+        push_raw(&mut out, KEY_SELECTION, &sel.to_string())?;
     }
     if let Some(lens) = state.lens {
-        push_raw(&mut out, KEY_LENS, &lens.to_string());
+        push_raw(&mut out, KEY_LENS, &lens.to_string())?;
     }
     for (key, value) in &state.extra {
-        push_escaped(&mut out, key, value);
-    }
-    if out.len() > MAX_URL_LEN {
-        return Err(MapError::OutOfRange("url"));
+        push_escaped(&mut out, key, value)?;
     }
     Ok(out)
 }
 
 /// Decodes a URL hash, with or without a leading `#`. Empty segments are skipped.
 ///
-/// Fails with `OutOfRange("url")` above [`MAX_URL_LEN`] bytes, and with `Malformed` on a bad
-/// percent escape, invalid UTF-8, a duplicate key, or a typed value that does not parse.
+/// Fails with `OutOfRange("url")` when the hash, after the optional `#`, exceeds
+/// [`MAX_URL_LEN`] bytes or its canonical re-encoding would. Fails with `Malformed` on an empty
+/// key, a bad percent escape, invalid UTF-8, a duplicate key, or a typed value that does not
+/// parse. Every state it returns can be encoded.
 pub fn decode(hash: &str) -> Result<UrlState, MapError> {
-    if hash.len() > MAX_URL_LEN {
+    let body = hash.strip_prefix('#').unwrap_or(hash);
+    if body.len() > MAX_URL_LEN {
         return Err(MapError::OutOfRange("url"));
     }
-    let body = hash.strip_prefix('#').unwrap_or(hash);
     let mut state = UrlState::default();
     for segment in body.split('&').filter(|s| !s.is_empty()) {
         let (raw_key, raw_value) = segment.split_once('=').unwrap_or((segment, ""));
         let key = unescape(raw_key)?;
+        if key.is_empty() {
+            return Err(MapError::Malformed("url key"));
+        }
         let value = unescape(raw_value)?;
         apply_pair(&mut state, key, &value)?;
     }
+    encode(&state)?;
     Ok(state)
 }
 
@@ -177,31 +224,46 @@ fn camera_value(cam: &Camera2D) -> String {
     format!("{x},{y},{},{w},{h}", cam.scale())
 }
 
+/// Fails with `OutOfRange("url")` unless `extra` more bytes fit under [`MAX_URL_LEN`].
+fn reserve_check(out: &str, extra: usize) -> Result<(), MapError> {
+    if out.len() + extra > MAX_URL_LEN {
+        Err(MapError::OutOfRange("url"))
+    } else {
+        Ok(())
+    }
+}
+
 /// Appends `key=value` with an already-safe key and value.
-fn push_raw(out: &mut String, key: &str, value: &str) {
-    if !out.is_empty() {
+fn push_raw(out: &mut String, key: &str, value: &str) -> Result<(), MapError> {
+    let sep = usize::from(!out.is_empty());
+    reserve_check(out, sep + key.len() + 1 + value.len())?;
+    if sep == 1 {
         out.push('&');
     }
     out.push_str(key);
     out.push('=');
     out.push_str(value);
+    Ok(())
 }
 
 /// Appends `key=value` with both parts percent-encoded.
-fn push_escaped(out: &mut String, key: &str, value: &str) {
+fn push_escaped(out: &mut String, key: &str, value: &str) -> Result<(), MapError> {
     if !out.is_empty() {
+        reserve_check(out, 1)?;
         out.push('&');
     }
-    escape_into(out, key);
+    escape_into(out, key)?;
+    reserve_check(out, 1)?;
     out.push('=');
-    escape_into(out, value);
+    escape_into(out, value)
 }
 
 /// Percent-encodes every byte outside the RFC 3986 unreserved set, so `&`, `=`, `#`, `%`, `+`,
-/// space and every non-ASCII byte are all written as `%XX`.
-fn escape_into(out: &mut String, raw: &str) {
+/// space and every non-ASCII byte are all written as `%XX`. Checks the bound per byte.
+fn escape_into(out: &mut String, raw: &str) -> Result<(), MapError> {
     for byte in raw.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+        reserve_check(out, escaped_width(byte))?;
+        if is_unreserved(byte) {
             out.push(char::from(byte));
         } else {
             out.push('%');
@@ -209,6 +271,7 @@ fn escape_into(out: &mut String, raw: &str) {
             out.push(hex_digit(byte & 0x0F));
         }
     }
+    Ok(())
 }
 
 /// Upper-case hex digit for a nibble (`n` is masked to 0..=15 by the caller).

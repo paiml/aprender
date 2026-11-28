@@ -208,18 +208,148 @@ fn decode_rejects_oversized_input() {
     assert_eq!(decode(&long), Err(MapError::OutOfRange("url")));
 }
 
+/// A state whose encoding is `k=` plus 4089 bytes: 4091 of the 4096-byte limit.
+fn nearly_full_state() -> UrlState {
+    let mut state = UrlState::default();
+    state.insert_extra("k", &"%".repeat(1363)).expect("fits");
+    state
+}
+
 #[test]
 fn encode_rejects_oversized_output_and_round_trip_still_holds_below_it() {
-    let mut state = UrlState::default();
-    state
-        .insert_extra("k", &"%".repeat(MAX_URL_LEN))
-        .expect("key");
+    let mut state = nearly_full_state();
+    assert_eq!(encode(&state).map(|h| h.len()), Ok(4091));
+    // Typed keys are set by the constructor or the policy, not by insert_extra, so a state can
+    // reach the limit only this way; the child test module may set the field directly.
+    state.selection = Some(u64::MAX);
     assert_eq!(encode(&state), Err(MapError::OutOfRange("url")));
 
     let mut small = UrlState::default();
     small.insert_extra("k", &"é".repeat(100)).expect("key");
     let hash = encode(&small).expect("encodes");
     assert_eq!(decode(&hash), Ok(small));
+}
+
+#[test]
+fn insert_extra_refuses_a_pair_that_cannot_be_encoded_and_restores_the_state() {
+    let mut state = nearly_full_state();
+    let before = state.clone();
+    // Replacing `k` with a longer value would overflow the limit.
+    assert_eq!(
+        state.insert_extra("k", &"%".repeat(1400)),
+        Err(MapError::OutOfRange("url"))
+    );
+    assert_eq!(state, before);
+    // A new key that does not fit is refused and removed again.
+    assert_eq!(
+        state.insert_extra("zz", "1234567890"),
+        Err(MapError::OutOfRange("url"))
+    );
+    assert_eq!(state, before);
+}
+
+#[test]
+fn insert_extra_refuses_raw_input_past_the_limit_without_allocating_it() {
+    let mut state = UrlState::default();
+    let huge = "%".repeat(1_000_000);
+    assert_eq!(
+        state.insert_extra("k", &huge),
+        Err(MapError::OutOfRange("url"))
+    );
+    assert_eq!(
+        state.insert_extra(&huge, "v"),
+        Err(MapError::OutOfRange("url"))
+    );
+    assert!(state.extra().is_empty());
+}
+
+#[test]
+fn insert_extra_replaces_an_existing_pair_within_the_limit() {
+    let mut state = UrlState::default();
+    state.insert_extra("k", "1").expect("key");
+    state.insert_extra("k", "2").expect("replace");
+    assert_eq!(state.extra().get("k").map(String::as_str), Some("2"));
+}
+
+#[test]
+fn decode_refuses_an_empty_key() {
+    assert_eq!(decode("=foo"), Err(MapError::Malformed("url key")));
+    assert_eq!(decode("="), Err(MapError::Malformed("url key")));
+    assert_eq!(decode("a=1&=foo"), Err(MapError::Malformed("url key")));
+    // An escaped '=' is a non-empty key and is accepted.
+    let state = decode("%3D=x").expect("key '=' is valid");
+    assert_eq!(state.extra().get("=").map(String::as_str), Some("x"));
+}
+
+#[test]
+fn decode_refuses_inputs_whose_canonical_encoding_is_too_long() {
+    // Accepted length on input, but the canonical re-encoding exceeds the limit.
+    let long_key = "a".repeat(MAX_URL_LEN);
+    assert_eq!(decode(&long_key), Err(MapError::OutOfRange("url")));
+    let plus_value = format!("k={}", "+".repeat(1366));
+    assert_eq!(plus_value.len(), 1368);
+    assert_eq!(decode(&plus_value), Err(MapError::OutOfRange("url")));
+}
+
+#[test]
+fn decode_measures_length_after_the_leading_hash() {
+    // A full-length encoding with a leading '#' is 4097 bytes in total but 4096 after it.
+    let body = format!("k={}", "a".repeat(4094));
+    assert_eq!(body.len(), MAX_URL_LEN);
+    let hashed = format!("#{body}");
+    assert_eq!(decode(&hashed).map(|s| encode(&s)), Ok(Ok(body.clone())));
+    assert_eq!(decode(&body).map(|s| encode(&s)), Ok(Ok(body)));
+}
+
+proptest! {
+    // Inputs long enough to reach the limit: a decoded state always re-encodes within it, and
+    // one that is refused was refused for length or syntax, never a panic.
+    #[test]
+    fn long_inputs_near_the_limit_decode_or_refuse_cleanly(
+        text in "[a&=%+ é#]{3900,4300}"
+    ) {
+        match decode(&text) {
+            Ok(state) => {
+                let hash = encode(&state).expect("decoded state encodes");
+                prop_assert!(hash.len() <= MAX_URL_LEN);
+                prop_assert_eq!(decode(&hash), Ok(state));
+            }
+            Err(err) => prop_assert!(matches!(
+                err,
+                MapError::OutOfRange("url") | MapError::Malformed(_)
+            )),
+        }
+    }
+
+    // Alphanumeric keys of any length: a key-only pair encodes as `key=`, so it decodes exactly
+    // when that fits the limit, and the refusal is the length error, never a panic.
+    #[test]
+    fn long_keys_decode_exactly_when_their_encoding_fits(text in "[a-z]{4090,4100}") {
+        let result = decode(&text);
+        prop_assert_eq!(result.is_ok(), text.len() < MAX_URL_LEN);
+        if let Err(err) = result {
+            prop_assert_eq!(err, MapError::OutOfRange("url"));
+        }
+    }
+
+    // Values long enough to reach the limit: insert_extra accepts exactly when the state encodes.
+    #[test]
+    fn insert_extra_accepts_exactly_the_encodable_states(
+        value in "[a%+ é&]{1300,1500}"
+    ) {
+        let mut state = nearly_full_state();
+        let before = state.clone();
+        match state.insert_extra("k", &value) {
+            Ok(()) => {
+                let hash = encode(&state).expect("accepted state encodes");
+                prop_assert!(hash.len() <= MAX_URL_LEN);
+            }
+            Err(err) => {
+                prop_assert_eq!(err, MapError::OutOfRange("url"));
+                prop_assert_eq!(state, before);
+            }
+        }
+    }
 }
 
 #[test]
@@ -321,10 +451,7 @@ fn push_carries_pending_camera_and_clears_the_debounce() {
 
 #[test]
 fn failed_push_leaves_state_and_pending_camera_unchanged() {
-    let mut state = UrlState::default();
-    state
-        .insert_extra("k", &"%".repeat(MAX_URL_LEN))
-        .expect("key");
+    let state = nearly_full_state();
     let mut policy = HistoryPolicy::new(state.clone());
     assert_eq!(
         policy.apply(UrlEvent::Select(Some(3)), 0),
@@ -340,11 +467,7 @@ fn failed_push_leaves_state_and_pending_camera_unchanged() {
 
 #[test]
 fn failed_debounced_replace_keeps_the_camera_pending() {
-    let mut state = UrlState::default();
-    state
-        .insert_extra("k", &"%".repeat(MAX_URL_LEN))
-        .expect("key");
-    let mut policy = HistoryPolicy::new(state);
+    let mut policy = HistoryPolicy::new(nearly_full_state());
     policy
         .apply(UrlEvent::Camera(cam((0.0, 0.0), 1.0)), 0)
         .expect("camera applies");
