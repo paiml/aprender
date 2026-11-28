@@ -454,7 +454,7 @@ fn c(v: f32) -> String {
     crate::format_coord(f64::from(v))
 }
 
-/// Convert an SVG element to its string representation.
+/// Convert an even-odd path to its SVG string.
 fn even_odd_to_svg(path: &EvenOddPath) -> String {
     format!(
         r#"<path d="{}" fill="{}" fill-rule="evenodd"/>"#,
@@ -463,6 +463,7 @@ fn even_odd_to_svg(path: &EvenOddPath) -> String {
     )
 }
 
+/// Convert an SVG element to its string representation.
 fn element_to_svg(element: &SvgElement) -> String {
     match element {
         SvgElement::Rect { x, y, width, height, fill, stroke, stroke_width } => {
