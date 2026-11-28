@@ -9,13 +9,11 @@ tools: [pmat, pv, cargo, gh, bashrs]
 Aprender is a next-generation ML framework in pure Rust — a monorepo where the
 workspace, not this file, is the source of truth. Install: `cargo install aprender` →
 `apr` binary. Core library in `crates/aprender-core/` ([lib] name = "aprender").
-20 repos (5 core + 15 satellites, per `docs/specifications/aprender-monorepo-consolidation.md`)
-were merged in and archived 20/20.
+Repo-merge history (20 repos merged and archived 20/20): `docs/agent-rules-history.md`.
 
 ### Derive the numbers; do not quote them (#2331)
 
-Every count in this file drifted. The published figures were wrong by 3.2× on the
-test count and 29 minor versions on the release line before they were checked. So
+Rationale and the 3.2× / 29-minor-version history: `docs/agent-rules-history.md`. So
 **the table gives the command, and the value is only a dated sample.** If a number
 here disagrees with its command, the command wins.
 
@@ -28,11 +26,7 @@ here disagrees with its command, the command wins.
 | Workspace lib tests | the `Summary` line of CI's `workspace-test` job (see Build Commands for the exact nextest invocation) | **80,604 passed**, 130 skipped, across 69 binaries — CI run `31631488466`, `main` @ `d40756541`, 2026-08-12 |
 | Released version | `git tag --sort=-creatordate \| head -1` · `gh release list` | **v0.63.0**, 2026-08-01 ("provenance") |
 
-`crates/aprender-core/tests/readme_contract.rs` is the drift gate for all three published
-docs: README.md's crate/contract counts, `docs/BEATS.md` vs the beat contracts, and every
-repo-relative file path cited in **this file**. A path here that does not exist fails the
-build (FALSIFY-DOCS-CLAUDE-001) — that is what caught the six pre-monorepo `realizar/…`
-and `src/format/…` paths this file still advertised. Counts it cannot check, you re-derive.
+The drift gate is `crates/aprender-core/tests/readme_contract.rs` (FALSIFY-DOCS-CLAUDE-001: every repo-relative path cited here must exist; rationale in `docs/agent-rules-history.md`). Counts it cannot check, you re-derive.
 
 ## Git Workflow (Branch Protection)
 
@@ -261,10 +255,7 @@ Always profile with `apr profile`/`apr trace`/`apr bench` before optimizing.
 | 7B Q4_K | 30+ | 150+ | 4GB |
 | 13B Q4_K | 15+ | 80+ | 8GB |
 
-These are **targets**, not measurements. For what is actually measured against Ollama,
-see `docs/BEATS.md`: GPU decode on RTX 4090 sm_89 is at **parity** (1.015–1.109×), and
-`contracts/beat-ollama-decode-throughput-speed-v1.yaml` enforces `beat_threshold: 0.9000`
-— a no-collapse floor. The old "apr beats Ollama 1.371×" headline is **withdrawn**.
+These are **targets**, not measurements. Measured status against Ollama: `docs/BEATS.md` (`beat_threshold: 0.9000` no-collapse floor; the old 1.371× headline is **withdrawn**).
 
 Architecture: Trueno SIMD backend, realizar fused dequant+matmul kernels, PagedAttention KV cache, optional wgpu/CUDA.
 
@@ -338,13 +329,7 @@ The one of the two that a merge-path CI step runs verbatim — so it stays a `ba
 setsid --wait bash scripts/check_package_includes.sh  # as CI runs it; scans src/ ONLY, against `cargo package -p aprender --list`
 ```
 
-**`check_package_includes.sh` is currently vacuous — know this before trusting it.**
-It greps `include!(` in the root `src/` only, and the root `src/` is a two-file facade
-(`src/lib.rs`, `src/bin/`) with **zero** `include!()` directives. So it reports
-`OK: All 0 include!() files are included in cargo package` and can never fail. The
-real coverage against CB-510 today comes from `check_include_files.sh` (1771 files,
-`src/` + `crates/`). Extending the package check to the 70+ publishable member crates
-is open work — do not treat its green as evidence.
+**`check_package_includes.sh` is currently vacuous — do not treat its green as evidence.** It scans root `src/` only (zero `include!()` there); extending it to the member crates is open work. Detail: `docs/agent-rules-history.md`.
 
 **After any `.gitignore` or `Cargo.toml` exclude change:** re-run both scripts.
 
@@ -359,64 +344,29 @@ bashrs gate --strict .             # Full quality gate
 
 Required: `set -euo pipefail`, no `ls` for iteration, quoted variables, explicit error handling.
 
-**Exception — a SOURCED library must be option-neutral.** `set` in a sourced file
-mutates the *caller's* shell. `scripts/apr_bin.sh` opened with `set -euo pipefail`;
-`qwen-story.sh` sources it and had deliberately chosen no `-e` so it could run every
-beat and tally failures. The leak killed the nightly six lines in. Sourceable
-libraries fail by **return status** instead: `. scripts/lib.sh || exit 1`. Enforced by
-`scripts/check_sourced_libs_option_neutral.sh`.
+**Exception — a SOURCED library must be option-neutral.** Sourceable libraries fail by **return status** (`. scripts/lib.sh || exit 1`), never by `set`. Enforced by `scripts/check_sourced_libs_option_neutral.sh`. Incident: `docs/agent-rules-history.md`.
 
 ## Verification Discipline (MANDATORY — read before reporting any result)
 
-These are not style notes. Each cost real time, and in every case the general
-principle was known and the specific instance still went wrong.
+Incident history for each rule: `docs/agent-rules-history.md`.
 
-**1. Never read `$?` through a pipe.** It is the LAST command's status.
+1. **Never read `$?` through a pipe.** It is the LAST command's status.
 ```text
 cmd > /tmp/out.log 2>&1; rc=$?               # correct
 cmd | tee /tmp/out.log; rc=${PIPESTATUS[0]}  # correct (bash)
 cmd | grep -E "^error"; echo "exit=$?"       # WRONG — that is grep's status
 ```
-This shipped twice — `qwen-story-daily` captured `tee`'s status so its fail-the-job
-step was unreachable and three green runs proved nothing (#2336); `make publish`'s
-POST-PUBLISH VERIFICATION did the same, so it could never report a broken published
-crate (#2360). **When a result looks good, check how it was measured.**
-
-**2. Never label a run by intent — prove the mechanism engaged.** A repro harness
-printed `device: GPU` while built without `--features cuda`; three findings were
-reported from CPU runs. `CUDA_VISIBLE_DEVICES` says what is *visible*, never what was
-*used*. Cite a trace line, a version+SHA, or a behaviour delta.
-
-**3. Pin the binary.** Never a bare `apr`, never a hardcoded absolute path — see
-Step 0 above. Four `apr` binaries once coexisted here and a bare `apr` resolved to a
-26-day-old one.
-
-**4. Extending a guard's SCOPE requires re-mutating in the new scope.** The old proof
-does not transfer. Extending `check_apr_bin_pinned.sh` to the Makefile found real
-violations *and* was still blind to `\t@apr …`, the most common Makefile form — caught
-only by re-running the RED-turning mutation there (#2360).
-
-**5. A guard that does not scan the surface where the DECISION is made is theater.**
-Enumerate the decision surfaces — release, publish, certify, gate — then check
-coverage. Covering "CI" is not covering "the release".
-
-**6. One failing input is an anecdote.** Vary it before naming a cause, and
-especially before blocking a release. Four neighbouring prompts once inverted a
-diagnosis from "GPU correctness defect" to "the gate sampled a near-tie" (#2359).
-
-**7. Guard regexes ship a case table.** The `apr`-invocation patterns were wrong five
-times; every one was caught by a must-match/must-not-match table, none by review.
-Re-run the table rather than re-reading the pattern.
-
-**8. A shadowed artifact is worse than a missing one** — edits look effective and
-change nothing. `~/.local/bin/apr` shadowed a fresh install; `~/.claude/skills/dogfood/`
-shadowed the repo's release-certifying skill so hardening it edited a file that never
-ran (#2361). When a fix seems to have no effect, ask what else claims that name
-(`type -aP <cmd>`; user-scope vs repo-scope skills; always set an explicit `name:`).
+2. **Never label a run by intent — prove the mechanism engaged.** Cite a trace line, a version+SHA, or a behaviour delta. `CUDA_VISIBLE_DEVICES` says what is *visible*, never what was *used*.
+3. **Pin the binary.** Never a bare `apr`, never a hardcoded absolute path — see Step 0 above.
+4. **Extending a guard's SCOPE requires re-mutating in the new scope.** The old proof does not transfer.
+5. **A guard that does not scan the surface where the DECISION is made is theater.** Enumerate the decision surfaces — release, publish, certify, gate — then check coverage. Covering "CI" is not covering "the release".
+6. **One failing input is an anecdote.** Vary it before naming a cause, and especially before blocking a release.
+7. **Guard regexes ship a case table.** Re-run the must-match/must-not-match table rather than re-reading the pattern.
+8. **A shadowed artifact is worse than a missing one.** When a fix seems to have no effect, ask what else claims that name (`type -aP <cmd>`; user-scope vs repo-scope skills; always set an explicit `name:`).
 
 ## Testing
 
-Target: 60% unit, 30% property, 10% integration. Coverage: **90.84% line** (849706/935347, measured 2026-09-24 by a manual `workflow_dispatch` of coverage-nightly (run 36065904363) on branch `PMAT-3839-cov-regex-scope` @ 237f10f8b, folded into batch/0.70.0 and NOT on `main` until that batch merges; `main`'s own nightly (49fe19c28, 2026-09-24) still measured 826969/941649 = 87.82% under the old regex (run 35937679357); target ≥95%, enforced floor 89% via COV_FLOOR). Before #3839 the exclude regex still described the pre-monorepo tree, so the 88.78% of 2026-07-29 measured a different set of files. The long-quoted "96.35%" predates the measurement ever working - the pipeline reported 0/0 until #2333.
+Target: 60% unit, 30% property, 10% integration. Coverage floor is `COV_FLOOR` (89, enforced); target ≥95%. Measured figures and the withdrawn 96.35% history: `docs/agent-rules-history.md`.
 
 ```text
 cargo test -p <crate> --lib             # Unit tests for one crate (what you run while working)
@@ -453,16 +403,7 @@ under that one clippy and nothing else.
 | FLOOR — declared `rust-version` still builds | `scripts/check_msrv.sh` | on demand |
 | CEILING — current stable clippy is clean | `scripts/check_clippy_current_stable.sh` / `make lint-current` | `toolchain-ceiling.yml`, daily 05:00 UTC |
 
-Without the ceiling gate, findings from newer clippy releases accumulate invisibly:
-#2370 was a fresh mbp whose homebrew rustc is not rustup-managed (so the pin is
-silently inert) running plain `make` and getting 28 errors out of `tier2` — the tree
-had 107 findings across 12 lints by then, none of which any gate had ever run.
-The ceiling gate refuses to pass vacuously (stale `stable`, missing clippy component,
-broken version comparator) and ships a comparator case table that `tier3` re-runs.
-
-Clippy's lint set is **not monotonic**: the #2370 tree is clean on 1.93/1.96/1.97 and
-1.95 *alone* reports 8 `collapsible_match` findings. A green ceiling gate means
-"clean on the pin and on current stable", never "clean on every release between".
+Clippy's lint set is **not monotonic**: a green ceiling gate means "clean on the pin and on current stable", never "clean on every release between". The #2370 incident and the ceiling gate's design: `docs/agent-rules-history.md`.
 
 ## CI/CD (`.github/workflows/`)
 
@@ -475,9 +416,7 @@ Clippy's lint set is **not monotonic**: the #2370 tree is clean on 1.93/1.96/1.9
 
 ## Modules
 
-**v0.4.0 (TOP 10 ML):** LinearRegression, LogisticRegression, DecisionTree, RandomForest, GBM, NaiveBayes, KNN, SVM, KMeans, PCA + model selection + metrics
-
-**v0.7.x (Advanced):** ARIMA time series, text processing (tokenizers, stop words, stemming, chat templates via minijinja), Bayesian inference (conjugate priors, BLR), GLMs (Poisson/Gamma/Binomial), ICA decomposition, graph algorithms (Dijkstra/A*/PageRank/community detection)
+Module inventory (v0.4.0 ML set; v0.7.x advanced set): `docs/agent-rules-history.md`.
 
 ## Key Files
 
@@ -516,12 +455,7 @@ apr qa model.gguf --assert-tps 100 --json
 Version: run `pmat --version` (3.30.0 on this box, 2026-08-13). `.pmat-gates.toml`
 still carries a header comment claiming it was "Updated for PMAT v2.215.0".
 
-**Scores.** Only one of these has a citable measurement, so only one is stated:
-
-| Score | Value | Provenance |
-|-------|-------|------------|
-| Line coverage | **90.84%** (849706/935347) | coverage-nightly `workflow_dispatch` run 36065904363, 2026-09-24, on branch commit `237f10f8b` (monorepo scope, #3839; in batch/0.70.0, not yet `main`, whose scheduled nightly 35937679357 read 87.82%). The previous 88.78% (2026-07-29, `95145584f`) used the pre-monorepo exclude regex. The long-quoted "96.35%"/"96.94%" predates the pipeline ever working — it reported 0/0 until #2333 |
-| Project score / TDG / mutation % | **re-derive** — `pmat rust-project-score`, `pmat tdg . --include-components`, `cargo mutants` | The previously published "124/134", "TDG 95.2/100" and "Mutation 85.3%" carried no date or commit and could not be reproduced from the tree |
+**Scores.** Re-derive every score: `pmat rust-project-score`, `pmat tdg . --include-components`, `cargo mutants`. The only dated measurement is line coverage (90.84%, coverage-nightly 2026-09-24); its provenance and the withdrawn "124/134", "TDG 95.2/100" and "Mutation 85.3%" figures: `docs/agent-rules-history.md`.
 
 **Thresholds — read from the config, which does not say what this file used to say:**
 
