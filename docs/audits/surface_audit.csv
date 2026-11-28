@@ -35,9 +35,9 @@ aprender-data,aprender-data repl,6,UNKNOWN,huggingface-transformers,no,4,data-pi
 aprender-data,aprender-data schema,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:66,high
 aprender-data,aprender-data view,6,UNKNOWN,huggingface-transformers,no,4,data-pipeline,crates/aprender-data/src/cli/mod.rs:140,high
 apr,DELETE /api/delete,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/ollama.rs:730,medium
-apr,GET /,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:375,high
-apr,GET /api/tags,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:215,high
-apr,GET /api/version,9,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:217,medium
+apr,GET /,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:363,high
+apr,GET /api/tags,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:213,high
+apr,GET /api/version,9,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:215,medium
 apr,GET /health,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:89,medium
 apr,GET /health/live,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:90,medium
 apr,GET /health/ready,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:91,medium
@@ -48,19 +48,19 @@ apr,GET /models,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-se
 apr,GET /ready,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:93,high
 apr,GET /realize/model,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:105,high
 apr,GET /tensors,6,x86_64-linux,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/safetensors.rs:170,low
-apr,GET /v1/audit/:request_id,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:196,medium
-apr,GET /v1/effective-config,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:206,high
-apr,GET /v1/gpu/status,7,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:199,medium
-apr,GET /v1/metrics,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:201,high
+apr,GET /v1/audit/:request_id,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:194,medium
+apr,GET /v1/effective-config,7,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:204,high
+apr,GET /v1/gpu/status,7,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:197,medium
+apr,GET /v1/metrics,6,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:199,high
 apr,GET /v1/models,9,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:178,medium
-apr,HTTP 404 fallback route index,6,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:397,high
-apr,POST /api/chat,3,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:210,high
+apr,HTTP 404 fallback route index,6,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:385,high
+apr,POST /api/chat,3,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:208,high
 apr,"POST /api/chat (stream:true, NDJSON)",3,x86_64-linux,ollama,no,3,http-apr-serve,crates/aprender-serve/src/api/ollama_handlers.rs:654 (framing :397-437),high
-apr,POST /api/embeddings,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:220,high
-apr,POST /api/generate,3,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:211,high
+apr,POST /api/embeddings,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:218,high
+apr,POST /api/generate,3,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:209,high
 apr,"POST /api/generate (stream:true, NDJSON)",3,x86_64-linux,ollama,no,3,http-apr-serve,crates/aprender-serve/src/api/ollama_handlers.rs:742 (framing :397-437),high
 apr,POST /api/pull,6,x86_64-linux,ollama,no,10,apr-core-commands,crates/apr-cli/src/commands/serve/ollama.rs:726,medium
-apr,POST /api/show,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:216,high
+apr,POST /api/show,6,x86_64-linux,ollama,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:214,high
 apr,POST /batch/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:99,high
 apr,POST /batch/tokenize,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:98,high
 apr,POST /generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:97,high
@@ -71,20 +71,20 @@ apr,POST /realize/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/
 apr,POST /realize/reload,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:106,high
 apr,POST /stream/generate,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:100,high
 apr,POST /tokenize,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:96,high
-apr,POST /v1/batch/completions,9,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:226,medium
+apr,POST /v1/batch/completions,9,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:224,medium
 apr,POST /v1/chat/completions,4,x86_64-linux;nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:182,high
 apr,"POST /v1/chat/completions (stream:true, SSE)",4,x86_64-linux;nvidia-cuda,llama.cpp,no,3,http-apr-serve,"crates/aprender-serve/src/api/openai_handlers.rs:955-1025,1094-1276 (stream:true branches 1372,1471; cuda stream branches crates/aprender-serve/src/api/cuda_chat_backend.rs:155,637,773,931,1549,1580; ignore_eos fail-closed 16,732,884)",high
 apr,POST /v1/chat/completions/stream,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:187,high
 apr,POST /v1/completions,2,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:179,high
 apr,"POST /v1/completions (stream:true, SSE)",2,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/gpu_completions_handler.rs:406 (SSE :341-379),high
 apr,POST /v1/embeddings,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:190,high
-apr,POST /v1/explain,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:195,high
-apr,POST /v1/gpu/warmup,7,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:198,medium
-apr,POST /v1/logprobs,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:242,low
+apr,POST /v1/explain,4,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:193,high
+apr,POST /v1/gpu/warmup,7,x86_64-linux,vllm,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:196,medium
+apr,POST /v1/logprobs,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:240,low
 apr,POST /v1/messages,4,x86_64-linux,llama.cpp,no,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:192,high
 apr,"POST /v1/messages (stream:true, SSE)",4,x86_64-linux,llama.cpp,no,3,http-apr-serve,"crates/aprender-serve/src/api/anthropic_handlers.rs:233-292 (stream branch 359)",high
-apr,POST /v1/perplexity,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:243,low
-apr,POST /v1/predict,5,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:194,high
+apr,POST /v1/perplexity,7,nvidia-cuda,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:241,low
+apr,POST /v1/predict,5,x86_64-linux,llama.cpp,yes,3,http-apr-serve,crates/aprender-serve/src/api/router.rs:192,high
 apr,apr attn-parity-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1032,high
 apr,apr attn-viz-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1046,high
 apr,apr audio-inspect-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1009,high
@@ -417,8 +417,8 @@ apr,apr serve run,4,x86_64-linux;nvidia-cuda,llama.cpp,yes,10,apr-core-commands,
 apr,apr serve run --backend cpu,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),high
 apr,apr serve run --backend cuda,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),medium
 apr,apr serve run --backend wgpu,4,UNKNOWN,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:73 (NO value_parser; consumed crates/apr-cli/src/commands/serve/types.rs:57),high
-apr,apr serve run --no-cors,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:53 (router.rs:33-42),high
-apr,apr serve run --no-metrics,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:53 (router.rs:33-42),high
+apr,apr serve run --no-cors,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:53 (crates/aprender-serve/src/api/router.rs:33-42),high
+apr,apr serve run --no-metrics,4,x86_64-linux;nvidia-cuda,llama.cpp,no,10,apr-core-commands,crates/apr-cli/src/serve_commands.rs:53 (crates/aprender-serve/src/api/router.rs:33-42),high
 apr,apr shard,6,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1239,high
 apr,apr shared-cache-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1217,high
 apr,apr showcase,6,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/tool_commands.rs:5,high

@@ -1,0 +1,109 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-27'
+  author: PAIML Engineering
+  description: >-
+    Camera for the map runtime: anchored eased zoom, flyTo between two camera states, and level-of-detail
+    tier selection by the metric the MAP-5 row states. Zooming about an anchor leaves the world point under the anchor
+    where it was, flyTo starts at the current camera and ends at the target, and each level-of-detail boundary
+    selects the stated tier on both sides.
+  references:
+  - 'APR-MAP-001 rev 7, section 5, row MAP-0 and row MAP-5 (epic #7507, issues #7508 and #7513)'
+equations:
+  camera_state:
+    formula: 'camera = (centre c in world units, scale s > 0), where scale is screen pixels per world unit; screen point a maps to world point w(a) = c + (a - screen_centre) / s'
+    domain: 'c in R^2 world units; s > 0; screen_centre is the centre of the viewport in pixels'
+    codomain: 'camera state in R^2 x R_{>0}'
+    invariants:
+    - 'w(a) is the inverse of the screen mapping: a = screen_centre + (w(a) - c) s'
+  anchored_zoom:
+    formula: 'zoom(camera, anchor a, s_new): c_new = w(a) - (a - screen_centre) / s_new, where w(a) is computed from the camera before the zoom'
+    domain: 's > 0 and s_new > 0; anchor a is any pixel point of the viewport'
+    codomain: 'camera state with scale s_new'
+    invariants:
+    - 'w_after(a) = w_before(a) within the MAP-5 epsilon, for every anchor and every s_new > 0'
+    - 'the scale after the zoom is s_new'
+    preconditions:
+    - 's > 0 and s_new > 0'
+  fly_to:
+    formula: 'flyTo(camera_0, target): a path p(t) for t in [0, 1] with p(0) = camera_0 and p(1) = target; the shape of the path between the endpoints is not fixed by this contract'
+    domain: 'camera_0 and target are camera states; t in [0, 1]'
+    codomain: 'camera state for each t'
+    invariants:
+    - 'p(0) = camera_0 exactly'
+    - 'centre of p(1) = centre of target and scale of p(1) = scale of target, each within the MAP-5 epsilon'
+  level_of_detail:
+    formula: 'tier(r) for the level-of-detail metric r stated by the MAP-5 row is a step function with boundaries b_1 < b_2 < ... < b_k; the number of boundaries k, the boundary values and the tiers are stated by the MAP-5 row'
+    domain: 'r > 0, in the metric the MAP-5 row states'
+    codomain: 'one tier from the set of tiers the MAP-5 row states'
+    preconditions:
+    - '0 < b_1, so that b_1 - δ lies in the domain r > 0'
+    - 'the tier changes at each boundary: the tier just below b_i differs from the tier just above b_i'
+    invariants:
+    - 'tier is non-decreasing in r'
+    - 'for each boundary b_i, the tier selected just below b_i, just above b_i and at b_i are the tiers the MAP-5 row states for those positions'
+    - 'the boundary values are not fixed by this contract; the MAP-5 row states them'
+proof_obligations:
+- id: MAP-CAM-INV-001
+  type: invariant
+  property: Anchored zoom keeps the anchor world point fixed
+  formal: '∀ camera ∀ anchor a ∀ s_new > 0: |w_after(a) − w_before(a)| ≤ ε_MAP5'
+  applies_to: all
+- id: MAP-CAM-EQ-002
+  type: equivalence
+  property: flyTo endpoints
+  formal: '∀ camera_0 ∀ target: flyTo(camera_0, target).p(0) ≡ camera_0 ∧ |p(1) − target| ≤ ε_MAP5'
+  applies_to: all
+- id: MAP-CAM-BND-003
+  type: bound
+  property: Level-of-detail boundaries
+  formal: '∀ boundary b_i ∀ δ > 0 small: tier(b_i − δ) ≡ T_below ∧ tier(b_i + δ) ≡ T_above ∧ tier(b_i) ≡ T_at, where T_below, T_above and T_at are the tiers the MAP-5 row states'
+  applies_to: all
+- id: MAP-CAM-INV-004
+  type: invariant
+  property: Level-of-detail tier is monotone
+  formal: '∀ r1 ≤ r2: tier(r1) ≤ tier(r2) in the stated tier order'
+  applies_to: all
+enforcement:
+  anchored_zoom:
+    description: Zooming about an anchor leaves the world point under the anchor fixed
+    check: contract_tests::FALSIFY-MAP-CAM-001
+    severity: ERROR
+  fly_to_endpoints:
+    description: flyTo starts at the current camera and ends at the target
+    check: contract_tests::FALSIFY-MAP-CAM-002
+    severity: ERROR
+  lod_boundaries:
+    description: Each level-of-detail boundary selects the stated tier on both sides
+    check: contract_tests::FALSIFY-MAP-CAM-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-MAP-CAM-001
+  rule: Anchored zoom keeps the anchor world point fixed
+  prediction: 'for random cameras, random anchors and random s_new > 0, the world point under the anchor is the same before and after the zoom within the MAP-5 epsilon'
+  test: property test. Draw random camera states, random anchor pixels (including anchors away from the viewport centre) and random positive target scales. Compute the world point under the anchor before the zoom, apply anchored zoom, recompute the world point under the same anchor, and assert equality within the MAP-5 epsilon.
+  planted_mutation: 'zoom pivots about the viewport centre instead of the anchor (the anchor term is replaced by screen_centre); for any anchor away from the centre the world point under the anchor moves, and the test is red'
+  if_fails: Zoom drifts the map away from the point under the pointer, which breaks wheel and pinch zoom
+- id: FALSIFY-MAP-CAM-002
+  rule: flyTo starts at the current camera and ends at the target
+  prediction: 'p(0) equals the camera at the start of the call, and p(1) has the target centre and the target scale within the MAP-5 epsilon'
+  test: fixture test. Take a committed start camera and a committed target camera, evaluate the flyTo path at t = 0 and at t = 1, and assert that t = 0 equals the start camera exactly and t = 1 matches the target centre and scale within the epsilon stated in MAP-5.
+  planted_mutation: 'the flyTo function records the end of the path from the camera held before the call, so p(1) equals the start camera; the test is red because p(1) does not match the target'
+  if_fails: The camera lands on the old view, so a flyTo to a city or state never arrives
+- id: FALSIFY-MAP-CAM-003
+  rule: Each level-of-detail boundary selects the stated tier on both sides
+  prediction: 'for each boundary b_i, the tier just below and the tier just above are the MAP-5 stated tiers, and the tier at b_i is the MAP-5 stated tier at that value'
+  test: table test. For each boundary the MAP-5 row states, evaluate the tier at the boundary value and at a small value just below and just above it, and assert each result equals the tier the MAP-5 row states for that position. Also assert the tier is non-decreasing across the range of the metric covered by the table.
+  planted_mutation: 'the comparison at each boundary is flipped between strictly-less-than and less-than-or-equal, so the boundary value takes the tier on the other side of the boundary; the table test compares tier(b_i) with the stated T_at and is red at each boundary where the two differ'
+  if_fails: Tiers flip one pixel early or late, so the sprite and cell detail changes at the wrong zoom
+qa_gate:
+  id: F-MAP-CAM-001
+  name: Map Camera Contract
+  description: Anchored eased zoom, flyTo endpoints, and level-of-detail boundaries
+  checks:
+  - anchored_zoom
+  - fly_to_endpoints
+  - lod_boundaries
+  pass_criteria: All three falsification tests pass against the MAP-5 reference; the planted mutations named in each test turn them red
+  falsification: 'Pivot zoom about the viewport centre, or change a level-of-detail comparison from strict to non-strict'
