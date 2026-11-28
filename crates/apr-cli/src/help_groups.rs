@@ -176,8 +176,35 @@ fn ticket_len(s: &str) -> Option<usize> {
         .or_else(|| hash_len(s))
 }
 
+/// Drops every `(...)` group whose content is only separators (spaces, commas,
+/// colons), so `(GH-1, PMAT-2)` once its ids are gone leaves nothing behind.
+fn drop_empty_groups(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(open) = rest.find('(') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        match after.find(')') {
+            Some(close)
+                if after[..close]
+                    .chars()
+                    .all(|c| c == ' ' || c == ',' || c == ':') =>
+            {
+                rest = &after[close + 1..];
+            }
+            _ => {
+                out.push('(');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// The summary with every ticket id removed, and the brackets they leave empty
 /// (`(GH-243)` -> nothing, `(GH-243, ALB-011)` -> `(ALB-011)`) tidied away.
+/// A `:` that followed a removed id (`(PMAT-237: use ...)`) goes with it.
 pub fn strip_ticket_ids(summary: &str) -> String {
     let mut out = String::with_capacity(summary.len());
     let mut i = 0;
@@ -185,15 +212,17 @@ pub fn strip_ticket_ids(summary: &str) -> String {
         let rest = &summary[i..];
         if let Some(n) = ticket_len(rest) {
             i += n;
+            let after = summary[i..].trim_start_matches(' ');
+            if let Some(stripped) = after.strip_prefix(':') {
+                i = summary.len() - stripped.trim_start_matches(' ').len();
+            }
             continue;
         }
         let Some(c) = rest.chars().next() else { break };
         out.push(c);
         i += c.len_utf8();
     }
-    let mut t = out
-        .replace("( )", "")
-        .replace("()", "")
+    let mut t = drop_empty_groups(&out)
         .replace("(, ", "(")
         .replace(", )", ")")
         .replace(" ,", ",");
@@ -206,13 +235,19 @@ pub fn strip_ticket_ids(summary: &str) -> String {
 /// The root `apr` command with the grouped help template. The verbs, their
 /// arguments and their dispatch come from the same clap derive as `Cli`.
 pub fn grouped_command() -> Command {
-    let root = Cli::command().mut_args(|a| {
+    // Global args (the root's `--skip-contract`) are stripped here too, and clap
+    // copies them into every subcommand's --help; help_shows_no_ticket_ids checks
+    // the root options block, so the strip is global on purpose.
+    let mut root = Cli::command().mut_args(|a| {
         let stripped = a.get_help().map(|h| strip_ticket_ids(&h.to_string()));
         match stripped {
             Some(text) => a.help(text),
             None => a,
         }
     });
+    // Clap adds the built-in `help` subcommand during build(); the rows below
+    // are read before get_matches() runs that, so build now to list it.
+    root.build();
 
     // One row per visible verb: (heading, name, summary without ticket ids).
     let mut rows: Vec<(&'static str, String, String)> = Vec::new();
@@ -281,6 +316,22 @@ mod tests {
         assert_eq!(strip_ticket_ids("Tune (PMAT-741)"), "Tune");
         assert_eq!(strip_ticket_ids("Shard (CRUX-B-05)"), "Shard");
         assert_eq!(strip_ticket_ids("Pinned (#3856)"), "Pinned");
+    }
+
+    #[test]
+    fn strip_leaves_no_orphan_colon_or_empty_parens() {
+        assert_eq!(
+            strip_ticket_ids(
+                "Skip tensor contract validation (PMAT-237: use with diagnostic tooling)"
+            ),
+            "Skip tensor contract validation (use with diagnostic tooling)"
+        );
+        assert_eq!(strip_ticket_ids("Two ids (GH-1, PMAT-2)"), "Two ids");
+        assert_eq!(
+            strip_ticket_ids("Two ids (GH-1, PMAT-2) left"),
+            "Two ids left"
+        );
+        assert!(!strip_ticket_ids("A (PMAT-237: x)").contains("(:"));
     }
 
     #[test]
