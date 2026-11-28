@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn an_expired_lab_row_is_exempt_and_emits_one_lab_record() {
         let cell =
-            "**LAB** (operator ruling, see Appendix D; was **OPEN**). Expires **2026-11-27**";
+            "**LAB** (operator ruling, see Appendix D #7534; was **OPEN**). Expires **2026-11-27**";
         let recs = check(&one_row(cell), TODAY);
         assert!(violations(&recs).is_empty(), "{recs:?}");
         assert_eq!(lab_rows(&recs), vec!["r1".to_owned()]);
@@ -461,6 +461,26 @@ mod tests {
             lab.line(),
             "LAB\tr1\texpired 2026-11-27 (today is 2026-11-28); LAB, cannot block (C324)"
         );
+    }
+
+    #[test]
+    fn an_expired_lab_row_without_its_ruling_and_ticket_is_still_d6() {
+        // C324: a LAB row has one ticket and one owner; the exemption is the ruling the cell
+        // cites, so a bare LAB, or one missing either citation, is still an andon.
+        for cell in [
+            "**LAB**. Expires **2026-11-27**",
+            "**LAB** (see Appendix D). Expires **2026-11-27**",
+            "**LAB** (#7534). Expires **2026-11-27**",
+            "**LAB** (see Appendix D #x). Expires **2026-11-27**",
+        ] {
+            let recs = check(&one_row(cell), TODAY);
+            assert_eq!(
+                violations(&recs),
+                vec![("D6", "r1".to_owned())],
+                "cell: {cell}"
+            );
+            assert!(lab_rows(&recs).is_empty(), "cell: {cell}");
+        }
     }
 
     #[test]
