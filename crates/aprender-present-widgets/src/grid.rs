@@ -6,6 +6,7 @@
 //!
 //! Contract: `contracts/present-grid-widget-v1.yaml`.
 
+use presentar_core::html::children_html;
 use presentar_core::{
     widget::{BrickAssertion, BrickBudget, BrickVerification, LayoutResult},
     Brick, Canvas, Constraints, Event, Rect, Size, TypeId, Widget,
@@ -366,8 +367,9 @@ impl Brick for Grid {
 
     fn to_html(&self) -> String {
         format!(
-            r#"<div class="brick-grid" style="grid-template-columns: repeat({}, 1fr);"></div>"#,
-            self.columns.max(1)
+            r#"<div class="brick-grid" style="grid-template-columns: repeat({}, 1fr);">{}</div>"#,
+            self.columns.max(1),
+            children_html(self.children())
         )
     }
 

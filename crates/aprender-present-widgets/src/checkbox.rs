@@ -1,5 +1,6 @@
 //! Checkbox widget for boolean input.
 
+use presentar_core::html::escape_attr;
 use presentar_core::{
     widget::{AccessibleRole, LayoutResult},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Event,
@@ -403,8 +404,8 @@ impl Brick for Checkbox {
         let disabled = if self.disabled { " disabled" } else { "" };
         format!(
             r#"<input type="checkbox" class="brick-checkbox" data-testid="{}" aria-label="{}"{}{}/>"#,
-            test_id,
-            self.accessible_name_value.as_deref().unwrap_or(&self.label),
+            escape_attr(test_id),
+            escape_attr(self.accessible_name_value.as_deref().unwrap_or(&self.label)),
             checked,
             disabled
         )

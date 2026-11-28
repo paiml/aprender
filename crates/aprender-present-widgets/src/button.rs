@@ -1,5 +1,6 @@
 //! Button widget for user interactions.
 
+use presentar_core::html::{escape_attr, escape_text};
 use presentar_core::{
     widget::{AccessibleRole, FontWeight, LayoutResult, TextStyle},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints,
@@ -353,10 +354,10 @@ impl Brick for Button {
         let test_id = self.test_id_value.as_deref().unwrap_or("button");
         format!(
             r#"<button class="brick-button" data-testid="{}" aria-label="{}"{}>{}</button>"#,
-            test_id,
-            self.accessible_name.as_deref().unwrap_or(&self.label),
+            escape_attr(test_id),
+            escape_attr(self.accessible_name.as_deref().unwrap_or(&self.label)),
             disabled,
-            self.label
+            escape_text(&self.label)
         )
     }
 

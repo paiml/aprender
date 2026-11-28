@@ -1,5 +1,6 @@
 //! Stack widget for z-axis overlapping children.
 
+use presentar_core::html::{children_html, escape_attr};
 use presentar_core::{
     widget::{Brick, BrickAssertion, BrickBudget, BrickVerification, LayoutResult},
     Canvas, Constraints, Event, Rect, Size, TypeId, Widget,
@@ -247,7 +248,9 @@ impl Brick for Stack {
     }
 
     fn to_html(&self) -> String {
-        r#"<div class="brick-stack"></div>"#.to_string()
+        let test_id = escape_attr(self.test_id_value.as_deref().unwrap_or("stack"));
+        let children = children_html(self.children());
+        format!(r#"<div class="brick-stack" data-testid="{test_id}">{children}</div>"#)
     }
 
     fn to_css(&self) -> String {

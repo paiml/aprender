@@ -1,5 +1,6 @@
 //! Tooltip widget for contextual hover information.
 
+use presentar_core::html::{escape_attr, escape_text};
 use presentar_core::{
     widget::{AccessibleRole, LayoutResult, TextStyle},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Event,
@@ -552,7 +553,9 @@ impl Brick for Tooltip {
             .unwrap_or(&self.content);
         format!(
             r#"<div class="brick-tooltip" role="tooltip" data-testid="{}" aria-label="{}">{}</div>"#,
-            test_id, aria_label, self.content
+            escape_attr(test_id),
+            escape_attr(aria_label),
+            escape_text(&self.content)
         )
     }
 

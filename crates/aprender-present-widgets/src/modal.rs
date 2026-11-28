@@ -3,6 +3,7 @@
 //! The Modal widget displays content in a centered overlay with a backdrop,
 //! supporting keyboard navigation, focus trap, and animation.
 
+use presentar_core::html::{children_html, escape_text};
 use presentar_core::{
     widget::{LayoutResult, TextStyle},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Event, Key,
@@ -533,7 +534,17 @@ impl Brick for Modal {
     }
 
     fn to_html(&self) -> String {
-        r#"<div class="brick-modal"></div>"#.to_string()
+        let hidden = if self.open { "" } else { " hidden" };
+        let title = self.title.as_deref().map_or_else(String::new, |title| {
+            format!(
+                r#"<h2 class="brick-modal-title">{}</h2>"#,
+                escape_text(title)
+            )
+        });
+        format!(
+            r#"<div class="brick-modal"{hidden}>{title}{}</div>"#,
+            children_html(self.children())
+        )
     }
 
     fn to_css(&self) -> String {

@@ -1,5 +1,6 @@
 //! `TextInput` widget for text entry.
 
+use presentar_core::html::escape_attr;
 use presentar_core::{
     widget::{AccessibleRole, LayoutResult, TextStyle},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Event, Key,
@@ -304,6 +305,42 @@ impl TextInput {
     }
 }
 
+/// Input handling.
+impl TextInput {
+    fn changed_message(&self, changed: bool) -> Option<Box<dyn Any + Send>> {
+        if !changed {
+            return None;
+        }
+        Some(Box::new(TextChanged {
+            value: self.value.clone(),
+        }))
+    }
+
+    fn on_key(&mut self, key: &Key) -> Option<Box<dyn Any + Send>> {
+        match key {
+            Key::Backspace => {
+                let changed = self.backspace();
+                return self.changed_message(changed);
+            }
+            Key::Delete => {
+                let changed = self.delete();
+                return self.changed_message(changed);
+            }
+            Key::Left => self.move_left(),
+            Key::Right => self.move_right(),
+            Key::Home => self.move_home(),
+            Key::End => self.move_end(),
+            Key::Enter => {
+                return Some(Box::new(TextSubmitted {
+                    value: self.value.clone(),
+                }));
+            }
+            _ => {}
+        }
+        None
+    }
+}
+
 impl Widget for TextInput {
     fn type_id(&self) -> TypeId {
         TypeId::of::<Self>()
@@ -371,38 +408,10 @@ impl Widget for TextInput {
                 self.focused = false;
             }
             Event::TextInput { text } if self.focused => {
-                if self.insert_text(text) {
-                    return Some(Box::new(TextChanged {
-                        value: self.value.clone(),
-                    }));
-                }
+                let changed = self.insert_text(text);
+                return self.changed_message(changed);
             }
-            Event::KeyDown { key, .. } if self.focused => match key {
-                Key::Backspace => {
-                    if self.backspace() {
-                        return Some(Box::new(TextChanged {
-                            value: self.value.clone(),
-                        }));
-                    }
-                }
-                Key::Delete => {
-                    if self.delete() {
-                        return Some(Box::new(TextChanged {
-                            value: self.value.clone(),
-                        }));
-                    }
-                }
-                Key::Left => self.move_left(),
-                Key::Right => self.move_right(),
-                Key::Home => self.move_home(),
-                Key::End => self.move_end(),
-                Key::Enter => {
-                    return Some(Box::new(TextSubmitted {
-                        value: self.value.clone(),
-                    }));
-                }
-                _ => {}
-            },
+            Event::KeyDown { key, .. } if self.focused => return self.on_key(key),
             _ => {}
         }
 
@@ -481,13 +490,19 @@ impl Brick for TextInput {
     }
 
     fn to_html(&self) -> String {
-        let test_id = self.test_id_value.as_deref().unwrap_or("text-input");
+        let test_id = escape_attr(self.test_id_value.as_deref().unwrap_or("text-input"));
         let disabled = if self.disabled { " disabled" } else { "" };
         let input_type = if self.obscure { "password" } else { "text" };
-        let aria_label = self.accessible_name_value.as_deref().unwrap_or("");
+        // A password is never written into markup.
+        let value = if self.obscure {
+            String::new()
+        } else {
+            escape_attr(&self.value)
+        };
+        let aria_label = escape_attr(self.accessible_name_value.as_deref().unwrap_or(""));
+        let placeholder = escape_attr(&self.placeholder);
         format!(
-            r#"<input type="{}" class="brick-textinput" data-testid="{}" placeholder="{}" value="{}" aria-label="{}"{} />"#,
-            input_type, test_id, self.placeholder, self.value, aria_label, disabled
+            r#"<input type="{input_type}" class="brick-textinput" data-testid="{test_id}" placeholder="{placeholder}" value="{value}" aria-label="{aria_label}"{disabled} />"#
         )
     }
 

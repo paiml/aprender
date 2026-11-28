@@ -9,6 +9,7 @@
 //!
 //! Contract: `contracts/present-waveform-path-v1.yaml`.
 
+use presentar_core::html::escape_attr;
 use presentar_core::{
     widget::{AccessibleRole, LayoutResult},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Event,
@@ -168,14 +169,6 @@ pub fn waveform_points(samples: &[f32], bounds: Rect, max_points: usize) -> Vec<
             Point::new(x, y)
         })
         .collect()
-}
-
-/// Escape text for an HTML attribute value.
-fn escape_attr(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }
 
 /// Realtime audio waveform widget.

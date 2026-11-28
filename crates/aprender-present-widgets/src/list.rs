@@ -3,6 +3,7 @@
 //! The List widget only renders items that are visible in the viewport,
 //! enabling smooth scrolling of thousands of items.
 
+use presentar_core::html::children_html;
 use presentar_core::{
     widget::LayoutResult, Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas,
     Constraints, Event, Key, Rect, Size, TypeId, Widget,
@@ -391,6 +392,69 @@ impl List {
     }
 }
 
+/// Input handling, one method per kind of event.
+impl List {
+    fn on_scroll(&mut self, delta_y: f32) -> Box<dyn Any + Send> {
+        let viewport_size = match self.direction {
+            ListDirection::Vertical => self.bounds.height,
+            ListDirection::Horizontal => self.bounds.width,
+        };
+
+        let max_scroll = (self.content_size - viewport_size).max(0.0);
+        self.scroll_offset = (self.scroll_offset - delta_y * 48.0).clamp(0.0, max_scroll);
+
+        // Recalculate visible range
+        self.calculate_visible_range(viewport_size);
+        self.render_visible_items();
+
+        Box::new(ListScrolled {
+            offset: self.scroll_offset,
+        })
+    }
+
+    fn on_key(&mut self, key: &Key) -> Option<Box<dyn Any + Send>> {
+        let focused = self.focused_index?;
+        match key {
+            Key::Up | Key::Left if focused > 0 => {
+                self.focused_index = Some(focused - 1);
+                self.scroll_into_view(focused - 1);
+            }
+            Key::Down | Key::Right if focused < self.items.len() - 1 => {
+                self.focused_index = Some(focused + 1);
+                self.scroll_into_view(focused + 1);
+            }
+            Key::Enter | Key::Space => {
+                self.toggle_selection(focused);
+                return Some(Box::new(ListItemSelected { index: focused }));
+            }
+            Key::Home => {
+                self.focused_index = Some(0);
+                self.scroll_to(0);
+            }
+            Key::End => {
+                let last = self.items.len().saturating_sub(1);
+                self.focused_index = Some(last);
+                self.scroll_to(last);
+            }
+            _ => {}
+        }
+        None
+    }
+
+    /// `pos` is measured along the list axis, in content coordinates.
+    fn on_click(&mut self, pos: f32) -> Option<Box<dyn Any + Send>> {
+        let index = self
+            .item_positions
+            .iter()
+            .enumerate()
+            .find(|&(i, &start)| pos >= start && pos < start + self.get_item_size(i))
+            .map(|(i, _)| i)?;
+        self.focused_index = Some(index);
+        self.toggle_selection(index);
+        Some(Box::new(ListItemClicked { index }))
+    }
+}
+
 impl Widget for List {
     fn type_id(&self) -> TypeId {
         TypeId::of::<Self>()
@@ -461,82 +525,17 @@ impl Widget for List {
 
     fn event(&mut self, event: &Event) -> Option<Box<dyn Any + Send>> {
         match event {
-            Event::Scroll { delta_y, .. } => {
-                let viewport_size = match self.direction {
-                    ListDirection::Vertical => self.bounds.height,
-                    ListDirection::Horizontal => self.bounds.width,
-                };
-
-                let max_scroll = (self.content_size - viewport_size).max(0.0);
-                self.scroll_offset = (self.scroll_offset - delta_y * 48.0).clamp(0.0, max_scroll);
-
-                // Recalculate visible range
-                self.calculate_visible_range(viewport_size);
-                self.render_visible_items();
-
-                Some(Box::new(ListScrolled {
-                    offset: self.scroll_offset,
-                }))
-            }
-            Event::KeyDown { key, .. } => {
-                if let Some(focused) = self.focused_index {
-                    match key {
-                        Key::Up | Key::Left => {
-                            if focused > 0 {
-                                self.focused_index = Some(focused - 1);
-                                self.scroll_into_view(focused - 1);
-                            }
-                        }
-                        Key::Down | Key::Right => {
-                            if focused < self.items.len() - 1 {
-                                self.focused_index = Some(focused + 1);
-                                self.scroll_into_view(focused + 1);
-                            }
-                        }
-                        Key::Enter | Key::Space => {
-                            self.toggle_selection(focused);
-                            return Some(Box::new(ListItemSelected { index: focused }));
-                        }
-                        Key::Home => {
-                            self.focused_index = Some(0);
-                            self.scroll_to(0);
-                        }
-                        Key::End => {
-                            let last = self.items.len().saturating_sub(1);
-                            self.focused_index = Some(last);
-                            self.scroll_to(last);
-                        }
-                        _ => {}
-                    }
-                }
-                None
-            }
+            Event::Scroll { delta_y, .. } => Some(self.on_scroll(*delta_y)),
+            Event::KeyDown { key, .. } => self.on_key(key),
             Event::MouseDown { position, .. } => {
-                // Find clicked item
-                let pos = match self.direction {
-                    ListDirection::Vertical => position.y - self.bounds.y + self.scroll_offset,
-                    ListDirection::Horizontal => position.x - self.bounds.x + self.scroll_offset,
+                let along = match self.direction {
+                    ListDirection::Vertical => position.y - self.bounds.y,
+                    ListDirection::Horizontal => position.x - self.bounds.x,
                 };
-
-                for (i, &item_pos) in self.item_positions.iter().enumerate() {
-                    let item_size = self.get_item_size(i);
-                    if pos >= item_pos && pos < item_pos + item_size {
-                        self.focused_index = Some(i);
-                        self.toggle_selection(i);
-                        return Some(Box::new(ListItemClicked { index: i }));
-                    }
-                }
-                None
+                self.on_click(along + self.scroll_offset)
             }
-            _ => {
-                // Propagate to visible children
-                for child in &mut self.children {
-                    if let Some(msg) = child.event(event) {
-                        return Some(msg);
-                    }
-                }
-                None
-            }
+            // Propagate to visible children
+            _ => self.children.iter_mut().find_map(|c| c.event(event)),
         }
     }
 
@@ -584,7 +583,10 @@ impl Brick for List {
     }
 
     fn to_html(&self) -> String {
-        r#"<div class="brick-list"></div>"#.to_string()
+        format!(
+            r#"<div class="brick-list">{}</div>"#,
+            children_html(self.children())
+        )
     }
 
     fn to_css(&self) -> String {
