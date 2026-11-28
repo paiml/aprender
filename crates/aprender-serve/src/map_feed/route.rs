@@ -86,7 +86,6 @@ impl FeedHub {
 }
 
 /// The axum router serving `GET /map/feed/:column` as a WebSocket upgrade.
-#[must_use]
 pub fn router(hub: FeedHub) -> Router {
     Router::new()
         .route("/map/feed/:column", get(ws_feed))
