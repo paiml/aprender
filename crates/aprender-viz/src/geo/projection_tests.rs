@@ -540,3 +540,11 @@ fn equirectangular_inverse_longitude_stays_half_open() {
     println!("WRAP180 x={x:?} lon={lon:?}");
     assert!(lon < 180.0 && lon >= -180.0, "lon {lon:?} outside [-180, 180)");
 }
+
+#[test]
+fn wrap180_stays_half_open_just_below_minus_180() {
+    let below = f64::from_bits((-180.0_f64).to_bits() + 1);
+    assert!(below < -180.0);
+    let w = crate::geo::projection::wrap180(below);
+    assert!((-180.0..180.0).contains(&w), "wrap180({below}) = {w}");
+}

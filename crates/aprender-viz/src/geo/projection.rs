@@ -86,8 +86,14 @@ pub trait Projection {
 }
 
 /// Wraps an angle in degrees into `[-180, 180)`.
-fn wrap180(deg: f64) -> f64 {
-    (deg + 180.0).rem_euclid(360.0) - 180.0
+pub(crate) fn wrap180(deg: f64) -> f64 {
+    let w = (deg + 180.0).rem_euclid(360.0) - 180.0;
+    // `rem_euclid` can round up to the modulus for a tiny negative dividend.
+    if w >= 180.0 {
+        -180.0
+    } else {
+        w
+    }
 }
 
 /// Rejects NaN and infinities on the input path.
