@@ -4,6 +4,8 @@
 //! and no clock: the caller passes `now_ms`. Every method returns a [`Report`] with the renders
 //! the layer scheduler performed and the history write the host must make, if any.
 
+use std::collections::BTreeSet;
+
 use super::{
     camera::Camera2D,
     hex::HexGrid,
@@ -125,6 +127,23 @@ impl Interaction {
     /// The URL state as the history policy holds it.
     pub fn url_state(&self) -> &UrlState {
         self.history.state()
+    }
+
+    /// Brushed selection set.
+    pub fn brushed(&self) -> &BTreeSet<EntityId> {
+        self.layers.brushed()
+    }
+
+    /// Switches the active lens. RED stub: changes nothing.
+    pub fn switch_lens(&mut self, lens: LensId, now_ms: u64) -> Result<Report, MapError> {
+        let _ = (lens, now_ms);
+        Ok(quiet())
+    }
+
+    /// Replaces the brushed selection set. RED stub: changes nothing.
+    pub fn brush(&mut self, cells: BTreeSet<EntityId>) -> Result<Report, MapError> {
+        let _ = cells;
+        Ok(quiet())
     }
 
     /// Pointer over a screen pixel: sets the hovered cell. Writes no history.

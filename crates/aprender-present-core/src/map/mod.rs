@@ -10,8 +10,10 @@ use std::fmt;
 pub mod camera;
 pub mod cull;
 pub mod hex;
+pub mod histogram;
 pub mod interact;
 pub mod layers;
+pub mod lens;
 pub mod lod;
 pub mod pick;
 pub mod search;
@@ -21,10 +23,12 @@ pub mod urlstate;
 pub use camera::{Camera2D, FlyTo, ZoomAnim};
 pub use cull::{visible_indices, Bounds};
 pub use hex::HexGrid;
+pub use histogram::{Brush, Histogram, HISTOGRAM_BINS};
 pub use interact::Interaction;
 pub use layers::{
     EntityId, Event, Layers, LensId, Outcome, OverlayChange, Renders, CACHE_MARGIN_PX,
 };
+pub use lens::{Lens, LensRegistry, Scale};
 pub use lod::{tier_for_radius, LodTier, BOUNDARIES_PX};
 pub use search::SearchIndex;
 pub use sprites::{generate_sprite, side_for_bucket, size_bucket, Sprite, SpriteAtlas};
@@ -54,6 +58,12 @@ pub enum MapError {
     OutOfRange(&'static str),
     /// Text that does not parse as the named value (URL state codec).
     Malformed(&'static str),
+    /// A value domain whose lower bound is not strictly below its upper bound.
+    EmptyDomain,
+    /// A lens id that is already registered.
+    Duplicate(&'static str),
+    /// A lens whose per-cell values do not match the grid's cell count.
+    Mismatch(&'static str),
 }
 
 impl fmt::Display for MapError {
@@ -66,6 +76,9 @@ impl fmt::Display for MapError {
             Self::ViewportMismatch => write!(f, "fly-to cameras must share a viewport size"),
             Self::OutOfRange(what) => write!(f, "{what} is outside the supported range"),
             Self::Malformed(what) => write!(f, "{what} is malformed"),
+            Self::EmptyDomain => write!(f, "value domain must have lo < hi"),
+            Self::Duplicate(what) => write!(f, "{what} is already registered"),
+            Self::Mismatch(what) => write!(f, "{what} does not match the grid"),
         }
     }
 }
@@ -128,6 +141,10 @@ pub(crate) fn check_non_negative(v: f64, what: &'static str) -> Result<(), MapEr
 }
 
 #[cfg(test)]
+#[path = "lens_switch_tests.rs"]
+mod lens_switch_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -153,6 +170,9 @@ mod tests {
                 "pan is outside the supported range",
             ),
             (MapError::Malformed("sel"), "sel is malformed"),
+            (MapError::EmptyDomain, "value domain must have lo < hi"),
+            (MapError::Duplicate("lens"), "lens is already registered"),
+            (MapError::Mismatch("lens"), "lens does not match the grid"),
         ];
         for (err, want) in cases {
             assert_eq!(err.to_string(), want);

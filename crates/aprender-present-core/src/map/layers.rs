@@ -7,7 +7,7 @@
 //! nothing; the uncovered layers render once when the zoom settles. The scheduler reports which
 //! layers rendered and whether a frame callback is requested. It never draws.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{camera::Camera2D, MapError};
 
@@ -165,6 +165,7 @@ pub struct Layers {
     pending: BTreeMap<LensId, u32>,
     hovered: Option<EntityId>,
     selected: Option<EntityId>,
+    brushed: BTreeSet<EntityId>,
     overlay_on: bool,
     moving: bool,
     frame_pending: bool,
@@ -194,6 +195,7 @@ impl Layers {
             pending: BTreeMap::new(),
             hovered: None,
             selected: None,
+            brushed: BTreeSet::new(),
             overlay_on: true,
             moving: false,
             frame_pending: false,
@@ -340,6 +342,17 @@ impl Layers {
         }
         self.overlay.invalidate();
         outcome(self.refresh(), false)
+    }
+
+    /// Replaces the brushed selection set and repaints the overlay once. RED stub: stores nothing.
+    pub fn set_brush(&mut self, cells: BTreeSet<EntityId>) -> Outcome {
+        let _ = cells;
+        quiet()
+    }
+
+    /// Cells in the brushed selection set.
+    pub fn brushed(&self) -> &BTreeSet<EntityId> {
+        &self.brushed
     }
 }
 
