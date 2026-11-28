@@ -388,6 +388,68 @@ fn falsify_map_lc_002_prepaint_after_a_prepainted_settle_keeps_current_coverage(
 }
 
 #[test]
+fn falsify_map_lc_002_pans_past_the_margin_render_in_every_direction() {
+    // Each direction, by 300 px (past the 160 px margin), from a fresh layer set: the cache
+    // covers the view after 100 px in the same direction, and not after 300 px.
+    let directions = [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)];
+    for (sx, sy) in directions {
+        let mut layers = with_lens(Some(1));
+        let inside = step(
+            &mut layers,
+            Event::Pan {
+                dx_px: 100.0 * sx,
+                dy_px: 100.0 * sy,
+            },
+        );
+        assert_eq!(
+            inside.renders,
+            r(0, 0, 0),
+            "inside margin, direction ({sx}, {sy})"
+        );
+        let past = step(
+            &mut layers,
+            Event::Pan {
+                dx_px: 200.0 * sx,
+                dy_px: 200.0 * sy,
+            },
+        );
+        assert_eq!(
+            past.renders,
+            r(1, 1, 1),
+            "past margin, direction ({sx}, {sy})"
+        );
+    }
+}
+
+#[test]
+fn take_frame_reports_the_frame_requests_that_handle_recorded() {
+    let mut layers = with_lens(Some(1));
+    assert!(layers.take_frame(), "initial paint");
+    assert!(!layers.take_frame(), "a consumed request is not repeated");
+    // A pan that moves the view leaves a pending frame request for the host.
+    step(
+        &mut layers,
+        Event::Pan {
+            dx_px: 10.0,
+            dy_px: 0.0,
+        },
+    );
+    assert!(
+        layers.take_frame(),
+        "handle must record the pan's frame request"
+    );
+    // An idle event requests nothing, so nothing is pending.
+    step(&mut layers, Event::Idle);
+    assert!(!layers.take_frame());
+    // A repaint through an overlay change records its request too.
+    step(&mut layers, Event::Overlay(OverlayChange::Hover(Some(9))));
+    assert!(
+        layers.take_frame(),
+        "overlay repaint must record a frame request"
+    );
+}
+
+#[test]
 fn falsify_map_lc_002_a_pan_of_exactly_the_margin_stays_inside_it() {
     // At scale 147 the world round trip of 160 px rounds up by one ulp.
     let camera = Camera2D::new((0.0, 0.0), 147.0, VIEW).expect("valid camera");

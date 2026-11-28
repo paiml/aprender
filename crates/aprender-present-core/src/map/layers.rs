@@ -23,8 +23,11 @@ pub type EntityId = u64;
 /// Number of renders of each layer caused by one event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Renders {
+    /// Renders of the base layer.
     pub base: u32,
+    /// Renders of the lens layer.
     pub lens: u32,
+    /// Renders of the overlay layer.
     pub overlay: u32,
 }
 
@@ -40,6 +43,7 @@ impl Renders {
 /// Result of handling one event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Outcome {
+    /// Layers rendered by the event.
     pub renders: Renders,
     /// True when the event changed what is on screen, so a frame callback is requested.
     pub frame_requested: bool,
@@ -48,7 +52,9 @@ pub struct Outcome {
 /// Change to the overlay layer: hover, selection, or the layer toggle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayChange {
+    /// Sets the hovered entity, or clears it with `None`.
     Hover(Option<EntityId>),
+    /// Sets the selected entity, or clears it with `None`.
     Select(Option<EntityId>),
     /// Flips the overlay on or off and repaints it once. The flag is reported by
     /// [`Layers::overlay_on`]; it does not suppress the repaint.
@@ -61,13 +67,28 @@ pub enum Event {
     /// An input-free interval. Requests no frame.
     Idle,
     /// Drag by a pixel offset (content follows the pointer).
-    Pan { dx_px: f64, dy_px: f64 },
+    Pan {
+        /// Horizontal drag in pixels.
+        dx_px: f64,
+        /// Vertical drag in pixels.
+        dy_px: f64,
+    },
     /// One step of a zoom in progress: moves the camera, renders nothing.
-    ZoomMotion { anchor: (f64, f64), scale: f64 },
+    ZoomMotion {
+        /// Screen pixel the zoom keeps fixed.
+        anchor: (f64, f64),
+        /// Scale reached by this step, in pixels per world unit.
+        scale: f64,
+    },
     /// The zoom has stopped: renders every layer that is not covered at the settled camera.
     ZoomSettle,
     /// Idle work: pre-paints the base layer for the camera a zoom to `next_scale` would reach.
-    IdlePrepaint { anchor: (f64, f64), next_scale: f64 },
+    IdlePrepaint {
+        /// Screen pixel the predicted zoom keeps fixed.
+        anchor: (f64, f64),
+        /// Scale of the predicted zoom.
+        next_scale: f64,
+    },
     /// Makes a lens active. The lens layer is rebuilt once.
     LensSwitch(LensId),
     /// One delta message for a lens. Active lens: the lens layer is rebuilt once. Inactive lens:

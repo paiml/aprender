@@ -270,6 +270,46 @@ fn falsify_map_cam_002_fly_to_starts_at_camera_and_ends_at_target() {
     let mid = fly.at(0.5).expect("t in range");
     assert!(near(mid.centre(), (60.25, -20.125), 60.25));
     assert!((mid.scale() - 4.0).abs() <= EPS * 5.0);
+    // Quarter points: t = 0.25 is near the start and t = 0.75 near the target. A path that
+    // reverses t (1 - t) or holds a constant midpoint fails here, not only at t = 0.5.
+    let q1 = fly.at(0.25).expect("t in range");
+    assert!(near(q1.centre(), (30.125, -10.0625), 30.125));
+    assert!(
+        (q1.scale() - 2.0).abs() <= EPS * 3.0,
+        "scale at 0.25 was {}",
+        q1.scale()
+    );
+    let q3 = fly.at(0.75).expect("t in range");
+    assert!(near(q3.centre(), (90.375, -30.1875), 90.375));
+    assert!(
+        (q3.scale() - 8.0).abs() <= EPS * 9.0,
+        "scale at 0.75 was {}",
+        q3.scale()
+    );
+}
+
+#[test]
+fn falsify_map_cam_002_fly_to_makes_monotone_progress_from_start_to_target() {
+    let fly = FlyTo::new(fixture_start(), fixture_target()).expect("same viewport");
+    let mut prev = fly.at(0.0).expect("t in range");
+    for i in 1..=20 {
+        let cam_t = fly.at(f64::from(i) / 20.0).expect("t in range");
+        // The centre moves toward the target (x grows, y falls) and the scale grows.
+        assert!(
+            cam_t.centre().0 > prev.centre().0,
+            "x did not advance at step {i}"
+        );
+        assert!(
+            cam_t.centre().1 < prev.centre().1,
+            "y did not advance at step {i}"
+        );
+        assert!(
+            cam_t.scale() > prev.scale(),
+            "scale did not advance at step {i}"
+        );
+        prev = cam_t;
+    }
+    assert!(near(prev.centre(), (120.5, -40.25), 120.5));
 }
 
 proptest! {

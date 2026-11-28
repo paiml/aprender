@@ -155,6 +155,24 @@ fn disc_is_opaque_inside_and_transparent_black_outside() {
         }
     }
     assert!(opaque > 0 && opaque < n * n, "disc must be a proper subset");
+    // Orientation: the centre is inside the disc (opaque) and all four corners are outside it
+    // (transparent). An inverted disc or a square one fails here.
+    let mid = n / 2;
+    assert_eq!(pixel(&s, mid, mid)[3], 255, "centre must be opaque");
+    for (x, y) in [(0, 0), (n - 1, 0), (0, n - 1), (n - 1, n - 1)] {
+        assert_eq!(
+            pixel(&s, x, y)[3],
+            0,
+            "corner ({x},{y}) must be transparent"
+        );
+    }
+    // Area: a disc covers pi/4 of its square. The lattice count stays within 10% of that.
+    let expected = std::f64::consts::FRAC_PI_4 * (n * n) as f64;
+    let got = opaque as f64;
+    assert!(
+        (got - expected).abs() <= 0.10 * expected,
+        "opaque count {got} is not near the disc area {expected}"
+    );
 }
 
 #[test]
@@ -209,6 +227,26 @@ fn atlas_keeps_one_entry_per_key_seed_and_bucket() {
     atlas.sprite(GOLDEN_KEY, 9, 13).expect("new seed");
     assert_eq!(atlas.generations(), 3, "new seed is a miss");
     assert_eq!(atlas.len(), 3);
+    // A new key with the same seed and bucket is its own entry, with its own bytes.
+    let river = atlas
+        .sprite("hex-river", GOLDEN_SEED, 13)
+        .expect("new key")
+        .clone();
+    assert_eq!(atlas.generations(), 4, "new key is a miss");
+    assert_eq!(atlas.len(), 4);
+    assert_eq!(
+        river,
+        generate_sprite("hex-river", GOLDEN_SEED, 13).expect("direct")
+    );
+    assert_ne!(
+        river.rgba(),
+        generate_sprite(GOLDEN_KEY, GOLDEN_SEED, 13)
+            .expect("direct")
+            .rgba()
+    );
+    // The original key still hits its own entry.
+    atlas.sprite(GOLDEN_KEY, GOLDEN_SEED, 13).expect("hit");
+    assert_eq!(atlas.generations(), 4, "original key must not be repainted");
 }
 
 #[test]

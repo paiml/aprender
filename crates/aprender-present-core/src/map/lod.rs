@@ -11,9 +11,13 @@ pub const BOUNDARIES_PX: [f64; 3] = [10.0, 22.0, 44.0];
 /// Detail tier, ordered from coarsest to finest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LodTier {
+    /// Radius below 10 px.
     Far,
+    /// Radius from 10 px up to 22 px.
     Mid,
+    /// Radius from 22 px up to 44 px.
     Near,
+    /// Radius of 44 px or more.
     Close,
 }
 
