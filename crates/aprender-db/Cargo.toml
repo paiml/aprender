@@ -25,6 +25,9 @@ serde_json = "1.0"
 # Timestamps for experiment tracking
 chrono = { version = "0.4", features = ["serde"] }
 
+# Bundle manifest digests (MAP-4 sha256 manifest)
+sha2 = { workspace = true }
+
 # GPU compute (optional - feature-gated to avoid +3.8MB binary bloat)
 wgpu = { version = "22", optional = true, features = ["wgsl"] }  # GPU compute (Vulkan/Metal/DX12/WebGPU)
 bytemuck = { version = "1", features = ["derive"], optional = true }  # Safe byte casting for GPU buffers

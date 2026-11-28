@@ -42,6 +42,7 @@
 #![allow(clippy::missing_const_for_fn)]
 
 pub mod backend;
+pub mod bundle;
 pub mod error;
 pub mod experiment;
 #[cfg(feature = "gpu")]
