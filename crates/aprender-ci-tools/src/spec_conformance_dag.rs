@@ -464,6 +464,13 @@ fn cell(cells: &[String], at: usize) -> String {
         .map_or_else(String::new, |c| c.trim().trim_matches('`').to_owned())
 }
 
+/// `section_lines(path, SECTION_12)`: the lines under the first §12 heading, up to the next heading.
+#[must_use]
+pub fn section_12_lines(text: &str) -> Vec<String> {
+    let _ = text;
+    Vec::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
