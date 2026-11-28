@@ -135,26 +135,27 @@ impl Tree {
         listed.or_else(|| self.case_table(&path))
     }
 
-    /// The script run with `flag`: python3 for a `.py`, bash otherwise, from the tree root.
-    fn command(&self, path: &Path, flag: &str) -> Command {
+    /// The script run with `flag`: python3 for a `.py`, bash otherwise. Like the Python's
+    /// `_proc`, the child inherits the caller's cwd; `path` is already `root.join(rel)`.
+    fn command(path: &Path, flag: &str) -> Command {
         let mut cmd = if path.to_string_lossy().ends_with(".py") {
             Command::new("python3")
         } else {
             Command::new("bash")
         };
-        cmd.arg(path).arg(flag).current_dir(&self.root);
+        cmd.arg(path).arg(flag);
         cmd
     }
 
     fn list_mode(&self, path: &Path) -> Option<HashSet<String>> {
-        let out = self.command(path, "--list-selftests").output().ok()?;
+        let out = Self::command(path, "--list-selftests").output().ok()?;
         list_mode_names(out.status.success(), &String::from_utf8_lossy(&out.stdout))
     }
 
     /// `_case_table`: `--selftest`, then `--self-test`, the first that names any case.
     fn case_table(&self, path: &Path) -> Option<HashSet<String>> {
         ["--selftest", "--self-test"].iter().find_map(|flag| {
-            let out = self.command(path, flag).output().ok()?;
+            let out = Self::command(path, flag).output().ok()?;
             let text = format!(
                 "{}{}",
                 String::from_utf8_lossy(&out.stdout),
