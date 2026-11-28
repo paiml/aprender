@@ -48,7 +48,7 @@ const fn zoom(scale: f64) -> Event {
 }
 
 /// The fixed script, applied in order after the initial paint at scale 2.
-const SCRIPT: [(&'static str, Event); 27] = [
+const SCRIPT: [(&str, Event); 27] = [
     ("pan_1", pan()),
     ("pan_2", pan()),
     ("pan_3", pan()),
