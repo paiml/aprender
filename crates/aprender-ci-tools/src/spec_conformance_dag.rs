@@ -467,8 +467,29 @@ fn cell(cells: &[String], at: usize) -> String {
 /// `section_lines(path, SECTION_12)`: the lines under the first §12 heading, up to the next heading.
 #[must_use]
 pub fn section_12_lines(text: &str) -> Vec<String> {
-    let _ = text;
-    Vec::new()
+    let mut out = Vec::new();
+    let mut inside = false;
+    for line in text.lines() {
+        if !inside {
+            inside = section_12_head_re().is_match(line);
+            continue;
+        }
+        if next_head_re().is_match(line) {
+            break;
+        }
+        out.push(line.to_owned());
+    }
+    out
+}
+
+fn section_12_head_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?i)^#{1,4}\s+.*§\s*12\b").expect("static pattern"))
+}
+
+fn next_head_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^#{1,4}\s").expect("static pattern"))
 }
 
 #[cfg(test)]

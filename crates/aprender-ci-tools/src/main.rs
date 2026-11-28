@@ -86,6 +86,10 @@ enum Cmd {
         /// The master spec (the §12 table is read from it).
         #[arg(long, value_name = "MD")]
         spec: PathBuf,
+        /// The spec path the report names it by (the D5 message and the derived file's `source`).
+        /// Default: `--spec` as given; CI passes the path relative to the repo root.
+        #[arg(long, value_name = "REL")]
+        source: Option<String>,
         /// The committed derived-expiry JSON to compare with (D5); absent means no D5 check.
         #[arg(long, value_name = "JSON")]
         derived: Option<PathBuf>,
@@ -251,9 +255,10 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
         }
         Cmd::SpecConformanceDag {
             spec,
+            source,
             derived,
             today,
-        } => match spec_conformance_andon::run_cli(&spec, derived.as_deref(), today) {
+        } => match spec_conformance_andon::run_cli(&spec, source, derived.as_deref(), today) {
             Ok((out, 0)) => Ok(out),
             Ok((out, code)) => Err((out, code, String::new())),
             Err(reason) => Err((String::new(), 2, reason)),
@@ -331,6 +336,7 @@ mod tests {
     fn exit_of(spec: &str) -> u8 {
         let cmd = Cmd::SpecConformanceDag {
             spec: PathBuf::from(spec),
+            source: None,
             derived: None,
             today: Some("2026-11-28".to_owned()),
         };

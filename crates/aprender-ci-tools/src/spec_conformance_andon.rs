@@ -6,8 +6,13 @@
 //! `LAB` is not a D6 andon when it is past its expiry. It emits one informational `LAB` record
 //! instead (C324: a red that cannot block is LAB, and LAB cannot block a merge).
 
-use crate::pystr::{py_path_str, py_read_text};
-use crate::spec_conformance_dag::{section_12_lines, Violation};
+use crate::pyjson::{dumps, Py};
+use crate::pystr::{py_path_str, py_read_text, py_splitlines};
+use crate::spec_conformance_dag::{
+    analyze, from_markdown_table, section_12_lines, Analysis, Dag, Expiry, Row, Violation,
+};
+use std::path::Path;
+use std::process::Command;
 
 /// One line of the scan's output: a DAG line, a VIOLATION, or the LAB record.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,14 +35,30 @@ impl Record {
     /// The TSV line `emit()` writes for this record.
     #[must_use]
     pub fn line(&self) -> String {
-        let _ = self;
-        String::new()
+        match self {
+            Self::Dag {
+                key,
+                expires,
+                reason,
+            } => tsv(&["DAG", key, expires.as_deref().unwrap_or("-"), reason]),
+            Self::Violation(v) => v.line(),
+            Self::Lab { row, message } => tsv(&["LAB", row, message]),
+        }
     }
 
     #[must_use]
     pub fn is_violation(&self) -> bool {
         matches!(self, Self::Violation(_))
     }
+}
+
+/// `emit()`: the fields joined by tabs, with a tab inside a field replaced by a space.
+fn tsv(fields: &[&str]) -> String {
+    fields
+        .iter()
+        .map(|f| f.replace('\t', " "))
+        .collect::<Vec<_>>()
+        .join("\t")
 }
 
 /// The committed derived-expiry file: its path as the report names it, and its text (None when
@@ -48,11 +69,18 @@ pub struct Derived<'a> {
     pub committed: Option<&'a str>,
 }
 
-/// `expiry-cell` begins with the whole word `LAB` (after `**`/`*` were stripped).
+/// The expiry cell's first word, after `**`/`*` are stripped, is exactly `LAB`. A word is the
+/// run of letters, digits, `_` and `-` at the start, so `LAB,` is LAB and `LABEL` or `LAB-2`
+/// are not.
 #[must_use]
 pub fn is_lab(expires_cell: &str) -> bool {
-    let _ = expires_cell;
-    false
+    let plain = expires_cell.replace('*', "");
+    let word: String = plain
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+        .collect();
+    word == "LAB"
 }
 
 /// `_dag_document` + `_compare_derived`: every record the §12 scan emits, in Python's order.
@@ -65,8 +93,87 @@ pub fn check_dag(
     derived: Option<Derived<'_>>,
     today: &str,
 ) -> Vec<Record> {
-    let _ = (spec, source, derived, today);
-    Vec::new()
+    let (dag, analysis) = match build(spec) {
+        Ok(built) => built,
+        Err(violation) => return vec![Record::Violation(violation)],
+    };
+    // The walk's D1-D4 come first, as Python emits them during derive_expiries.
+    let mut out: Vec<Record> = analysis
+        .violations
+        .iter()
+        .cloned()
+        .map(Record::Violation)
+        .collect();
+    out.extend(document_records(&dag, &analysis, today));
+    if let Some(d) = derived {
+        out.extend(compare_derived(&d, &render(source, &dag, &analysis)));
+    }
+    out
+}
+
+fn build(spec: &str) -> Result<(Dag, Analysis), Violation> {
+    let dag = from_markdown_table(&section_12_lines(spec).join("\n"))?;
+    let analysis = analyze(&dag);
+    Ok((dag, analysis))
+}
+
+/// The row indexes in sorted key order (`sorted(table)`).
+fn sorted_indexes(rows: &[Row]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..rows.len()).collect();
+    order.sort_by(|a, b| rows[*a].key.cmp(&rows[*b].key));
+    order
+}
+
+/// Each row's DAG line, followed by its D6 (or LAB) record if it is past its expiry.
+fn document_records(dag: &Dag, analysis: &Analysis, today: &str) -> Vec<Record> {
+    let rows = dag.rows();
+    let mut out = Vec::new();
+    for idx in sorted_indexes(rows) {
+        let row = &rows[idx];
+        let (_, exp) = &analysis.expiries[idx];
+        out.push(Record::Dag {
+            key: row.key.clone(),
+            expires: exp.value.clone(),
+            reason: dag_reason(row, exp),
+        });
+        out.extend(andon(row, exp, today));
+    }
+    out
+}
+
+/// `_dag_reason`: the blockers the expiry came from, else discharged, root or unblocked.
+fn dag_reason(row: &Row, exp: &Expiry) -> String {
+    if !exp.via.is_empty() {
+        exp.via.join(",")
+    } else if exp.discharged {
+        "discharged".to_owned()
+    } else if row.blocked_by.is_empty() {
+        "root".to_owned()
+    } else {
+        "unblocked".to_owned()
+    }
+}
+
+/// D6: a live row past its derived expiry. A LAB row past its expiry is a LAB record instead.
+fn andon(row: &Row, exp: &Expiry, today: &str) -> Option<Record> {
+    let date = exp.value.as_deref().filter(|d| !d.is_empty())?;
+    if exp.discharged || date >= today {
+        return None;
+    }
+    if is_lab(&row.expires_cell) {
+        return Some(Record::Lab {
+            row: row.key.clone(),
+            message: format!("expired {date} (today is {today}); LAB, cannot block (C324)"),
+        });
+    }
+    Some(Record::Violation(Violation {
+        rule: "D6",
+        row: row.key.clone(),
+        message: format!(
+            "expired {date} (today is {today}) and is not discharged. §4's andon \
+             refuses a row past its expiry with nothing red for it"
+        ),
+    }))
 }
 
 /// The derived-expiry file text (`json.dumps(..., indent=2, sort_keys=True) + "\n"`) for `spec`.
@@ -75,15 +182,123 @@ pub fn check_dag(
 ///
 /// The D0 violation when the §12 table cannot be parsed.
 pub fn derived_text(spec: &str, source: &str) -> Result<String, Violation> {
-    let _ = (spec, source);
-    Ok(String::new())
+    let (dag, analysis) = build(spec)?;
+    Ok(render(source, &dag, &analysis))
+}
+
+/// `{"rows": {...}, "source": ...}` with `sort_keys` and `indent=2`, as `_dag_document` writes it.
+fn render(source: &str, dag: &Dag, analysis: &Analysis) -> String {
+    let rows = dag.rows();
+    let entries: Vec<(String, Py)> = sorted_indexes(rows)
+        .into_iter()
+        .map(|idx| {
+            (
+                rows[idx].key.clone(),
+                dag_entry(&rows[idx], &analysis.expiries[idx].1),
+            )
+        })
+        .collect();
+    let document = Py::Dict(vec![
+        ("rows".to_owned(), Py::Dict(entries)),
+        ("source".to_owned(), Py::Str(source.to_owned())),
+    ]);
+    let mut out = String::new();
+    write_indented(&document, 0, &mut out);
+    out.push('\n');
+    out
+}
+
+/// One row's entry; its keys are already in sorted order.
+fn dag_entry(row: &Row, exp: &Expiry) -> Py {
+    Py::Dict(vec![
+        ("blocked_by".to_owned(), strings(&row.blocked_by)),
+        ("derived_from".to_owned(), strings(&exp.via)),
+        ("discharged".to_owned(), Py::Bool(exp.discharged)),
+        (
+            "expires".to_owned(),
+            exp.value.clone().map_or(Py::None, Py::Str),
+        ),
+        ("root".to_owned(), Py::Bool(row.blocked_by.is_empty())),
+    ])
+}
+
+fn strings(items: &[String]) -> Py {
+    Py::List(items.iter().map(|s| Py::Str(s.clone())).collect())
+}
+
+/// `json.dumps(v, indent=2)` for the document: non-empty containers are laid out one item per
+/// line, and every scalar is `dumps`' own text (its string escaping is the same).
+fn write_indented(v: &Py, level: usize, out: &mut String) {
+    match v {
+        Py::Dict(kv) if !kv.is_empty() => {
+            out.push('{');
+            for (i, (key, item)) in kv.iter().enumerate() {
+                open_item(i, level, out);
+                out.push_str(&dumps(&Py::Str(key.clone())));
+                out.push_str(": ");
+                write_indented(item, level + 1, out);
+            }
+            close_container(level, '}', out);
+        }
+        Py::List(items) if !items.is_empty() => {
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                open_item(i, level, out);
+                write_indented(item, level + 1, out);
+            }
+            close_container(level, ']', out);
+        }
+        _ => out.push_str(&dumps(v)),
+    }
+}
+
+fn open_item(i: usize, level: usize, out: &mut String) {
+    if i > 0 {
+        out.push(',');
+    }
+    out.push('\n');
+    out.push_str(&"  ".repeat(level + 1));
+}
+
+fn close_container(level: usize, close: char, out: &mut String) {
+    out.push('\n');
+    out.push_str(&"  ".repeat(level));
+    out.push(close);
 }
 
 /// `_compare_derived`: D5 when the committed file is absent or differs from `text`.
 #[must_use]
 pub fn compare_derived(derived: &Derived<'_>, text: &str) -> Vec<Record> {
-    let _ = (derived, text);
-    Vec::new()
+    let rel = derived.rel;
+    let message = match derived.committed {
+        None => format!(
+            "{rel} is absent. The derived expiries are an artifact other gates read; \
+             run `bash scripts/spec_conformance.sh --write` and commit it"
+        ),
+        Some(committed) if committed == text => return Vec::new(),
+        Some(committed) => {
+            let first = first_difference(&py_splitlines(committed), &py_splitlines(text));
+            format!(
+                "{rel} no longer matches the derivation from §12 (first difference at line \
+                 {first}). A committed derivation that drifts from the table is the expiry \
+                 nobody re-derived; run `bash scripts/spec_conformance.sh --write` and commit \
+                 the result"
+            )
+        }
+    };
+    vec![Record::Violation(Violation {
+        rule: "D5",
+        row: "-".to_owned(),
+        message,
+    })]
+}
+
+/// `_first_difference`: the 1-based line where the two differ, or one past the shorter.
+fn first_difference(have: &[&str], want: &[&str]) -> usize {
+    have.iter()
+        .zip(want)
+        .position(|(a, b)| a != b)
+        .map_or(have.len().min(want.len()) + 1, |at| at + 1)
 }
 
 /// The CLI: the records as TSV lines and the exit code (1 when any VIOLATION, else 0).
@@ -93,12 +308,63 @@ pub fn compare_derived(derived: &Derived<'_>, text: &str) -> Vec<Record> {
 ///
 /// The reason when an input cannot be read (exit 2 at the caller).
 pub fn run_cli(
-    spec_path: &std::path::Path,
-    derived_path: Option<&std::path::Path>,
+    spec_path: &Path,
+    source: Option<String>,
+    derived_path: Option<&Path>,
     today: Option<String>,
 ) -> Result<(String, u8), String> {
-    let _ = (spec_path, derived_path, today, py_read_text, py_path_str);
-    Ok((String::new(), 0))
+    let spec_bytes =
+        std::fs::read(spec_path).map_err(|e| format!("{}: {e}", spec_path.display()))?;
+    let spec = py_read_text(&spec_bytes);
+    let today = match today {
+        Some(day) => day,
+        None => today_default()?,
+    };
+    let derived_file = derived_path
+        .map(|p| read_optional(p).map(|committed| (py_path_str(p), committed)))
+        .transpose()?;
+    let derived = derived_file.as_ref().map(|(rel, committed)| Derived {
+        rel: rel.as_str(),
+        committed: committed.as_deref(),
+    });
+    let source = source.unwrap_or_else(|| py_path_str(spec_path));
+    let records = check_dag(&spec, &source, derived, &today);
+    let code = u8::from(records.iter().any(Record::is_violation));
+    let mut out = String::new();
+    for record in &records {
+        out.push_str(&record.line());
+        out.push('\n');
+    }
+    Ok((out, code))
+}
+
+/// The committed file's text, or None when it does not exist.
+fn read_optional(path: &Path) -> Result<Option<String>, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(py_read_text(&bytes))),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+
+/// `_today()`: `SPEC_CONFORMANCE_TODAY` when it is set and not blank, else the local date.
+fn today_default() -> Result<String, String> {
+    if let Ok(value) = std::env::var("SPEC_CONFORMANCE_TODAY") {
+        let value = value.trim();
+        if !value.is_empty() {
+            return Ok(value.to_owned());
+        }
+    }
+    let out = Command::new("date")
+        .arg("+%F")
+        .output()
+        .map_err(|e| format!("cannot run date (pass --today): {e}"))?;
+    if !out.status.success() {
+        return Err("date failed (pass --today)".to_owned());
+    }
+    String::from_utf8(out.stdout)
+        .map(|s| s.trim().to_owned())
+        .map_err(|e| format!("date output is not UTF-8: {e}"))
 }
 
 #[cfg(test)]
