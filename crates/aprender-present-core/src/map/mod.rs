@@ -11,6 +11,7 @@ pub mod camera;
 pub mod cull;
 pub mod layers;
 pub mod lod;
+pub mod sprites;
 
 pub use camera::{Camera2D, FlyTo, ZoomAnim};
 pub use cull::{visible_indices, Bounds};
@@ -18,6 +19,7 @@ pub use layers::{
     EntityId, Event, Layers, LensId, Outcome, OverlayChange, Renders, CACHE_MARGIN_PX,
 };
 pub use lod::{tier_for_radius, LodTier, BOUNDARIES_PX};
+pub use sprites::{generate_sprite, side_for_bucket, size_bucket, Sprite, SpriteAtlas};
 
 /// Largest magnitude accepted for any coordinate, pixel offset or viewport size. With the scale
 /// range below, every product, quotient and difference the runtime forms stays finite.
