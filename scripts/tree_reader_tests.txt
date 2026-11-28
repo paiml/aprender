@@ -41,7 +41,10 @@ apr-format	--lib	falsifiers
 apr-format	--test	golden_fixtures
 aprender-build-sha	--lib	<root>
 aprender-cgp	--lib	analysis::contracts
+aprender-ci-tools	--lib	<root>
 aprender-ci-tools	--lib	nextest_fail_fast
+aprender-ci-tools	--lib	spec_conformance_andon
+aprender-ci-tools	--lib	spec_conformance_sec6
 aprender-ci-tools	--test	rollup_fold
 aprender-compute-xtask	--bins
 aprender-contracts	--lib	binding
