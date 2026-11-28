@@ -149,12 +149,22 @@ impl Interaction {
         lens: LensId,
         now_ms: u64,
     ) -> Result<Report, MapError> {
+        if lenses.get(lens).is_none() {
+            return Err(MapError::UnknownLens(lens));
+        }
         if self.layers.active_lens() == Some(lens) {
             return Ok(quiet());
         }
         let out = self.layers.handle(Event::LensSwitch(lens))?;
         let nav = self.history.apply(UrlEvent::Lens(Some(lens)), now_ms)?;
         Ok(report(out, nav))
+    }
+
+    /// Reports one applied delta to `lens` to the scheduler: an active lens repaints once, an
+    /// inactive one stores the delta. Writes no history.
+    pub(super) fn lens_delta(&mut self, lens: LensId) -> Result<Report, MapError> {
+        let out = self.layers.handle(Event::LensDelta(lens))?;
+        Ok(report(out, Nav::Nothing))
     }
 
     /// Replaces the brushed selection set: one overlay render, no history entry.

@@ -76,6 +76,14 @@ impl Lens {
         &self.values
     }
 
+    /// Replaces the value of the cell at `index`. The caller has checked the index against the grid,
+    /// and every registered lens covers the same cells.
+    pub(super) fn set_value(&mut self, index: usize, value: Option<f64>) {
+        if let Some(slot) = self.values.get_mut(index) {
+            *slot = value;
+        }
+    }
+
     /// Position of `v` on the lens scale, clamped to `[0, 1]`. `None` for a non-finite value, and
     /// for a non-positive value on a log scale. Never NaN.
     pub fn color_t(&self, v: f64) -> Option<f64> {
@@ -137,6 +145,11 @@ impl LensRegistry {
     /// Every registered lens, in id order.
     pub fn iter(&self) -> impl Iterator<Item = &Lens> {
         self.lenses.values()
+    }
+
+    /// The lens with this id, for a delta to write into.
+    pub(super) fn get_mut(&mut self, id: LensId) -> Option<&mut Lens> {
+        self.lenses.get_mut(&id)
     }
 
     /// Number of registered lenses.

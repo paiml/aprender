@@ -75,6 +75,18 @@ impl Histogram {
     pub fn total(&self) -> u64 {
         self.counts.iter().map(|&c| u64::from(c)).sum()
     }
+
+    /// Moves one cell from the bin of its old value to the bin of its new one, as `of` would bin
+    /// them. A value with no position on the lens scale holds no bin, on either side.
+    pub(super) fn move_cell(&mut self, lens: &Lens, old: Option<f64>, new: Option<f64>) {
+        let bins = self.counts.len();
+        if let Some(bin) = old.and_then(|v| lens.color_t(v)).map(|t| bin_of(t, bins)) {
+            self.counts[bin] = self.counts[bin].saturating_sub(1);
+        }
+        if let Some(bin) = new.and_then(|v| lens.color_t(v)).map(|t| bin_of(t, bins)) {
+            self.counts[bin] = self.counts[bin].saturating_add(1);
+        }
+    }
 }
 
 /// A brush over value space: the closed interval `[lo, hi]`.
