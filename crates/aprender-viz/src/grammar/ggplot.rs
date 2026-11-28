@@ -238,6 +238,7 @@ impl GGPlot {
             return Err(Error::Rendering("No geometry layers specified".into()));
         }
 
+        geo_plot::refuse_polygons_off_map(&self.layers, &self.coord)?;
         Ok(BuiltGGPlot {
             data: self.data,
             aes: self.aes,

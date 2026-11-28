@@ -32,6 +32,7 @@ fn map_pixels(
     use crate::geo::plot::{pixel_features, Features};
 
     let Coord::Geo { projection } = coord else {
+        refuse_polygons_off_map(layers, coord)?;
         return Ok(None);
     };
     if !matches!(facet, Facet::None) {
@@ -48,6 +49,24 @@ fn map_pixels(
     pixel_features(projection.projection(), &features, area)
         .map(Some)
         .map_err(|e| Error::ScaleDomain(e.to_string()))
+}
+
+/// Refuses a `geom_polygon` layer under any coord but `coord_geo`. No other path draws it, so
+/// without this check the layer would vanish with no error.
+#[cfg(feature = "geo")]
+pub(super) fn refuse_polygons_off_map(layers: &[Layer], coord: &Coord) -> Result<()> {
+    let is_map = matches!(coord, Coord::Geo { .. });
+    let has_polygon = layers.iter().any(|l| matches!(l.geom.geom_type, GeomType::Polygon { .. }));
+    if has_polygon && !is_map {
+        return Err(Error::UnsupportedCoord("geom_polygon needs coord_geo()"));
+    }
+    Ok(())
+}
+
+/// Without the `geo` feature there is no `geom_polygon`, so nothing is refused.
+#[cfg(not(feature = "geo"))]
+pub(super) fn refuse_polygons_off_map(_layers: &[Layer], _coord: &Coord) -> Result<()> {
+    Ok(())
 }
 
 /// The `(x, y, width, height)` of the plot area, in pixels, as `f64` for the fit.

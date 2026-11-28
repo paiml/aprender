@@ -68,11 +68,13 @@ pub fn project_features(
 /// area, then centred. The scale is the same on both axes, so shapes keep their proportions,
 /// and a larger plane `y` lands on a smaller pixel row (north up). A box with no extent on one
 /// axis takes the scale of the other axis; a box with no extent at all collapses to the centre,
-/// where the even-odd fill paints nothing. No vertices give no rings.
+/// where the even-odd fill paints nothing. With no vertices at all, the rings are returned as
+/// they are (each one empty), so the fill refuses a ring that has no vertices instead of
+/// silently drawing nothing.
 #[must_use]
 pub fn fit_to_area(plane: &Features, area: (f64, f64, f64, f64)) -> Features {
     let Some(((x0, y0), (x1, y1))) = extent(plane) else {
-        return Vec::new();
+        return plane.clone();
     };
     let (area_x, area_y, area_w, area_h) = area;
     // Spans are computed on halved values: `x1 - x0` can overflow f64 to infinity, while

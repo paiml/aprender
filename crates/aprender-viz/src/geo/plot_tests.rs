@@ -175,3 +175,25 @@ fn fit_of_an_extreme_span_stays_finite_and_inside_the_area() {
         assert!((10.0..=410.0).contains(&x) && (20.0..=320.0).contains(&y), "({x}, {y})");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Review round 2 (MAP-1): a polygon under a non-map coord is refused; a ring with no vertices
+// is a degenerate ring, even when it is the only ring
+// ---------------------------------------------------------------------------
+
+#[test]
+fn polygon_under_a_non_map_coord_is_refused_at_build() {
+    let plot = GGPlot::new().geom(Geom::polygon(square_with_hole())).dimensions(180, 180);
+    let err = plot.build().expect_err("geom_polygon is drawn only under coord_geo");
+    assert!(matches!(err, Error::UnsupportedCoord(_)), "got {err:?}");
+}
+
+#[test]
+fn a_lone_zero_vertex_ring_is_a_rendering_error() {
+    let features = vec![vec![Vec::new()]];
+    let built = map_plot(Coord::geo(Identity), features).build().expect("builds");
+    let err = built.to_framebuffer().expect_err("a ring with no vertices bounds no area");
+    assert!(matches!(err, Error::Rendering(_)), "got {err:?}");
+    let err = built.to_svg().expect_err("a ring with no vertices bounds no area");
+    assert!(matches!(err, Error::Rendering(_)), "got {err:?}");
+}
