@@ -77,6 +77,10 @@ pub mod breaks;
 pub mod color;
 /// Core framebuffer for pixel rendering.
 pub mod framebuffer;
+/// Map projections (`geo` feature): Albers, AlbersUSA, Mercator, equirectangular.
+#[cfg(feature = "geo")]
+#[cfg_attr(docsrs, doc(cfg(feature = "geo")))]
+pub mod geo;
 /// Geometric primitives (points, lines, rectangles).
 pub mod geometry;
 /// Content manifest: per-file digests reduced to one root hash (APEX-001 EV-2a rule 4).

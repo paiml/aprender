@@ -43,6 +43,15 @@ pub enum Coord {
         /// Aspect ratio (y/x).
         ratio: f64,
     },
+    /// Map projection (`coord_geo`, `geo` feature): `x` is longitude and `y` latitude in degrees.
+    ///
+    /// Only `geom_polygon` is drawn under it. The rings are projected, then fitted to the panel
+    /// with one uniform scale and north up, so the axes carry no limits of their own.
+    #[cfg(feature = "geo")]
+    Geo {
+        /// The projection that places the lon/lat vertices on the plane.
+        projection: crate::geo::plot::GeoProjection,
+    },
 }
 
 /// Map one data point through the coordinate system.
@@ -67,6 +76,10 @@ pub fn apply(coord: &Coord, x: f64, y: f64) -> Result<(f64, f64)> {
         Coord::Cartesian { flip: false, .. } => Ok((x, y)),
         Coord::Polar { .. } => Err(Error::UnsupportedCoord("polar")),
         Coord::Fixed { .. } => Err(Error::UnsupportedCoord("fixed aspect ratio")),
+        #[cfg(feature = "geo")]
+        Coord::Geo { projection } => {
+            projection.projection().forward(x, y).map_err(|e| Error::ScaleDomain(e.to_string()))
+        }
     }
 }
 
@@ -89,6 +102,10 @@ pub fn apply_limits(
         }
         Coord::Polar { .. } => Err(Error::UnsupportedCoord("polar")),
         Coord::Fixed { .. } => Err(Error::UnsupportedCoord("fixed aspect ratio")),
+        #[cfg(feature = "geo")]
+        Coord::Geo { .. } => {
+            Err(Error::UnsupportedCoord("coord_geo limits: the rings set the area"))
+        }
     }
 }
 
@@ -115,6 +132,13 @@ impl Coord {
     #[must_use]
     pub fn fixed(ratio: f64) -> Self {
         Coord::Fixed { ratio }
+    }
+
+    /// Map projection (`coord_geo`): polygon vertices are `(lon, lat)` degrees.
+    #[cfg(feature = "geo")]
+    #[must_use]
+    pub fn geo<P: crate::geo::projection::Projection + 'static>(projection: P) -> Self {
+        Coord::Geo { projection: crate::geo::plot::GeoProjection::new(projection) }
     }
 
     /// Set x-axis limits.

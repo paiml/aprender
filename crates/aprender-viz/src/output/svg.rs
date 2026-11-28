@@ -23,8 +23,21 @@ pub struct SvgEncoder {
     background: Option<Rgba>,
     /// SVG elements
     elements: Vec<SvgElement>,
+    /// Even-odd filled paths, kept apart from `elements` so `SvgElement` stays unchanged
+    even_odd: Vec<EvenOddPath>,
     /// The `<metadata>` payload, emitted as the first child of `<svg>` (APEX-001 EV-2e)
     metadata: Option<String>,
+}
+
+/// An even-odd filled path, placed among `elements` by how many of them came before it.
+#[derive(Debug, Clone)]
+struct EvenOddPath {
+    /// Number of `elements` added before this path, so it paints in the order it was added.
+    before: usize,
+    /// SVG path data
+    d: String,
+    /// Fill colour
+    fill: Rgba,
 }
 
 /// An SVG element.
@@ -32,6 +45,7 @@ pub struct SvgEncoder {
 /// Field names are self-documenting and match SVG attribute names.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
+#[non_exhaustive]
 pub enum SvgElement {
     /// Rectangle
     Rect {
@@ -80,7 +94,14 @@ impl SvgEncoder {
     /// Create a new SVG encoder with given dimensions.
     #[must_use]
     pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height, background: Some(Rgba::WHITE), elements: Vec::new(), metadata: None }
+        Self {
+            width,
+            height,
+            background: Some(Rgba::WHITE),
+            elements: Vec::new(),
+            even_odd: Vec::new(),
+            metadata: None,
+        }
     }
 
     /// Create from a framebuffer (embeds as raster image).
@@ -265,6 +286,16 @@ impl SvgEncoder {
         self
     }
 
+    /// Add a path filled with the even-odd rule (`fill-rule="evenodd"`).
+    ///
+    /// Build `d` with `geo::fill::svg_path_d`, so each ring is a closed subpath and a hole is
+    /// simply a ring inside another ring.
+    #[must_use]
+    pub fn path_even_odd(mut self, d: &str, fill: Rgba) -> Self {
+        self.even_odd.push(EvenOddPath { before: self.elements.len(), d: d.to_string(), fill });
+        self
+    }
+
     /// Add text.
     #[must_use]
     pub fn text(mut self, x: f32, y: f32, text: &str, font_size: f32, fill: Rgba) -> Self {
@@ -377,9 +408,16 @@ impl SvgEncoder {
                 writeln!(svg, r#"  <rect width="100%" height="100%" fill="{}"/>"#, rgba_to_css(bg));
         }
 
-        // Elements
-        for element in &self.elements {
+        // Elements, with each even-odd path drawn after the elements added before it
+        let mut even_odd = self.even_odd.iter().peekable();
+        for (index, element) in self.elements.iter().enumerate() {
+            while let Some(path) = even_odd.next_if(|p| p.before <= index) {
+                let _ = writeln!(svg, "  {}", even_odd_to_svg(path));
+            }
             let _ = writeln!(svg, "  {}", element_to_svg(element));
+        }
+        for path in even_odd {
+            let _ = writeln!(svg, "  {}", even_odd_to_svg(path));
         }
 
         // Close SVG
@@ -415,6 +453,15 @@ fn rgba_to_css(color: Rgba) -> String {
 /// through this, not only the ones that happen to come from a transcendental today.
 fn c(v: f32) -> String {
     crate::format_coord(f64::from(v))
+}
+
+/// Convert an even-odd path to its SVG string.
+fn even_odd_to_svg(path: &EvenOddPath) -> String {
+    format!(
+        r#"<path d="{}" fill="{}" fill-rule="evenodd"/>"#,
+        crate::quantise_path_data(&path.d),
+        rgba_to_css(path.fill)
+    )
 }
 
 /// Convert an SVG element to its string representation.

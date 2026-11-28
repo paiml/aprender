@@ -89,6 +89,14 @@ pub enum GeomType {
         /// Where the cell sits vertically (`ymin = y - h * (1 - vjust)`: 0 puts y on the cell's top edge, 1 on its bottom edge).
         vjust: f64,
     },
+    /// `geom_polygon` (`geo` feature): map features of `(lon, lat)` rings, drawn under `coord_geo`.
+    ///
+    /// Each feature is a list of rings; under even-odd fill a ring inside another is a hole.
+    #[cfg(feature = "geo")]
+    Polygon {
+        /// The features, each a list of rings of `(lon, lat)` degrees.
+        features: crate::geo::plot::Features,
+    },
     /// Text labels.
     Text,
     /// Horizontal line.
@@ -220,6 +228,13 @@ impl Geom {
     #[must_use]
     pub fn rect() -> Self {
         Self { geom_type: GeomType::Rect, aes: None, stat: None }
+    }
+
+    /// Create a polygon geometry from map features of `(lon, lat)` rings (`geo` feature).
+    #[cfg(feature = "geo")]
+    #[must_use]
+    pub fn polygon(features: crate::geo::plot::Features) -> Self {
+        Self { geom_type: GeomType::Polygon { features }, aes: None, stat: None }
     }
 
     /// Create a raster geometry (`geom_raster`), centred cells (`hjust = vjust = 0.5`).

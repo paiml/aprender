@@ -64,6 +64,9 @@ trueno-db = { workspace = true, optional = true }
 # depends on viz (train plots via viz), so viz→entrenar closed a train↔viz cycle. The
 # entrenar inference-path interop module was dropped (re-home in aprender-train if needed).
 
+# GeoJSON and TopoJSON reader (`geo` feature, src/geo/reader.rs). Optional: only `geo` pulls it in.
+serde_json = { workspace = true, optional = true }
+
 # Optional: Serialization (for ML integration)
 serde = { version = "1.0", features = ["derive"], optional = true }
 
@@ -149,6 +152,11 @@ plot-cli = ["dep:clap", "dep:serde", "dep:serde-saphyr", "batuta-common/cli-role
 
 # SVG output support
 svg = []
+
+# Map projections (Albers equal-area, AlbersUSA, Mercator, equirectangular) and the GeoJSON/
+# TopoJSON reader. Projections: spherical formulas from Snyder, USGS Professional Paper 1395.
+# The reader needs serde_json (the only dependency the feature adds).
+geo = ["dep:serde_json"]
 
 # APEX-001 EV-2a. Both are NON-DEFAULT on purpose: the row's own evidence is that
 # `cargo tree -p aprender-viz` with default features is byte-identical before and after
