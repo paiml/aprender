@@ -1076,6 +1076,17 @@ mod tests {
         assert_eq!(tree.names("rs:fixture-crate"), Some(want));
     }
 
+    /// A relative root resolves the script once, as the Python's `_proc` does: the
+    /// child inherits the caller's cwd instead of being moved into the root (which
+    /// made `root.join(rel)` resolve twice and turned a live surface into a false C3).
+    /// Cargo runs unit tests from the crate directory, so this root is relative to it.
+    #[test]
+    fn sh_surface_under_a_relative_root_reads_its_case_table() {
+        let tree = Tree::new(Path::new("tests/fixtures/spec_sec6/sh_tree"));
+        let want: HashSet<String> = std::iter::once("alpha".to_owned()).collect();
+        assert_eq!(tree.names("sh:x.sh"), Some(want));
+    }
+
     #[test]
     fn rs_surface_for_an_absent_crate_is_none() {
         let tree = Tree::new(Path::new(FIXTURE_TREE));
