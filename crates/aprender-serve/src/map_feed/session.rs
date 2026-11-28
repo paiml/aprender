@@ -6,7 +6,7 @@
 //! each live batch through [`Session::live`], which drops anything the resume already sent.
 
 use super::codec::{encode_batch, encode_snapshot};
-use super::{column_hash, Batch, ColumnFeed, FeedError};
+use super::{column_hash, Batch, ColumnFeed, FeedError, Resume};
 
 /// One connection's view of one column.
 #[derive(Debug)]
@@ -63,11 +63,14 @@ impl Session {
         feed: &ColumnFeed,
         last_seen_seq: u64,
     ) -> Result<Vec<Vec<u8>>, FeedError> {
-        todo!(
-            "RED: hello({last_seen_seq}) on {} sent {}",
-            self.column,
-            feed.seq(&self.column).is_ok()
-        )
+        let frames = match feed.resume(&self.column, last_seen_seq)? {
+            Resume::Replay(batches) => batches.iter().map(encode_batch).collect(),
+            Resume::Snapshot { seq, values } => {
+                vec![encode_snapshot(seq, column_hash(&values), &values)]
+            },
+        };
+        self.sent_seq = feed.seq(&self.column)?;
+        Ok(frames)
     }
 
     /// Forward one live batch. `Ok(None)` if the resume already covered it, `Ok(Some(frame))`
@@ -76,6 +79,17 @@ impl Session {
     /// # Errors
     /// Returns [`SessionGap`] when `batch.seq` is beyond `sent_seq + 1`.
     pub fn live(&mut self, batch: &Batch) -> Result<Option<Vec<u8>>, SessionGap> {
-        todo!("RED: live(seq {})", batch.seq)
+        if batch.seq <= self.sent_seq {
+            return Ok(None);
+        }
+        let expected = self.sent_seq.saturating_add(1);
+        if batch.seq != expected {
+            return Err(SessionGap {
+                expected,
+                got: batch.seq,
+            });
+        }
+        self.sent_seq = batch.seq;
+        Ok(Some(encode_batch(batch)))
     }
 }
