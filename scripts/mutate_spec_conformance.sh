@@ -66,8 +66,8 @@ fi
 # build_ci_tools: the binary from this tree, in the form the host's cargo wrapper admits
 # (`nice -n 10 cargo build -j 8`, with the release profile overrides cleared). The log is kept.
 build_ci_tools() {
-    (cd "$REPO_ROOT" && env -u CARGO_PROFILE_RELEASE_CODEGEN_UNITS -u CARGO_PROFILE_RELEASE_LTO \
-        CARGO_TARGET_DIR="$MUTATE_TARGET_DIR" nice -n 10 cargo build -j 8 -p aprender-ci-tools) \
+    env -C "$REPO_ROOT" -u CARGO_PROFILE_RELEASE_CODEGEN_UNITS -u CARGO_PROFILE_RELEASE_LTO \
+        CARGO_TARGET_DIR="$MUTATE_TARGET_DIR" nice -n 10 cargo build -j 8 -p aprender-ci-tools \
         >"$BUILD_LOG" 2>&1
 }
 
