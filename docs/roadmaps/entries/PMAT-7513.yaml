@@ -1,0 +1,23 @@
+- id: PMAT-7513
+  github_issue: 7513
+  item_type: task
+  title: 'MAP-5 (APR-MAP-001): map runtime, camera, culling, cached layers, level of detail'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-11-28T00:00:00Z
+  updated: 2026-11-28T00:00:00Z
+  spec: docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md
+  acceptance_criteria:
+  - '[ ] render counts per event match aprender-viz-map-layer-cache-v1'
+  - '[ ] anchored zoom, flyTo endpoints and level-of-detail boundaries match aprender-viz-map-camera-v1'
+  - '[ ] the culled draw list equals a brute-force visibility filter'
+  - '[ ] a sprite for a stated key and seed matches a committed golden'
+  - '[ ] pan-blit, base-render and lens-render times recorded on a 10,530-cell map'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'First slice: headless core only. Sprite atlas, browser binding and timings are open.'
+  epic: 7507
