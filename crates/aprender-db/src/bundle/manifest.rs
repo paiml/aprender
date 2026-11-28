@@ -12,6 +12,8 @@
 //! order the parts were supplied in, so two builds of the same parts are the
 //! same bytes.
 
+use std::fmt::Write;
+
 use sha2::{Digest, Sha256};
 
 use super::BundleError;
@@ -138,16 +140,12 @@ impl Manifest {
     pub fn encode(&self) -> String {
         let mut body = format!("{HEADER}\n");
         for p in &self.parts {
-            body.push_str(&format!(
-                "{}\t{}\t{}\t{}\n",
-                p.name,
-                p.kind.as_str(),
-                p.len,
-                to_hex(&p.sha256)
-            ));
+            writeln!(body, "{}\t{}\t{}\t{}", p.name, p.kind.as_str(), p.len, to_hex(&p.sha256))
+                .expect("writing to a String cannot fail");
         }
         let digest = sha256(body.as_bytes());
-        body.push_str(&format!("{DIGEST_KEY}\t{}\n", to_hex(&digest)));
+        writeln!(body, "{DIGEST_KEY}\t{}", to_hex(&digest))
+            .expect("writing to a String cannot fail");
         body
     }
 
@@ -253,7 +251,10 @@ fn parse_entry(line: &str, line_no: usize) -> Result<PartEntry, BundleError> {
 }
 
 fn to_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut out, b| {
+        write!(out, "{b:02x}").expect("writing to a String cannot fail");
+        out
+    })
 }
 
 fn from_hex(text: &str) -> Option<[u8; 32]> {
@@ -308,7 +309,11 @@ mod tests {
         let line = lines.iter_mut().find(|l| l.starts_with(prefix)).expect("prefix line present");
         let last = line.pop().expect("line non-empty");
         line.push(if last == '0' { '1' } else { '0' });
-        lines.iter().map(|l| format!("{l}\n")).collect()
+        lines.iter().fold(String::new(), |mut out, l| {
+            out.push_str(l);
+            out.push('\n');
+            out
+        })
     }
 
     #[test]
