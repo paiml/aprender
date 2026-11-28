@@ -518,3 +518,25 @@ fn albers_polar_bound_holds_for_a_near_degenerate_cone() {
         }
     }
 }
+
+/// Claim: Mercator inverse accepts `y` up to `y_max + DOMAIN_TOL` but does not clamp the
+/// latitude, so it can return a latitude that forward then rejects.
+#[test]
+fn mercator_inverse_slack_result_is_in_forward_domain() {
+    let proj = Mercator::new(0.0, 1.0).expect("valid");
+    let (_, y_cut) = proj.forward(0.0, MERCATOR_MAX_LAT_DEG).expect("cutoff is in domain");
+    let y_slack = y_cut + 5e-13;
+    let (lon, lat) = proj.inverse(0.0, y_slack).expect("within the inverse slack");
+    println!("MERCATOR_SLACK y_cut={y_cut:?} lat={lat:?}");
+    assert!(proj.forward(lon, lat).is_ok(), "inverse returned lat {lat:?} that forward rejects");
+}
+
+/// Claim: `wrap180` can return +180.0 for an input just below -180.0 (range should be [-180, 180)).
+#[test]
+fn equirectangular_inverse_longitude_stays_half_open() {
+    let proj = Equirectangular::new(0.0, 0.0, 1.0).expect("valid");
+    let x = -(PI + f64::EPSILON * PI);
+    let (lon, _) = proj.inverse(x, 0.0).expect("within the inverse slack");
+    println!("WRAP180 x={x:?} lon={lon:?}");
+    assert!(lon < 180.0 && lon >= -180.0, "lon {lon:?} outside [-180, 180)");
+}

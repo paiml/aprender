@@ -122,6 +122,21 @@ fn fit_of_no_vertices_gives_no_rings() {
     assert!(fit_to_area(&Vec::new(), (0.0, 0.0, 100.0, 100.0)).is_empty());
 }
 
+/// Claim: `fit_to_area` silently drops a 0-vertex ring instead of reporting DegenerateRing.
+#[test]
+fn fit_keeps_a_zero_vertex_ring_as_an_empty_ring() {
+    let plane = vec![vec![Vec::new(), square(0.0, 10.0)]];
+    let fitted = fit_to_area(&plane, (0.0, 0.0, 100.0, 100.0));
+    println!(
+        "FIT_RINGS input={} output={:?}",
+        plane[0].len(),
+        fitted[0].iter().map(Vec::len).collect::<Vec<_>>()
+    );
+    assert_eq!(fitted.len(), 1, "feature dropped");
+    assert_eq!(fitted[0].len(), 2, "ring dropped");
+    assert!(fitted[0][0].is_empty());
+}
+
 #[test]
 fn fit_of_a_flat_box_uses_the_other_axis_and_centres() {
     let plane = vec![vec![vec![(0.0, 3.0), (10.0, 3.0)]]];

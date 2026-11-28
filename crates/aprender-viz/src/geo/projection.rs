@@ -390,7 +390,9 @@ impl Projection for Mercator {
     fn inverse(&self, x: f64, y: f64) -> Result<(f64, f64), GeoError> {
         let x_unit = within("x/R", finite_input(x)? / self.radius, PI + DOMAIN_TOL)?;
         let y_unit = within("y/R", finite_input(y)? / self.radius, self.y_max + DOMAIN_TOL)?;
-        let lat = (2.0 * y_unit.exp().atan() - FRAC_PI_2).to_degrees();
+        let lat = (2.0 * y_unit.exp().atan() - FRAC_PI_2)
+            .to_degrees()
+            .clamp(-MERCATOR_MAX_LAT_DEG, MERCATOR_MAX_LAT_DEG);
         let lon = wrap180(self.lon0_deg + x_unit.to_degrees());
         finite_result(lon, lat)
     }
