@@ -242,7 +242,7 @@ pub fn grouped_command() -> Command {
     root.build();
     // Only the root's own copies are stripped, so `apr --help` shows no ticket
     // ids while `apr <verb> --help` is byte-identical to before.
-    let mut root = root.mut_args(|a| {
+    let root = root.mut_args(|a| {
         let stripped = a.get_help().map(|h| strip_ticket_ids(&h.to_string()));
         match stripped {
             Some(text) => a.help(text),
