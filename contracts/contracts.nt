@@ -49,6 +49,8 @@
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/explain"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/gpu/warmup"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/logprobs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/messages"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/messages (stream:true, SSE)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/perplexity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/predict"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr attn-parity-lint"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -685,6 +687,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/logprobs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/messages"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/perplexity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.bench"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/apr-cli/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.finetune"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -2172,6 +2175,8 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/explain"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/gpu/warmup"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/logprobs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/messages"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/messages (stream:true, SSE)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/perplexity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "POST /v1/predict"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "apr attn-parity-lint"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -2808,6 +2813,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim course-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "sim repo-flow"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/logprobs"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/messages"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphanRoute> "POST /v1/perplexity"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.bench"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender/apr> <https://ont.paiml.dev/v1alpha1/bin/mcpTool> "apr.finetune"^^<http://www.w3.org/2001/XMLSchema#string> .

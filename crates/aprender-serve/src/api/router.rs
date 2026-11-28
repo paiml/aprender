@@ -188,6 +188,8 @@ fn openai_routes(caps: RouteCapabilities) -> Vec<Route> {
             post(openai_chat_completions_stream_handler),
         ),
         ("POST", "/v1/embeddings", post(openai_embeddings_handler)),
+        // aprender#7484 (G-01): Anthropic Messages API, delegates to the chat path.
+        ("POST", "/v1/messages", post(anthropic_messages_handler)),
         // APR-specific API (spec §15.1)
         ("POST", "/v1/predict", post(apr_predict_handler)),
         ("POST", "/v1/explain", post(apr_explain_handler)),
@@ -246,7 +248,7 @@ fn cuda_routes() -> Vec<Route> {
 ///
 /// An embedding model has no such head. With one loaded these paths stay mounted and
 /// listed, so a client gets an answer that names the kind rather than the 404 index.
-const GENERATIVE_PATHS: [&str; 11] = [
+const GENERATIVE_PATHS: [&str; 12] = [
     "/generate",
     "/batch/generate",
     "/stream/generate",
@@ -256,6 +258,7 @@ const GENERATIVE_PATHS: [&str; 11] = [
     "/v1/chat/completions",
     "/v1/chat/completions/stream",
     "/v1/batch/completions",
+    "/v1/messages",
     "/api/chat",
     "/api/generate",
 ];
@@ -263,16 +266,21 @@ const GENERATIVE_PATHS: [&str; 11] = [
 /// EG-3 (I-3 on the wire): a generative route on a server that loaded an embedding
 /// model refuses by kind and names the routes that serve it.
 async fn embedding_kind_refusal(State(state): State<AppState>) -> (StatusCode, Json<ErrorResponse>) {
-    let architecture = state.cached_architecture.clone().unwrap_or_default();
     (
         StatusCode::BAD_REQUEST,
         Json(ErrorResponse {
-            error: format!(
-                "'{architecture}' is an embedding model (ModelKind::Embedding): it has no \
-                 language-model head, so this route cannot generate. Use POST /v1/embeddings, \
-                 /api/embeddings or /realize/embed."
-            ),
+            error: embedding_kind_reason(&state),
         }),
+    )
+}
+
+/// The reason text of the kind refusal, whatever envelope a route wraps it in.
+fn embedding_kind_reason(state: &AppState) -> String {
+    let architecture = state.cached_architecture.clone().unwrap_or_default();
+    format!(
+        "'{architecture}' is an embedding model (ModelKind::Embedding): it has no \
+         language-model head, so this route cannot generate. Use POST /v1/embeddings, \
+         /api/embeddings or /realize/embed."
     )
 }
 
@@ -290,7 +298,11 @@ fn route_table(config: &RouterConfig, caps: RouteCapabilities) -> Vec<Route> {
     if caps.embedding_kind {
         for (_, path, handler) in &mut table {
             if GENERATIVE_PATHS.contains(path) {
-                *handler = post(embedding_kind_refusal);
+                *handler = if *path == "/v1/messages" {
+                    post(anthropic_embedding_kind_refusal)
+                } else {
+                    post(embedding_kind_refusal)
+                };
             }
         }
     }
