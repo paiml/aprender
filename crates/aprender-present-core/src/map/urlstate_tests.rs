@@ -13,10 +13,6 @@ fn cam(centre: (f64, f64), scale: f64) -> Camera2D {
     Camera2D::new(centre, scale, VIEW).expect("valid camera")
 }
 
-fn cam_hash(hash: &str) -> Result<UrlState, MapError> {
-    decode(hash)
-}
-
 #[test]
 fn empty_state_encodes_to_empty_hash_and_back() {
     let state = UrlState::default();
@@ -52,7 +48,7 @@ fn camera_keeps_full_precision() {
 #[test]
 fn unknown_key_survives_decode_then_encode() {
     let fixture = "cam=1,2,4,800,600&zz%20k=v%26w&sel=9";
-    let state = cam_hash(fixture).expect("fixture decodes");
+    let state = decode(fixture).expect("fixture decodes");
     assert_eq!(state.extra().get("zz k").map(String::as_str), Some("v&w"));
     let out = encode(&state).expect("encodes");
     assert!(out.contains("zz%20k=v%26w"), "re-encoded: {out}");
@@ -264,16 +260,11 @@ fn accessors_expose_the_typed_keys() {
 #[test]
 fn camera_drag_adds_no_entries_and_replaces_after_debounce() {
     let mut policy = HistoryPolicy::new(UrlState::default());
-    let mut pushes = 0;
     for (i, scale) in [1.0, 1.1, 1.2, 1.3].into_iter().enumerate() {
         let event = UrlEvent::Camera(cam((i as f64, 0.0), scale));
         let nav = policy.apply(event, 100 * i as u64).expect("applies");
-        if matches!(nav, Nav::Push(_)) {
-            pushes += 1;
-        }
-        assert_eq!(nav, Nav::Nothing);
+        assert_eq!(nav, Nav::Nothing, "a camera move pushes nothing");
     }
-    assert_eq!(pushes, 0);
     assert!(policy.camera_pending());
     // Debounce runs from the last move at t = 300.
     assert_eq!(policy.poll(300 + CAMERA_DEBOUNCE_MS - 1), Ok(Nav::Nothing));

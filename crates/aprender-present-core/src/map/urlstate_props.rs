@@ -76,11 +76,32 @@ proptest! {
 }
 
 proptest! {
-    // Inputs long enough to reach the limit: a decoded state always re-encodes within it, and
-    // one that is refused was refused for length or syntax, never a panic.
+    // Noisy inputs long enough to reach the limit: never a panic, and a decoded state always
+    // re-encodes within the limit. Most such inputs are refused (a `%` is rarely a valid escape),
+    // so the test above carries the Ok branch.
     #[test]
     fn long_inputs_near_the_limit_decode_or_refuse_cleanly(
         text in "[a&=%+ é#]{3900,4300}"
+    ) {
+        match decode(&text) {
+            Ok(state) => {
+                let hash = encode(&state).expect("decoded state encodes");
+                prop_assert!(hash.len() <= MAX_URL_LEN);
+                prop_assert_eq!(decode(&hash), Ok(state));
+            }
+            Err(err) => prop_assert!(matches!(
+                err,
+                MapError::OutOfRange("url") | MapError::Malformed(_)
+            )),
+        }
+    }
+
+    // Well-formed `key=value` pairs whose total length straddles the limit: about a quarter decode
+    // and round-trip, the rest are refused for length or a duplicate key. Both branches run.
+    #[test]
+    fn well_formed_pairs_near_the_limit_round_trip_or_refuse(
+        text in proptest::collection::vec("[a-z]{4,6}=[a-zA-Z0-9+]{0,20}", 180..260)
+            .prop_map(|pairs| pairs.join("&"))
     ) {
         match decode(&text) {
             Ok(state) => {
