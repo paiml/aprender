@@ -21,6 +21,11 @@ pub use layers::{
 pub use lod::{tier_for_radius, LodTier, BOUNDARIES_PX};
 pub use sprites::{generate_sprite, side_for_bucket, size_bucket, Sprite, SpriteAtlas};
 
+#[cfg(test)]
+mod baseline_tests;
+#[cfg(test)]
+mod sprites_golden_tests;
+
 /// Largest magnitude accepted for any coordinate, pixel offset or viewport size. With the scale
 /// range below, every product, quotient and difference the runtime forms stays finite.
 pub const MAX_COORD: f64 = 1e12;
