@@ -96,7 +96,7 @@ fn an_expired_open_dag_row_is_d6_and_exit_1() {
 fn an_expired_lab_dag_row_is_a_lab_line_and_exit_0() {
     let root = fixture(
         "expired_lab",
-        "**LAB** (operator ruling), Expires **2026-09-10**",
+        "**LAB** (operator ruling, see Appendix D #7534), Expires **2026-09-10**",
     );
     let (code, stdout) = run(&root, &["--no-out"]);
     let _ = std::fs::remove_dir_all(&root);

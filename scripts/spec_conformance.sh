@@ -399,6 +399,10 @@ selftest() {
     # a D6, so it must NOT fire. The same expiry and override date as the row above.
     SPEC_CONFORMANCE_TODAY=2027-06-01 row expired_lab_row_is_clean CLEAN \
         "$(mk_root expiredlab "$ROW_ARMED" \
+           "| r1 | a | o | — | **LAB** (see Appendix D #7534) Expires **2026-09-10** |\\n" "$LEDGER_ONE" "alpha beta")"
+    # ...but only with its ruling: a bare LAB (no Appendix D ruling, no ticket) is still D6.
+    SPEC_CONFORMANCE_TODAY=2027-06-01 row expired_bare_lab_row_is_red D6 \
+        "$(mk_root expiredbarelab "$ROW_ARMED" \
            "| r1 | a | o | — | **LAB** Expires **2026-09-10** |\\n" "$LEDGER_ONE" "alpha beta")"
 
     if [ "$LIST_ONLY" = 1 ]; then
