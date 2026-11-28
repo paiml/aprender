@@ -1,6 +1,6 @@
 # APR-MAP-001: Realtime WASM maps and dashboards
 
-Status: Draft, revision 8 (2026-11-28; revision 7 plus corrections to section 3 rows for line simplification, columnar data, tables, tabs and the WebSocket reconnect, and to the MAP-7 sort wording, so they match the live tree at 2a5ea39; found by independent lane 1). Revision 7 added two acceptance lines in MAP-3 and MAP-6 after review round 6.
+Status: Draft, revision 8 (2026-11-28). Revision 8 corrects the section 3 rows for the live stream client (reconnect and server crate), columnar data, tables and tabs, and line simplification, corrects the section 3 "Absent" paragraph and the MAP-7 sort wording, and adds `file:line` citations to those rows. Each was checked against the source tree at this PR's base, which this PR does not change. Revision 7 added two acceptance lines in MAP-3 and MAP-6 after review round 6.
 Tracking: epic #7507; rows MAP-0 to MAP-9 are issues #7508 to #7517.
 Kind: CRUX review plus epic plan. No product code is specified as done here.
 
@@ -50,18 +50,18 @@ gets right: a small eager payload (574 KB gzip there) and no work on an idle fra
 | Canvas drawing in the browser | partial | `crates/aprender-present-lib/src/browser/canvas2d.rs` | Immediate mode only; no retained layer, no raster cache |
 | GPU instanced drawing | partial | `crates/aprender-present-lib/src/webgpu.rs` | No polygon tessellation |
 | Pointer, wheel, touch, pinch | partial | `crates/aprender-present-lib/src/browser/events.rs`, `crates/aprender-present-core/src/gesture.rs` | No camera or viewport transform |
-| Tooltip, charts, table, tabs | partial | `crates/aprender-present-widgets/src/tooltip.rs`, `chart.rs`, `data_table.rs`, `tabs.rs` | Tab hit-testing exists (`tab_at_point`) and a histogram chart type exists (`ChartType::Histogram`). Missing: brush, stat tile, and a column sort that reorders rows (`DataTable::set_sort` records the sort and does not reorder `rows`) |
+| Tooltip, charts, table, tabs | partial | `crates/aprender-present-widgets/src/tooltip.rs`, `chart.rs`, `data_table.rs`, `tabs.rs` | Tab hit-testing exists (`Tabs::tab_at_point`, private, `tabs.rs:388`) and a histogram chart type exists (`ChartType::Histogram`, `chart.rs:26-27`). Missing: brush, stat tile, and a column sort that reorders rows (`DataTable::set_sort`, `data_table.rs:430-433`, stores the sort column and direction and does not reorder `rows`) |
 | Shared state | exists | `crates/aprender-present-core/src/state.rs` (`Store`) | n/a |
 | Draw list | exists | `crates/aprender-present-core/src/draw.rs` (`DrawCommand`) | n/a |
 | URL hash | partial | `crates/aprender-present-lib/src/browser/router.rs` | No state codec (reading the hash and pushing or replacing history entries exist) |
-| Live stream client | partial | `crates/aprender-present-lib/src/browser/websocket.rs`, `crates/aprender-present-core/src/streaming.rs` | Client only. Its reconnect path attaches only `onopen` to the new socket (no message, error or close handlers), so a reconnected socket drops messages. The server crate has SSE for token streaming, no WebSocket and no data-push endpoint |
-| Columnar data in the browser | partial | `crates/aprender-db/src/wasm/streaming_parquet.rs`, `crates/aprender-db/src/wasm/http_range.rs` (HTTP range fetch), `crates/aprender-db/src/wasm.rs` (`Database::load_table`) | `parse_footer` returns stub metadata (no row groups) and `Database::load_table` returns "Not yet implemented", so no table loads by URL yet; no load from an in-memory buffer; no manifest hash check |
+| Live stream client | partial | `crates/aprender-present-lib/src/browser/websocket.rs`, `crates/aprender-present-core/src/streaming.rs` | Client only. Its reconnect closure (`websocket.rs:388-445`) attaches only `onopen` to the new socket (`websocket.rs:445`; no message, error or close handlers), so a reconnected socket drops messages. The inference server crate, taken here to be `crates/aprender-serve`, has SSE for token streaming (`src/api/mod.rs:14`), axum declared without the `ws` feature (`Cargo.toml:80`), and no data-push endpoint. Note: `crates/aprender-orchestrate/src/serve/banco/handlers_ws.rs:16-18` is a separate WebSocket events endpoint, not the inference server |
+| Columnar data in the browser | partial | `crates/aprender-db/src/wasm/streaming_parquet.rs` (`parse_footer` at `:131-140`), `crates/aprender-db/src/wasm/http_range.rs` (HTTP range fetch), `crates/aprender-db/src/wasm.rs` (`Database::load_table` at `:113-118`) | `parse_footer` returns stub metadata (no row groups) and `Database::load_table` returns "Not yet implemented", so no table loads by URL yet; no load from an in-memory buffer; manifest hash check: not measured |
 | Colour scales, tile geom | partial | `crates/aprender-viz/src/scale.rs`, `crates/aprender-viz/src/grammar/geom.rs` | No polygon or hex geom |
 | Coordinate systems | partial | `crates/aprender-viz/src/grammar/coord.rs` | Cartesian only |
 | Polygon output | partial | the SVG encoder of `crates/aprender-viz` emits polygon and path elements | No polygon fill in the framebuffer; no even-odd fill of a polygon with holes |
 | GeoJSON or TopoJSON reading | **absent** | n/a | all |
 | Map projections | **absent** | n/a | all |
-| Line simplification | partial | `crates/aprender-viz/src/plots/line.rs` (`douglas_peucker`), `crates/aprender-present-terminal/src/widgets/line_chart.rs` (Douglas-Peucker and Visvalingam-Whyatt) | Not in the geo kernel; Visvalingam-Whyatt absent from `aprender-viz`; no tolerance-0 or endpoint contract tests for the geo kernel |
+| Line simplification | partial | `crates/aprender-viz/src/plots/line.rs:47-69` (`douglas_peucker`, a plot helper), `crates/aprender-present-terminal/src/widgets/line_chart.rs:649-682` (`douglas_peucker`) and `:698-726` (`visvalingam_whyatt`) | No geo kernel exists yet (MAP-1 creates it); Visvalingam-Whyatt not found in `aprender-viz` (pmat query, top 6 results; not exhaustively measured) |
 | Hex grid | **absent** | n/a | all |
 | 2D spatial index, polygon hit-testing | **absent** | n/a | all |
 | Camera, raster cache, lens registry, minimap, search | **absent** | n/a | all |
