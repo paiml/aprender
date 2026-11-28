@@ -226,3 +226,13 @@ fn sprite_accessors_report_side_and_byte_length() {
     assert_eq!(s.side(), 2);
     assert_eq!(s.rgba().len(), 16);
 }
+
+#[test]
+fn every_bucket_side_equals_the_documented_formula() {
+    for bucket in 0..=MAX_SPRITE_BUCKET {
+        let want = (2.0 * (f64::from(bucket) / 4.0).exp2()).round();
+        let got = side_for_bucket(bucket).expect("bucket in range");
+        assert_eq!(f64::from(got), want, "bucket {bucket}");
+    }
+    assert_eq!(side_for_bucket(22), Ok(91));
+}

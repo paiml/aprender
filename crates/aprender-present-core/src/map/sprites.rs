@@ -19,8 +19,8 @@ pub const MAX_SPRITE_BUCKET: u32 = 32;
 /// Largest sprite side in pixels, reached at `MAX_SPRITE_BUCKET`. Bounds each sprite to 1 MiB.
 pub const MAX_SPRITE_SIDE: u32 = 512;
 
-/// `2^(q/4)` for `q` in `0..4`, in thousandths, for the integer side computation.
-const QUARTER_OCTAVE_MILLI: [u64; 4] = [1000, 1189, 1414, 1682];
+/// `2^(q/4)` for `q` in `0..4`, in millionths, for the integer side computation.
+const QUARTER_OCTAVE_MICRO: [u64; 4] = [1_000_000, 1_189_207, 1_414_214, 1_681_793];
 
 /// Quarter-octave size bucket for a radius in screen pixels: `floor(4 * log2(r))`.
 ///
@@ -46,10 +46,10 @@ pub fn side_for_bucket(bucket: u32) -> Result<u32, MapError> {
     }
     let k = bucket / 4;
     let q = (bucket % 4) as usize;
-    // 2 * 2^(q/4) * 2^k, in thousandths, then rounded half-up to whole pixels. The largest side
+    // 2 * 2^(q/4) * 2^k, in millionths, then rounded half-up to whole pixels. The largest side
     // is 512, at the largest bucket, so the u64 product and the u32 result cannot overflow.
-    let milli = 2 * QUARTER_OCTAVE_MILLI[q] * (1u64 << k);
-    Ok(((milli + 500) / 1000) as u32)
+    let micro = 2 * QUARTER_OCTAVE_MICRO[q] * (1u64 << k);
+    Ok(((micro + 500_000) / 1_000_000) as u32)
 }
 
 /// FNV-1a 64-bit hash. Used to turn a key string into a stable integer.
