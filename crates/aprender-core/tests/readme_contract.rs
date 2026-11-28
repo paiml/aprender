@@ -864,3 +864,38 @@ fn test_readme_has_no_overdue_release_promise() {
         overdue
     );
 }
+
+/// Compiled witness for the README "## Library usage" snippet (F-FR-U00-010).
+/// The mirror file is compiled into this test target, so the snippet is
+/// type-checked here. `readme_library_snippet` is never called, so it is
+/// compiled but not executed: this is a compile witness, not a run.
+#[allow(dead_code)]
+mod readme_library_snippet_witness {
+    include!("readme_snippets/library_usage.rs");
+}
+
+/// F-FR-U00-010: the README library snippet compiles. The compiled witness
+/// above must contain the README's `## Library usage` rust block verbatim, so
+/// a planted wrong module path in the README (or in the witness) turns this RED.
+#[test]
+fn readme_library_usage_snippet_compiles() {
+    let readme = read_readme();
+    let heading = readme
+        .find("\n## Library usage")
+        .expect("README must have a '## Library usage' section");
+    let after = &readme[heading..];
+    let open = after
+        .find("\n```rust\n")
+        .expect("'## Library usage' must contain a ```rust block");
+    let body_start = open + "\n```rust\n".len();
+    let body_len = after[body_start..]
+        .find("\n```\n")
+        .expect("```rust block must be closed");
+    let block = &after[body_start..body_start + body_len];
+    let witness = include_str!("readme_snippets/library_usage.rs");
+    assert!(
+        witness.contains(block),
+        "F-FR-U00-010: README '## Library usage' rust block is not the compiled witness \
+         (crates/aprender-core/tests/readme_snippets/library_usage.rs)"
+    );
+}

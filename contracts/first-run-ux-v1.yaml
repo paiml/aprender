@@ -1,0 +1,208 @@
+metadata:
+  version: 1.0.0
+  created: '2026-11-27'
+  author: PAIML Engineering
+  valid_under:
+    world: committed
+  description: >-
+    The first-run harness as a pv contract. A newcomer runs each step from
+    nothing on the binary under test; each step is one falsification test. A
+    row is done only when its done_when passes from nothing
+    (D=$(mktemp -d); HOME=$D XDG_CACHE_HOME=$D/.cache). LAB: this contract can
+    block no merge and no release. Exit codes: 0 PASS, 1 RED, 75 CANNOT MEASURE
+    (apr, jq, curl, cargo or pv missing from PATH). CANNOT MEASURE means the
+    row is not scored; it is never a pass and never a red.
+  references:
+  - docs/roadmaps/releases/0.78.0-first-run.md §3 (rows U-00..U-08, U-10, G-01..G-03)
+  - docs/specifications/crux-ux-first-run-analysis-2026-11-27.md
+  - aprender#7479 (U-00, P0)
+  - 'Baseline apr 0.75.4: every row is RED (known red at baseline)'
+  depends_on:
+    - apr-cli-commands-v1
+equations:
+  first_run_step_from_nothing:
+    formula: >-
+      from_nothing(step) => passes(step) on binary_under_test
+    domain: >-
+      step in {U-00..U-08, U-10, G-01..G-03}; binary_under_test is the apr
+      build named in the receipt; from_nothing is an empty HOME and an empty
+      XDG_CACHE_HOME
+    codomain: bool — each falsification test exits 0 when the step passes
+    invariants:
+    - >-
+      NEGATIVE CONTROL. On apr 0.75.4 every test is RED. A harness that passes
+      0.75.4 is broken.
+    - >-
+      FROM NOTHING. Each test runs with an empty HOME and XDG_CACHE_HOME; no
+      test reads a cache left by another test.
+    - >-
+      NAMED FAILURE. A red test names the failing step in its output.
+falsification_tests:
+- id: F-FR-U00-001
+  rule: the contract exists and validates
+  prediction: >-
+    `pv validate contracts/first-run-ux-v1.yaml` exits 0 with no errors.
+  test: 'bash -c ''command -v pv >/dev/null 2>&1 || { echo "CANNOT MEASURE: pv not on PATH" >&2; exit 75; }; pv validate contracts/first-run-ux-v1.yaml'''
+  if_fails: the first-run harness is not a checkable contract; no row can be scored.
+  mutation: >-
+    drop the `equations:` block; validation must fail.
+- id: F-FR-U00-002
+  rule: apr run on a safetensors hf:// repo works from nothing (U-01)
+  prediction: >-
+    from nothing, `apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0 --json`
+    exits 0 and its .text is the answer 4 as a whole token. A timing line such
+    as `Completed in 4.12s` does not count. On apr 0.75.4 it exits 8.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0 --json) || { echo "F-FR-U00-002 (U-01): apr run exited nonzero" >&2; exit 1; }; jq -e ".text | type == \"string\" and (test(\"Completed in\") | not) and test(\"(?<![0-9.])4(?![0-9]|[.][0-9]|[a-zA-Z])\")" <<<"$out" >/dev/null || { echo "F-FR-U00-002 (U-01): reply is not the answer 4, or it is a timing line" >&2; exit 1; }'''
+  if_fails: step U-01 fails - safetensors hf:// run is not usable by a newcomer.
+  mutation: >-
+    replace the reply check with `true`; the contract must still name exit 8 as RED on 0.75.4.
+- id: F-FR-U00-003
+  rule: run, list and rm share one model store (U-02)
+  prediction: >-
+    from nothing, after `apr run hf://$G "hi"`, `apr list` shows $G, and after
+    `apr rm $G` it does not. On apr 0.75.4 `apr list` shows nothing.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; G=Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://$G "hi" >/dev/null 2>&1 || exit 1; L=$(apr list) || exit 1; grep -qF "$G" <<<"$L" || exit 1; find "$D" -type f \( -name "*.gguf" -o -name "*.safetensors" \) -size +1M | grep -q . || exit 1; apr rm $G >/dev/null 2>&1 || exit 1; L=$(apr list) || exit 1; ! grep -qF "$G" <<<"$L"'''
+  if_fails: step U-02 fails - the model store does not list what run pulled.
+  mutation: >-
+    delete the `apr list` line; the contract must fail its own check.
+- id: F-FR-U00-004
+  rule: a pulled model has a name and no hash row (U-03)
+  prediction: >-
+    from nothing, `apr pull hf://HuggingFaceTB/SmolLM2-135M-Instruct` then
+    `apr list` shows the repo name and no `(orphan)`. On apr 0.75.4 the row is
+    a 16-hex hash marked `(orphan)`.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr pull hf://HuggingFaceTB/SmolLM2-135M-Instruct >/dev/null 2>&1; apr list | grep -q "HuggingFaceTB/SmolLM2-135M-Instruct" && ! apr list | grep -q "(orphan)"'''
+  if_fails: step U-03 fails - a pulled model is nameless or shown as an orphan.
+  mutation: >-
+    print the hash row; the `(orphan)` check must turn RED.
+- id: F-FR-U00-005
+  rule: a reply is not cut off by default (U-04)
+  prediction: >-
+    `apr run <gguf> "Explain quicksort in three sentences." --temperature 0 --json`
+    reports more than 32 completion_tokens, finish_reason "stop", and a .text
+    that ends with terminal punctuation. A reply cut at the token cap fails. On
+    apr 0.75.4 it stops at 32.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF "Explain quicksort in three sentences." --temperature 0 --json) || { echo "F-FR-U00-005 (U-04): apr run exited nonzero" >&2; exit 1; }; jq -e "(.completion_tokens > 32) and (.finish_reason == \"stop\") and ((.text | type) == \"string\") and (.text | test(\"[.!?][[:space:]]*$\"))" <<<"$out" >/dev/null || { echo "F-FR-U00-005 (U-04): reply cut off at the token cap, or .text does not end with terminal punctuation" >&2; exit 1; }'''
+  if_fails: step U-04 fails - default generation is truncated at 32 tokens.
+  mutation: >-
+    cap the default at 32; the stop-reason check must turn RED.
+- id: F-FR-U00-006
+  rule: apr run says which backend ran (U-05)
+  prediction: >-
+    `apr run <m> "hi"` writes one stderr line naming the backend. On apr 0.75.4
+    no such line exists (F-07).
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" 2>&1 >/dev/null | grep -qiE "backend|cpu|cuda"'''
+  if_fails: step U-05 fails - the backend is silent; a user cannot tell CPU from GPU.
+  mutation: >-
+    remove the backend line; the grep must turn RED.
+- id: F-FR-U00-007
+  rule: apr doctor exists and reports the selected backend (U-06)
+  prediction: >-
+    `apr doctor --json` exits 0 and its .backend is a non-empty string other
+    than "unknown". On apr 0.75.4 the subcommand is unrecognized.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr doctor --json 2>$D/err) || { echo "F-FR-U00-007 (U-06): apr doctor is not a top-level command at this head (only apr cgp doctor exists, and it has no backend key), or exited nonzero" >&2; exit 1; }; jq -e "(.backend | type == \"string\") and (.backend | length > 0) and (.backend | ascii_downcase != \"unknown\")" <<<"$out" >/dev/null || { echo "F-FR-U00-007 (U-06): apr doctor --json backend is missing or unknown" >&2; exit 1; }'''
+  if_fails: step U-06 fails - no doctor verb, so a newcomer cannot diagnose a backend.
+  mutation: >-
+    make `apr doctor` exit 1 with no output; the exit-0 check must turn RED.
+- id: F-FR-U00-008
+  rule: stdout of apr run is the reply and nothing else by default (U-07)
+  prediction: >-
+    without -v, stdout of a successful `apr run` is the reply only; stderr has
+    no ticket tag (GH-n, PMAT-n or CRUX-X-n). On apr 0.75.4 the banner is on stdout.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" >$D/out 2>$D/err || { echo "F-FR-U00-008 (U-07): apr run exited nonzero" >&2; exit 1; }; grep -q "[^[:space:]]" $D/out || { echo "F-FR-U00-008 (U-07): stdout is empty" >&2; exit 1; }; grep -qE "=== APR Run|^[[:space:]]*Source:|^[[:space:]]*Output:|Completed in" $D/out && { echo "F-FR-U00-008 (U-07): banner or log line on stdout" >&2; exit 1; }; grep -qE "GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+" $D/err && { echo "F-FR-U00-008 (U-07): ticket tag on stderr" >&2; exit 1; }; exit 0'''
+  if_fails: step U-07 fails - internal banner or log lines leak onto stdout.
+  mutation: >-
+    print the banner on stdout; the grep must match and the test must turn RED.
+- id: F-FR-U00-009
+  rule: apr --help has no internal tags (U-08)
+  prediction: >-
+    `apr --help` has no match for `GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+|#[0-9]{3,}`.
+    On apr 0.75.4 it has tagged lines.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; out=$(apr --help) || exit 1; grep -q "^Usage:" <<<"$out" && ! grep -qE "GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+|#[0-9]{3,}" <<<"$out"'''
+  if_fails: step U-08 fails - the help a newcomer reads carries ticket ids.
+  mutation: >-
+    add `PMAT-001` to a help line; the test must turn RED.
+- id: F-FR-U00-010
+  rule: the README quick start is the first-run script (U-10)
+  prediction: >-
+    the README library snippet compiles as a doctest; a planted wrong module
+    path in the snippet turns the doctest RED.
+  test: 'bash -c ''command -v cargo >/dev/null 2>&1 || { echo "CANNOT MEASURE: cargo not on PATH" >&2; exit 75; }; out=$(cargo test -p aprender-core --test readme_contract readme_library_usage_snippet_compiles 2>&1); rc=$?; if [ $rc -ne 0 ] && grep -q "^cargo-memcap: REFUSED" <<<"$out"; then echo "CANNOT MEASURE: cargo-memcap refused the build" >&2; exit 75; fi; exit $rc'''
+  if_fails: step U-10 fails - the README snippet does not match the binary.
+  mutation: >-
+    plant a wrong module path in the snippet; the doctest must turn RED.
+- id: F-FR-U00-011
+  rule: POST /v1/messages on apr serve run (G-01)
+  prediction: >-
+    with a GGUF chat model pulled and served (poll /health, 60 s timeout),
+    POST /v1/messages returns 200 with type=message, role=assistant and a
+    non-empty text that does not start with error:. On apr 0.75.4 it returns 404.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; M=Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF; apr pull hf://$M >/dev/null 2>&1 || { echo "F-FR-U00-011 (G-01): apr pull hf://$M failed" >&2; exit 1; }; P0=$((20000 + RANDOM % 20000)); apr serve run $M --port $P0 >/dev/null 2>&1 & P=$!; trap "kill $P 2>/dev/null" EXIT; T=0; until curl -fsS http://127.0.0.1:$P0/health >/dev/null 2>&1; do kill -0 $P 2>/dev/null || { echo "F-FR-U00-011 (G-01): apr serve exited before /health answered" >&2; exit 1; }; T=$((T+1)); [ $T -ge 60 ] && { echo "F-FR-U00-011 (G-01): /health did not answer within 60 s" >&2; exit 1; }; sleep 1; done; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/messages -H "content-type: application/json" -d "{\"model\":\"m\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"What is 2+2?\"}]}"); [ "$CODE" = 200 ] || { echo "F-FR-U00-011 (G-01): POST /v1/messages returned $CODE, not 200" >&2; exit 1; }; jq -e "(.type == \"message\") and (.role == \"assistant\") and (.content[0].type == \"text\") and ((.content[0].text | type) == \"string\") and ((.content[0].text | length) > 0) and ((.content[0].text | ascii_downcase | startswith(\"error:\")) | not)" $D/body >/dev/null || { echo "F-FR-U00-011 (G-01): reply is empty, not a message, or an error string" >&2; exit 1; }'''
+  if_fails: step G-01 fails - the Anthropic-compatible messages route is missing.
+  mutation: >-
+    return 404 on the route; the status check must turn RED.
+- id: F-FR-U00-012
+  rule: POST /v1/responses on apr serve run (G-02)
+  prediction: >-
+    with the same model (pulled, /health polled with a 60 s timeout),
+    POST /v1/responses returns 200 with object=response, status=completed and
+    output[0].content[0] of type output_text with non-empty text. On apr 0.75.4 it returns 404.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; M=Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF; apr pull hf://$M >/dev/null 2>&1 || { echo "F-FR-U00-012 (G-02): apr pull hf://$M failed" >&2; exit 1; }; P0=$((20000 + RANDOM % 20000)); apr serve run $M --port $P0 >/dev/null 2>&1 & P=$!; trap "kill $P 2>/dev/null" EXIT; T=0; until curl -fsS http://127.0.0.1:$P0/health >/dev/null 2>&1; do kill -0 $P 2>/dev/null || { echo "F-FR-U00-012 (G-02): apr serve exited before /health answered" >&2; exit 1; }; T=$((T+1)); [ $T -ge 60 ] && { echo "F-FR-U00-012 (G-02): /health did not answer within 60 s" >&2; exit 1; }; sleep 1; done; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/responses -H "content-type: application/json" -d "{\"model\":\"m\",\"input\":\"What is 2+2?\"}"); [ "$CODE" = 200 ] || { echo "F-FR-U00-012 (G-02): POST /v1/responses returned $CODE, not 200" >&2; exit 1; }; jq -e "(.object == \"response\") and (.status == \"completed\") and (.output[0].content[0].type == \"output_text\") and ((.output[0].content[0].text | type) == \"string\") and ((.output[0].content[0].text | length) > 0)" $D/body >/dev/null || { echo "F-FR-U00-012 (G-02): response is not completed output_text with non-empty text" >&2; exit 1; }'''
+  if_fails: step G-02 fails - the responses route is missing.
+  mutation: >-
+    return 404 on the route; the status check must turn RED.
+- id: F-FR-U00-013
+  rule: a request with no model field says so (G-03)
+  prediction: >-
+    with the model pulled and /health polled (60 s timeout), POST
+    /v1/chat/completions without a model field returns a 4xx whose
+    .error.message names `model`. On apr 0.75.4 it returns 422 with a generic schema message.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; M=Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF; apr pull hf://$M >/dev/null 2>&1 || { echo "F-FR-U00-013 (G-03): apr pull hf://$M failed" >&2; exit 1; }; P0=$((20000 + RANDOM % 20000)); apr serve run $M --port $P0 >/dev/null 2>&1 & P=$!; trap "kill $P 2>/dev/null" EXIT; T=0; until curl -fsS http://127.0.0.1:$P0/health >/dev/null 2>&1; do kill -0 $P 2>/dev/null || { echo "F-FR-U00-013 (G-03): apr serve exited before /health answered" >&2; exit 1; }; T=$((T+1)); [ $T -ge 60 ] && { echo "F-FR-U00-013 (G-03): /health did not answer within 60 s" >&2; exit 1; }; sleep 1; done; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/chat/completions -H "content-type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"); case $CODE in 4??) ;; *) echo "F-FR-U00-013 (G-03): request without model returned $CODE, not 4xx" >&2; exit 1 ;; esac; jq -e "(.error.message | type == \"string\") and (.error.message | ascii_downcase | contains(\"model\"))" $D/body >/dev/null || { echo "F-FR-U00-013 (G-03): .error.message does not name model" >&2; exit 1; }'''
+  if_fails: step G-03 fails - a missing model field gets an unhelpful error.
+  mutation: >-
+    return the generic schema message; the `model` match must turn RED.
+- id: F-FR-U00-014
+  rule: negative control - every row is RED on apr 0.75.4 (FR-NEG-002)
+  prediction: >-
+    `bash contracts/first-run-negative-control.sh` exits 0: every row U-01..U-08,
+    U-10, G-01..G-03 exits nonzero on apr 0.75.4. Exit 75 is NOT RUN (apr is
+    not 0.75.4, or a prerequisite is missing) and is never a pass.
+  test: 'bash contracts/first-run-negative-control.sh'
+  if_fails: a row passes on apr 0.75.4 (the harness is broken), or the control did not run (NOT RUN).
+  mutation: >-
+    make one row's check `true`; the control must report that row PASS on 0.75.4 and exit 1.
+proof_obligations:
+- id: FR-INV-001
+  type: invariant
+  property: >-
+    Every first-run row is scored from its falsification test run from nothing.
+    A row with no test is not scoreable (F-FR-U00-001 names the contract check).
+  formal: >-
+    ∀ step ∈ rows: ∃ test(step) ∧ from_nothing(test(step))
+- id: FR-NEG-002
+  type: soundness
+  property: >-
+    On apr 0.75.4 every row is RED. A harness that passes 0.75.4 is broken
+    (negative control, docs/roadmaps/releases/0.78.0-first-run.md §3).
+    Runnable as contracts/first-run-negative-control.sh (F-FR-U00-014). A row
+    that exits 75 (CANNOT MEASURE, or apr is not 0.75.4) is not a PASS.
+  formal: >-
+    ∀ step ∈ rows: result(step, apr_0_75_4) ≡ RED
+kani_harnesses:
+# Declared, NOT written: the rows are shell harnesses run from nothing, not
+# bounded model-checking targets. Stated so no score is inflated (CF-5).
+- id: KH-FR-001
+  obligation: FR-INV-001
+  property: >-
+    every row has a falsification test that runs from nothing
+  status: declared-not-written
+  bound: 0
+  cheaper_alternative: >-
+    the pv validate check plus the per-row test lines themselves
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: >-
+      No numeric quality gate. This contract scores binary first-run steps
+      from nothing; a fabricated score would misstate them. LAB: it blocks no
+      merge and no release.
