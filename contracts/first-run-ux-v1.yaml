@@ -124,7 +124,7 @@ falsification_tests:
   prediction: >-
     the README library snippet compiles as a doctest; a planted wrong module
     path in the snippet turns the doctest RED.
-  test: 'bash -c ''command -v cargo >/dev/null 2>&1 || { echo "CANNOT MEASURE: cargo not on PATH" >&2; exit 75; }; cargo test -p aprender-core --test readme_contract readme_library_usage_snippet_compiles'''
+  test: 'bash -c ''command -v cargo >/dev/null 2>&1 || { echo "CANNOT MEASURE: cargo not on PATH" >&2; exit 75; }; out=$(cargo test -p aprender-core --test readme_contract readme_library_usage_snippet_compiles 2>&1); rc=$?; if [ $rc -ne 0 ] && grep -q "^cargo-memcap: REFUSED" <<<"$out"; then echo "CANNOT MEASURE: cargo-memcap refused the build" >&2; exit 75; fi; exit $rc'''
   if_fails: step U-10 fails - the README snippet does not match the binary.
   mutation: >-
     plant a wrong module path in the snippet; the doctest must turn RED.
