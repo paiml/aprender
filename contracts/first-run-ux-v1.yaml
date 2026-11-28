@@ -9,7 +9,9 @@ metadata:
     nothing on the binary under test; each step is one falsification test. A
     row is done only when its done_when passes from nothing
     (D=$(mktemp -d); HOME=$D XDG_CACHE_HOME=$D/.cache). LAB: this contract can
-    block no merge and no release.
+    block no merge and no release. Exit codes: 0 PASS, 1 RED, 75 CANNOT MEASURE
+    (apr, jq, curl, cargo or pv missing from PATH). CANNOT MEASURE means the
+    row is not scored; it is never a pass and never a red.
   references:
   - docs/roadmaps/releases/0.78.0-first-run.md §3 (rows U-00..U-08, U-10, G-01..G-03)
   - docs/specifications/crux-ux-first-run-analysis-2026-11-27.md
@@ -40,7 +42,7 @@ falsification_tests:
   rule: the contract exists and validates
   prediction: >-
     `pv validate contracts/first-run-ux-v1.yaml` exits 0 with no errors.
-  test: 'pv validate contracts/first-run-ux-v1.yaml'
+  test: 'bash -c ''command -v pv >/dev/null 2>&1 || { echo "CANNOT MEASURE: pv not on PATH" >&2; exit 75; }; pv validate contracts/first-run-ux-v1.yaml'''
   if_fails: the first-run harness is not a checkable contract; no row can be scored.
   mutation: >-
     drop the `equations:` block; validation must fail.
@@ -49,7 +51,7 @@ falsification_tests:
   prediction: >-
     from nothing, `apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0`
     exits 0 and the reply contains `4`. On apr 0.75.4 it exits 8.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0 --json) || exit 1; jq -e ".text | test(\"(^|[^0-9])4([^0-9]|$)\")" <<<"$out" >/dev/null'''
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0 --json) || exit 1; jq -e ".text | test(\"(^|[^0-9])4([^0-9]|$)\")" <<<"$out" >/dev/null'''
   if_fails: step U-01 fails - safetensors hf:// run is not usable by a newcomer.
   mutation: >-
     replace the reply check with `true`; the contract must still name exit 8 as RED on 0.75.4.
@@ -58,7 +60,7 @@ falsification_tests:
   prediction: >-
     from nothing, after `apr run hf://$G "hi"`, `apr list` shows $G, and after
     `apr rm $G` it does not. On apr 0.75.4 `apr list` shows nothing.
-  test: 'bash -c ''G=Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://$G "hi" >/dev/null 2>&1 || exit 1; L=$(apr list) || exit 1; grep -qF "$G" <<<"$L" || exit 1; find "$D" -type f \( -name "*.gguf" -o -name "*.safetensors" \) -size +1M | grep -q . || exit 1; apr rm $G >/dev/null 2>&1 || exit 1; L=$(apr list) || exit 1; ! grep -qF "$G" <<<"$L"'''
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; G=Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://$G "hi" >/dev/null 2>&1 || exit 1; L=$(apr list) || exit 1; grep -qF "$G" <<<"$L" || exit 1; find "$D" -type f \( -name "*.gguf" -o -name "*.safetensors" \) -size +1M | grep -q . || exit 1; apr rm $G >/dev/null 2>&1 || exit 1; L=$(apr list) || exit 1; ! grep -qF "$G" <<<"$L"'''
   if_fails: step U-02 fails - the model store does not list what run pulled.
   mutation: >-
     delete the `apr list` line; the contract must fail its own check.
@@ -68,7 +70,7 @@ falsification_tests:
     from nothing, `apr pull hf://HuggingFaceTB/SmolLM2-135M-Instruct` then
     `apr list` shows the repo name and no `(orphan)`. On apr 0.75.4 the row is
     a 16-hex hash marked `(orphan)`.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr pull hf://HuggingFaceTB/SmolLM2-135M-Instruct >/dev/null 2>&1; apr list | grep -q "HuggingFaceTB/SmolLM2-135M-Instruct" && ! apr list | grep -q "(orphan)"'''
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr pull hf://HuggingFaceTB/SmolLM2-135M-Instruct >/dev/null 2>&1; apr list | grep -q "HuggingFaceTB/SmolLM2-135M-Instruct" && ! apr list | grep -q "(orphan)"'''
   if_fails: step U-03 fails - a pulled model is nameless or shown as an orphan.
   mutation: >-
     print the hash row; the `(orphan)` check must turn RED.
@@ -77,7 +79,7 @@ falsification_tests:
   prediction: >-
     `apr run <gguf> "Explain quicksort in three sentences." --temperature 0 --json`
     reports more than 32 generated tokens and stop reason end-of-turn. On apr 0.75.4 it stops at 32.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF "Explain quicksort in three sentences." --temperature 0 --json) || exit 1; n=$(grep -oE "\"completion_tokens\": *[0-9]+" <<<"$out" | grep -oE "[0-9]+$"); [ -n "$n" ] && [ "$n" -gt 32 ] && grep -qE "\"finish_reason\": *\"stop\"" <<<"$out" && grep -qE "[.!?](\\\\n)*\"[[:space:]]*[,}]" <<<"$out"'''
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF "Explain quicksort in three sentences." --temperature 0 --json) || exit 1; n=$(grep -oE "\"completion_tokens\": *[0-9]+" <<<"$out" | grep -oE "[0-9]+$"); [ -n "$n" ] && [ "$n" -gt 32 ] && grep -qE "\"finish_reason\": *\"stop\"" <<<"$out" && grep -qE "[.!?](\\\\n)*\"[[:space:]]*[,}]" <<<"$out"'''
   if_fails: step U-04 fails - default generation is truncated at 32 tokens.
   mutation: >-
     cap the default at 32; the stop-reason check must turn RED.
@@ -86,7 +88,7 @@ falsification_tests:
   prediction: >-
     `apr run <m> "hi"` writes one stderr line naming the backend. On apr 0.75.4
     no such line exists (F-07).
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" 2>&1 >/dev/null | grep -qiE "backend|cpu|cuda"'''
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" 2>&1 >/dev/null | grep -qiE "backend|cpu|cuda"'''
   if_fails: step U-05 fails - the backend is silent; a user cannot tell CPU from GPU.
   mutation: >-
     remove the backend line; the grep must turn RED.
@@ -95,7 +97,7 @@ falsification_tests:
   prediction: >-
     `apr doctor --json` exits 0 and carries the selected backend. On apr 0.75.4
     the subcommand is unrecognized.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr doctor --json 2>$D/err) || { echo "F-FR-U00-007: apr doctor is not a top-level command at this head (only apr cgp doctor exists, and it has no backend key)" >&2; exit 1; }; grep -qE "\"backend\": *\"[A-Za-z]" <<<"$out" || { echo "F-FR-U00-007: apr doctor --json has no backend key" >&2; exit 1; }'''
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr doctor --json 2>$D/err) || { echo "F-FR-U00-007: apr doctor is not a top-level command at this head (only apr cgp doctor exists, and it has no backend key)" >&2; exit 1; }; grep -qE "\"backend\": *\"[A-Za-z]" <<<"$out" || { echo "F-FR-U00-007: apr doctor --json has no backend key" >&2; exit 1; }'''
   if_fails: step U-06 fails - no doctor verb, so a newcomer cannot diagnose a backend.
   mutation: >-
     make `apr doctor` exit 1 with no output; the exit-0 check must turn RED.
@@ -104,7 +106,7 @@ falsification_tests:
   prediction: >-
     without -v, stdout of a successful `apr run` is the reply only; stderr has
     no internal tag such as `[PMAT-044]`. On apr 0.75.4 the banner is on stdout.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" >$D/out 2>$D/err || exit 1; grep -q "[^[:space:]]" $D/out && ! grep -qE "^[[:space:]]*[Aa]ppend|Endpoints:|=== APR Run|^[[:space:]]*Source:|^[[:space:]]*Output:|Completed in" $D/out && ! grep -qE "\[PMAT-[0-9]+\]" $D/err'''
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" >$D/out 2>$D/err || exit 1; grep -q "[^[:space:]]" $D/out && ! grep -qE "^[[:space:]]*[Aa]ppend|Endpoints:|=== APR Run|^[[:space:]]*Source:|^[[:space:]]*Output:|Completed in" $D/out && ! grep -qE "\[PMAT-[0-9]+\]" $D/err'''
   if_fails: step U-07 fails - internal banner or log lines leak onto stdout.
   mutation: >-
     print the banner on stdout; the grep must match and the test must turn RED.
@@ -113,7 +115,7 @@ falsification_tests:
   prediction: >-
     `apr --help` has no match for `GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+|#[0-9]{3,}`.
     On apr 0.75.4 it has tagged lines.
-  test: 'bash -c ''out=$(apr --help) || exit 1; grep -q "^Usage:" <<<"$out" && ! grep -qE "GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+|#[0-9]{3,}" <<<"$out"'''
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; out=$(apr --help) || exit 1; grep -q "^Usage:" <<<"$out" && ! grep -qE "GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+|#[0-9]{3,}" <<<"$out"'''
   if_fails: step U-08 fails - the help a newcomer reads carries ticket ids.
   mutation: >-
     add `PMAT-001` to a help line; the test must turn RED.
@@ -122,7 +124,7 @@ falsification_tests:
   prediction: >-
     the README library snippet compiles as a doctest; a planted wrong module
     path in the snippet turns the doctest RED.
-  test: 'cargo test -p aprender-core --test readme_contract readme_library_usage_snippet_compiles'
+  test: 'bash -c ''command -v cargo >/dev/null 2>&1 || { echo "CANNOT MEASURE: cargo not on PATH" >&2; exit 75; }; cargo test -p aprender-core --test readme_contract readme_library_usage_snippet_compiles'''
   if_fails: step U-10 fails - the README snippet does not match the binary.
   mutation: >-
     plant a wrong module path in the snippet; the doctest must turn RED.
@@ -131,7 +133,7 @@ falsification_tests:
   prediction: >-
     with a GGUF chat model loaded, POST /v1/messages returns 200 with
     type=message. On apr 0.75.4 it returns 404.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/messages -H "content-type: application/json" -d "{\"model\":\"m\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"What is 2+2?\"}]}"); kill -0 $P 2>/dev/null || exit 1; kill $P; [ "$CODE" = 200 ] && jq -e "(.type==\"message\") and (.role==\"assistant\") and (.content[0].type==\"text\") and ((.content[0].text|type)==\"string\") and ((.content[0].text|length)>0)" $D/body >/dev/null'''
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/messages -H "content-type: application/json" -d "{\"model\":\"m\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"What is 2+2?\"}]}"); kill -0 $P 2>/dev/null || exit 1; kill $P; [ "$CODE" = 200 ] && jq -e "(.type==\"message\") and (.role==\"assistant\") and (.content[0].type==\"text\") and ((.content[0].text|type)==\"string\") and ((.content[0].text|length)>0)" $D/body >/dev/null'''
   if_fails: step G-01 fails - the Anthropic-compatible messages route is missing.
   mutation: >-
     return 404 on the route; the status check must turn RED.
@@ -140,7 +142,7 @@ falsification_tests:
   prediction: >-
     with the same model, POST /v1/responses returns 200 with object=response.
     On apr 0.75.4 it returns 404.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/responses -H "content-type: application/json" -d "{\"model\":\"m\",\"input\":\"What is 2+2?\"}"); kill -0 $P 2>/dev/null || exit 1; kill $P; [ "$CODE" = 200 ] && jq -e "(.object==\"response\") and (.output|type==\"array\") and (.output|length>0)" $D/body >/dev/null'''
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/responses -H "content-type: application/json" -d "{\"model\":\"m\",\"input\":\"What is 2+2?\"}"); kill -0 $P 2>/dev/null || exit 1; kill $P; [ "$CODE" = 200 ] && jq -e "(.object==\"response\") and (.output|type==\"array\") and (.output|length>0)" $D/body >/dev/null'''
   if_fails: step G-02 fails - the responses route is missing.
   mutation: >-
     return 404 on the route; the status check must turn RED.
@@ -149,10 +151,20 @@ falsification_tests:
   prediction: >-
     POST /v1/chat/completions without a model field returns a 4xx whose message
     names `model`. On apr 0.75.4 it returns 422 with a generic schema message.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/chat/completions -H "content-type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"); kill $P; case $CODE in 4??) jq -e "(.error|tostring|ascii_downcase|contains(\"model\"))" $D/body >/dev/null ;; *) false ;; esac'''
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/chat/completions -H "content-type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"); kill $P; case $CODE in 4??) jq -e "(.error|tostring|ascii_downcase|contains(\"model\"))" $D/body >/dev/null ;; *) false ;; esac'''
   if_fails: step G-03 fails - a missing model field gets an unhelpful error.
   mutation: >-
     return the generic schema message; the `model` match must turn RED.
+- id: F-FR-U00-014
+  rule: negative control - every row is RED on apr 0.75.4 (FR-NEG-002)
+  prediction: >-
+    `bash contracts/first-run-negative-control.sh` exits 0: every row U-01..U-08,
+    U-10, G-01..G-03 exits nonzero on apr 0.75.4. Exit 75 is NOT RUN (apr is
+    not 0.75.4, or a prerequisite is missing) and is never a pass.
+  test: 'bash contracts/first-run-negative-control.sh'
+  if_fails: a row passes on apr 0.75.4 (the harness is broken), or the control did not run (NOT RUN).
+  mutation: >-
+    make one row's check `true`; the control must report that row PASS on 0.75.4 and exit 1.
 proof_obligations:
 - id: FR-INV-001
   type: invariant
@@ -166,6 +178,8 @@ proof_obligations:
   property: >-
     On apr 0.75.4 every row is RED. A harness that passes 0.75.4 is broken
     (negative control, docs/roadmaps/releases/0.78.0-first-run.md §3).
+    Runnable as contracts/first-run-negative-control.sh (F-FR-U00-014). A row
+    that exits 75 (CANNOT MEASURE, or apr is not 0.75.4) is not a PASS.
   formal: >-
     ∀ step ∈ rows: result(step, apr_0_75_4) ≡ RED
 kani_harnesses:
