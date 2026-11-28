@@ -51,6 +51,8 @@ pub enum SvgElement {
     Polyline { points: Vec<(f32, f32)>, stroke: Rgba, stroke_width: f32, fill: Option<Rgba> },
     /// Path (SVG path data)
     Path { d: String, fill: Option<Rgba>, stroke: Option<Rgba>, stroke_width: f32 },
+    /// Filled path under the even-odd rule: subpaths inside subpaths are holes
+    PathEvenOdd { d: String, fill: Rgba },
     /// Text
     Text { x: f32, y: f32, text: String, font_size: f32, fill: Rgba, anchor: TextAnchor },
     /// Embedded raster image (base64 PNG)
@@ -262,6 +264,16 @@ impl SvgEncoder {
         stroke_width: f32,
     ) -> Self {
         self.elements.push(SvgElement::Path { d: d.to_string(), fill, stroke, stroke_width });
+        self
+    }
+
+    /// Add a path filled with the even-odd rule (`fill-rule="evenodd"`).
+    ///
+    /// Build `d` with `geo::fill::svg_path_d`, so each ring is a closed subpath and a hole is
+    /// simply a ring inside another ring.
+    #[must_use]
+    pub fn path_even_odd(mut self, d: &str, fill: Rgba) -> Self {
+        self.elements.push(SvgElement::PathEvenOdd { d: d.to_string(), fill });
         self
     }
 
@@ -484,6 +496,13 @@ fn element_to_svg(element: &SvgElement) -> String {
             format!(
                 r#"<path d="{}" fill="{fill_attr}"{stroke_attr}/>"#,
                 crate::quantise_path_data(d)
+            )
+        }
+        SvgElement::PathEvenOdd { d, fill } => {
+            format!(
+                r#"<path d="{}" fill="{}" fill-rule="evenodd"/>"#,
+                crate::quantise_path_data(d),
+                rgba_to_css(*fill)
             )
         }
         SvgElement::Text { x, y, text, font_size, fill, anchor } => {

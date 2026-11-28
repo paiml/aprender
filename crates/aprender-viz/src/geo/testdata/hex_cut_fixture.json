@@ -1,0 +1,29 @@
+{
+  "description": "MAP-3 partly-cut fixture. Pointy-top hexes, circumradius R = 1, origin (0, 0). Cell (q, r) has centre (sqrt3 (q + r/2), 3r/2) and vertical half-extent 1. The polygon is the rectangle x in [-3*sqrt3/2, 2*sqrt3], y in [1/4, 1] minus a notch x in [-sqrt3/2, sqrt3/2], y in [1/4, 1/2], so its bounding box is not the polygon. The notch takes the whole band part of cell (0, 0), area sqrt3/4, and nothing from any other cell, so cell (0, 0) keeps only its cap, sqrt3/4. Derivation, by hand: a hex has full width sqrt3 for |y - cy| <= 1/2 and width 2*sqrt3*(1 - |y - cy|) for 1/2 <= |y - cy| <= 1, so the band y in [1/4, 1/2] of a row-0 cell is a rectangle of area sqrt3/4 and its top cap (y in [1/2, 1]) has area sqrt3/4. A row-1 cell meets the band only in its bottom cap, area sqrt3/4 (y in [1/2, 1]). Row-0 cells with centres at x = -sqrt3, sqrt3 are untouched by the notch, so each has area sqrt3/4 + sqrt3/4 = sqrt3/2. Cell (2, 0) is cut by x = 2*sqrt3 through its centre, so it keeps half of its band area: sqrt3/4. Cell (-2, 1) is cut by x = -3*sqrt3/2 through its centre, so it keeps half of its cap: sqrt3/8. Row-1 cells with centres at x = -sqrt3/2, sqrt3/2, 3*sqrt3/2 lie inside: each keeps sqrt3/4. Cells (-2, 0) and (2, 1) meet the rectangle only on a boundary line and have zero area. The areas are k * sqrt3 / 8 with the integer k listed below; sum k = 19, which matches the polygon area 7*sqrt3/2 * 3/4 - sqrt3 * 1/4 = 19 sqrt3 / 8.",
+  "radius": 1.0,
+  "origin": [0.0, 0.0],
+  "window": [-4, 4, -4, 4],
+  "rings": [
+    [
+      [-2.598076211353316, 0.25],
+      [-0.8660254037844386, 0.25],
+      [-0.8660254037844386, 0.5],
+      [0.8660254037844386, 0.5],
+      [0.8660254037844386, 0.25],
+      [3.4641016151377544, 0.25],
+      [3.4641016151377544, 1.0],
+      [-2.598076211353316, 1.0]
+    ]
+  ],
+  "reference_units": "sqrt3 / 8",
+  "cells": [
+    {"q": -1, "r": 0, "k": 4},
+    {"q": 0, "r": 0, "k": 2},
+    {"q": 1, "r": 0, "k": 4},
+    {"q": 2, "r": 0, "k": 2},
+    {"q": -2, "r": 1, "k": 1},
+    {"q": -1, "r": 1, "k": 2},
+    {"q": 0, "r": 1, "k": 2},
+    {"q": 1, "r": 1, "k": 2}
+  ]
+}

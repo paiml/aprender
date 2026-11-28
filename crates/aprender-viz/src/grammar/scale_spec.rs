@@ -399,6 +399,8 @@ pub(crate) fn require_scale_scope(layers: &[Layer], coord: &Coord, facet: &Facet
         )),
         Coord::Polar { .. } => Err(Error::UnsupportedCoord("coord_polar with position scales")),
         Coord::Fixed { .. } => Err(Error::UnsupportedCoord("coord_fixed with position scales")),
+        #[cfg(feature = "geo")]
+        Coord::Geo { .. } => Err(Error::UnsupportedCoord("coord_geo with position scales")),
     }
 }
 

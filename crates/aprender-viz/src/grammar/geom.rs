@@ -89,6 +89,26 @@ pub enum GeomType {
         /// Where the cell sits vertically (`ymin = y - h * (1 - vjust)`: 0 puts y on the cell's top edge, 1 on its bottom edge).
         vjust: f64,
     },
+    /// `geom_polygon` (`geo` feature): map features of `(lon, lat)` rings, drawn under `coord_geo`.
+    ///
+    /// Each feature is a list of rings; under even-odd fill a ring inside another is a hole.
+    #[cfg(feature = "geo")]
+    Polygon {
+        /// The features, each a list of rings of `(lon, lat)` degrees.
+        features: crate::geo::plot::Features,
+    },
+    /// `geom_hex` (`geo` feature): one pointy-top hexagon per cell, filled from the cell's value.
+    ///
+    /// The plot is drawn as a map: no axes, the hexagons fitted to the panel with one uniform
+    /// scale, so their aspect ratio is kept. Larger plane `y` (row `r`) is drawn higher, as for
+    /// `geom_polygon`, so a polygon rasterised to these cells keeps its orientation.
+    #[cfg(feature = "geo")]
+    Hex {
+        /// The grid the cells sit on.
+        layout: crate::geo::hex::HexLayout,
+        /// Each cell with its value. The value sets the colour of that cell only.
+        cells: Vec<(crate::geo::hex::Cell, f64)>,
+    },
     /// Text labels.
     Text,
     /// Horizontal line.
@@ -220,6 +240,26 @@ impl Geom {
     #[must_use]
     pub fn rect() -> Self {
         Self { geom_type: GeomType::Rect, aes: None, stat: None }
+    }
+
+    /// Create a polygon geometry from map features of `(lon, lat)` rings (`geo` feature).
+    #[cfg(feature = "geo")]
+    #[must_use]
+    pub fn polygon(features: crate::geo::plot::Features) -> Self {
+        Self { geom_type: GeomType::Polygon { features }, aes: None, stat: None }
+    }
+
+    /// Create a hexagon geometry (`geom_hex`, `geo` feature): one filled hexagon per cell.
+    ///
+    /// Validation happens when the plot is drawn: an empty cell list and a non-finite value are
+    /// [`crate::error::Error::ScaleDomain`] errors.
+    #[cfg(feature = "geo")]
+    #[must_use]
+    pub fn hex(
+        layout: crate::geo::hex::HexLayout,
+        cells: Vec<(crate::geo::hex::Cell, f64)>,
+    ) -> Self {
+        Self { geom_type: GeomType::Hex { layout, cells }, aes: None, stat: None }
     }
 
     /// Create a raster geometry (`geom_raster`), centred cells (`hjust = vjust = 0.5`).

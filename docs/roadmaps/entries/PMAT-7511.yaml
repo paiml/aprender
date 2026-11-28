@@ -1,0 +1,24 @@
+- id: PMAT-7511
+  github_issue: 7511
+  item_type: task
+  title: 'APR-MAP-001 MAP-3: hex grid, cut-cell area, spatial index, geom_hex golden SVG'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-27T00:00:00+00:00
+  updated: 2026-11-27T00:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - '[ ] pick round-trip: the cell picked for a hex centre is that cell'
+  - '[ ] area and value conservation: cut-cell areas and spread values sum to the input'
+  - '[ ] reference cut cells: hand-derived cut-cell fixture matches the rasterised areas'
+  - '[ ] shared-edge determinism: a point on a shared hex edge resolves to one cell, every run'
+  - '[ ] index equals brute force: PolygonIndex and PointIndex agree with a brute-force oracle'
+  - '[ ] hex golden SVG: geom_hex output is byte-compared to geo/testdata/hex_golden.svg and counted structurally'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 7507

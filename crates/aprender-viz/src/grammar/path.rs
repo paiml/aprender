@@ -174,6 +174,10 @@ pub(super) fn require_default_coord(layers: &[Layer], coord: &Coord) -> Result<(
         Coord::Fixed { .. } => Err(Error::UnsupportedCoord(
             "coord_fixed with line, path, step or reference layers",
         )),
+        #[cfg(feature = "geo")]
+        Coord::Geo { .. } => {
+            Err(Error::UnsupportedCoord("coord_geo with line, path, step or reference layers"))
+        }
     }
 }
 

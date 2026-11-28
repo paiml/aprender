@@ -39,6 +39,9 @@ mod dist;
 mod dist_math;
 mod facet;
 mod filled;
+#[cfg(all(test, feature = "geo"))]
+mod geo_hex_tests;
+mod geo_plot;
 mod geom;
 mod ggplot;
 #[cfg(test)]
