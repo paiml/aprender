@@ -221,7 +221,24 @@ fn parse_num<T: FromStr>(value: &str, what: &'static str) -> Result<T, MapError>
 fn camera_value(cam: &Camera2D) -> String {
     let (x, y) = cam.centre();
     let (w, h) = cam.viewport();
-    format!("{x},{y},{},{w},{h}", cam.scale())
+    format!(
+        "{},{},{},{},{}",
+        canonical_zero(x),
+        canonical_zero(y),
+        canonical_zero(cam.scale()),
+        canonical_zero(w),
+        canonical_zero(h)
+    )
+}
+
+/// `-0.0` compares equal to `0.0` but displays as `-0`, so it is written as `0`. Without this,
+/// two equal states would encode to different hashes.
+fn canonical_zero(v: f64) -> f64 {
+    if v == 0.0 {
+        0.0
+    } else {
+        v
+    }
 }
 
 /// Fails with `OutOfRange("url")` unless `extra` more bytes fit under [`MAX_URL_LEN`].
@@ -366,7 +383,13 @@ impl HistoryPolicy {
     pub fn apply(&mut self, event: UrlEvent, now_ms: u64) -> Result<Nav, MapError> {
         match event {
             UrlEvent::Camera(cam) => {
-                self.state.camera = Some(cam);
+                // Refuse a camera the state cannot encode: a stored unencodable state would make
+                // every later poll fail, and no later event could clear it.
+                let prev = self.state.camera.replace(cam);
+                if let Err(err) = encode(&self.state) {
+                    self.state.camera = prev;
+                    return Err(err);
+                }
                 self.last_camera_ms = Some(now_ms);
                 Ok(Nav::Nothing)
             }
