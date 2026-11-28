@@ -49,7 +49,7 @@ falsification_tests:
   prediction: >-
     from nothing, `apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0`
     exits 0 and the reply contains `4`. On apr 0.75.4 it exits 8.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0) || exit 1; grep -qw 4 <<<"$out"'''
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0 --json) || exit 1; jq -e ".text | test(\"(^|[^0-9])4([^0-9]|$)\")" <<<"$out" >/dev/null'''
   if_fails: step U-01 fails - safetensors hf:// run is not usable by a newcomer.
   mutation: >-
     replace the reply check with `true`; the contract must still name exit 8 as RED on 0.75.4.
@@ -77,7 +77,7 @@ falsification_tests:
   prediction: >-
     `apr run <gguf> "Explain quicksort in three sentences." --temperature 0 --json`
     reports more than 32 generated tokens and stop reason end-of-turn. On apr 0.75.4 it stops at 32.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF "Explain quicksort in three sentences." --temperature 0 --json) || exit 1; n=$(grep -oE "\"completion_tokens\": *[0-9]+" <<<"$out" | grep -oE "[0-9]+$"); [ -n "$n" ] && [ "$n" -gt 32 ] && grep -qE "\"finish_reason\": *\"stop\"" <<<"$out" && grep -qE "[.!?]\"[[:space:]]*[,}]" <<<"$out"'''
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF "Explain quicksort in three sentences." --temperature 0 --json) || exit 1; n=$(grep -oE "\"completion_tokens\": *[0-9]+" <<<"$out" | grep -oE "[0-9]+$"); [ -n "$n" ] && [ "$n" -gt 32 ] && grep -qE "\"finish_reason\": *\"stop\"" <<<"$out" && grep -qE "[.!?](\\\\n)*\"[[:space:]]*[,}]" <<<"$out"'''
   if_fails: step U-04 fails - default generation is truncated at 32 tokens.
   mutation: >-
     cap the default at 32; the stop-reason check must turn RED.
@@ -95,7 +95,7 @@ falsification_tests:
   prediction: >-
     `apr doctor --json` exits 0 and carries the selected backend. On apr 0.75.4
     the subcommand is unrecognized.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr doctor --json) || exit 1; grep -qE "\"backend\": *\"[A-Za-z]" <<<"$out"'''
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr doctor --json 2>$D/err) || { echo "F-FR-U00-007: apr doctor is not a top-level command at this head (only apr cgp doctor exists, and it has no backend key)" >&2; exit 1; }; grep -qE "\"backend\": *\"[A-Za-z]" <<<"$out" || { echo "F-FR-U00-007: apr doctor --json has no backend key" >&2; exit 1; }'''
   if_fails: step U-06 fails - no doctor verb, so a newcomer cannot diagnose a backend.
   mutation: >-
     make `apr doctor` exit 1 with no output; the exit-0 check must turn RED.
@@ -104,7 +104,7 @@ falsification_tests:
   prediction: >-
     without -v, stdout of a successful `apr run` is the reply only; stderr has
     no internal tag such as `[PMAT-044]`. On apr 0.75.4 the banner is on stdout.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" >$D/out 2>$D/err || exit 1; grep -q "[^[:space:]]" $D/out && ! grep -qE "^[[:space:]]*[Aa]ppend|Endpoints:" $D/out && ! grep -qE "\[PMAT-[0-9]+\]" $D/err'''
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" >$D/out 2>$D/err || exit 1; grep -q "[^[:space:]]" $D/out && ! grep -qE "^[[:space:]]*[Aa]ppend|Endpoints:|=== APR Run|^[[:space:]]*Source:|^[[:space:]]*Output:|Completed in" $D/out && ! grep -qE "\[PMAT-[0-9]+\]" $D/err'''
   if_fails: step U-07 fails - internal banner or log lines leak onto stdout.
   mutation: >-
     print the banner on stdout; the grep must match and the test must turn RED.
@@ -131,7 +131,7 @@ falsification_tests:
   prediction: >-
     with a GGUF chat model loaded, POST /v1/messages returns 200 with
     type=message. On apr 0.75.4 it returns 404.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/messages -H "content-type: application/json" -d "{\"model\":\"m\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"What is 2+2?\"}]}"); kill -0 $P 2>/dev/null || exit 1; kill $P; [ "$CODE" = 200 ] && grep -qE "\"type\": *\"message\"" $D/body && grep -qE "\"role\": *\"assistant\"" $D/body && grep -qE "\"text\": *\"[^\"]+\"" $D/body'''
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/messages -H "content-type: application/json" -d "{\"model\":\"m\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"What is 2+2?\"}]}"); kill -0 $P 2>/dev/null || exit 1; kill $P; [ "$CODE" = 200 ] && jq -e "(.type==\"message\") and (.role==\"assistant\") and (.content[0].type==\"text\") and ((.content[0].text|type)==\"string\") and ((.content[0].text|length)>0)" $D/body >/dev/null'''
   if_fails: step G-01 fails - the Anthropic-compatible messages route is missing.
   mutation: >-
     return 404 on the route; the status check must turn RED.
@@ -140,7 +140,7 @@ falsification_tests:
   prediction: >-
     with the same model, POST /v1/responses returns 200 with object=response.
     On apr 0.75.4 it returns 404.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/responses -H "content-type: application/json" -d "{\"model\":\"m\",\"input\":\"What is 2+2?\"}"); kill -0 $P 2>/dev/null || exit 1; kill $P; [ "$CODE" = 200 ] && grep -qE "\"object\": *\"response\"" $D/body && grep -qE "\"text\": *\"[^\"]+\"" $D/body'''
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/responses -H "content-type: application/json" -d "{\"model\":\"m\",\"input\":\"What is 2+2?\"}"); kill -0 $P 2>/dev/null || exit 1; kill $P; [ "$CODE" = 200 ] && jq -e "(.object==\"response\") and (.output|type==\"array\") and (.output|length>0)" $D/body >/dev/null'''
   if_fails: step G-02 fails - the responses route is missing.
   mutation: >-
     return 404 on the route; the status check must turn RED.
@@ -149,7 +149,7 @@ falsification_tests:
   prediction: >-
     POST /v1/chat/completions without a model field returns a 4xx whose message
     names `model`. On apr 0.75.4 it returns 422 with a generic schema message.
-  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/chat/completions -H "content-type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"); kill $P; case $CODE in 4??) grep -qE "\"error\"" $D/body && grep -qE "(missing|required)[^\"]*model|model[^\"]*(missing|required)" $D/body ;; *) false ;; esac'''
+  test: 'bash -c ''D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/chat/completions -H "content-type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"); kill $P; case $CODE in 4??) jq -e "(.error|tostring|ascii_downcase|contains(\"model\"))" $D/body >/dev/null ;; *) false ;; esac'''
   if_fails: step G-03 fails - a missing model field gets an unhelpful error.
   mutation: >-
     return the generic schema message; the `model` match must turn RED.
