@@ -339,7 +339,7 @@ pub fn run_cli(
 }
 
 /// The committed file's text, or None when it does not exist.
-fn read_optional(path: &Path) -> Result<Option<String>, String> {
+pub fn read_optional(path: &Path) -> Result<Option<String>, String> {
     match std::fs::read(path) {
         Ok(bytes) => Ok(Some(py_read_text(&bytes))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -348,7 +348,7 @@ fn read_optional(path: &Path) -> Result<Option<String>, String> {
 }
 
 /// `_today()`: `SPEC_CONFORMANCE_TODAY` when it is set and not blank, else the local date.
-fn today_default() -> Result<String, String> {
+pub fn today_default() -> Result<String, String> {
     if let Ok(value) = std::env::var("SPEC_CONFORMANCE_TODAY") {
         let value = value.trim();
         if !value.is_empty() {

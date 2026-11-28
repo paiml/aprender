@@ -19,6 +19,7 @@ pub mod pystr;
 pub mod spec_conformance_andon;
 pub mod spec_conformance_dag;
 pub mod spec_conformance_ledger;
+pub mod spec_conformance_run;
 pub mod spec_conformance_sec6;
 pub mod tarball_build_errors;
 pub mod tarball_shrink_report;

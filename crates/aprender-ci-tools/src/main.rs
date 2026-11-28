@@ -3,7 +3,8 @@
 use aprender_ci_tools::{
     coverage_report_scope, dag_status, git_patch_id, ladder_cells_produce, llama_fit_verdict,
     lockfile_registry_packages, nextest_fail_fast, package_include_diff, publishable_crates,
-    spec_conformance_andon, tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    spec_conformance_andon, spec_conformance_run, tarball_build_errors, tarball_shrink_report,
+    tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -97,6 +98,30 @@ enum Cmd {
         #[arg(long, value_name = "YYYY-MM-DD")]
         today: Option<String>,
     },
+    /// The whole spec-conformance scan of one repository root: the C rules (§6 and C5), the L
+    /// rules (the ledger), then the D rules (the §12 DAG), as TSV in the Python's order (was
+    /// scripts/lib/spec_conformance.py's `check` and `main`). Exit 0 clean, 1 any VIOLATION
+    /// (with `--write`: 1 only if the derivation was not written), 2 an unreadable input.
+    SpecConformance {
+        /// The repository root.
+        root: PathBuf,
+        /// The master spec. Default: the one `docs/specifications/PP-LLAMA-001-MASTER*.md`.
+        #[arg(long, value_name = "MD")]
+        spec: Option<PathBuf>,
+        /// The ledger. Default: `evidence/parity/LEDGER.md` under the root.
+        #[arg(long, value_name = "MD")]
+        ledger: Option<PathBuf>,
+        /// The derived-expiry JSON to compare with (D5), or to write with `--write`. Default:
+        /// `evidence/parity/derived_expiries.json` under the root.
+        #[arg(long, value_name = "JSON", conflicts_with = "no_out")]
+        out: Option<PathBuf>,
+        /// No derived-expiry file: skip D5 and do not write.
+        #[arg(long)]
+        no_out: bool,
+        /// Write the derivation to `--out` instead of comparing it (no D5).
+        #[arg(long)]
+        write: bool,
+    },
     /// `<patch-id> <commit-oid>` per patch in the diff on stdin, byte-exact with
     /// `git patch-id` (was scripts/lib/git_patch_id.py). Exit 2 on an unknown mode.
     GitPatchId {
@@ -171,6 +196,15 @@ fn read(path: &PathBuf) -> Result<Vec<u8>, String> {
 }
 
 /// The output, or a refusal.
+/// The `spec-conformance` verb: the TSV on stdout, and the exit code the driver chose.
+fn spec_conformance_cmd(opts: spec_conformance_run::Options) -> Result<String, Refusal> {
+    match spec_conformance_run::run(&opts) {
+        Ok((out, 0)) => Ok(out),
+        Ok((out, code)) => Err((out, code, String::new())),
+        Err(reason) => Err((String::new(), 2, reason)),
+    }
+}
+
 fn run(cmd: Cmd) -> Result<String, Refusal> {
     match cmd {
         Cmd::GitPatchId { mode } => {
@@ -263,6 +297,21 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
             Ok((out, code)) => Err((out, code, String::new())),
             Err(reason) => Err((String::new(), 2, reason)),
         },
+        Cmd::SpecConformance {
+            root,
+            spec,
+            ledger,
+            out,
+            no_out,
+            write,
+        } => spec_conformance_cmd(spec_conformance_run::Options {
+            root,
+            spec,
+            ledger,
+            out,
+            no_out,
+            write,
+        }),
         Cmd::NextestFailFast { reader, toml } => {
             // clap's value_parser admits only the two names parse() knows.
             let reader = nextest_fail_fast::Reader::parse(&reader)
