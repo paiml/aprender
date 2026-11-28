@@ -6,7 +6,7 @@ metadata:
   kind: pattern
   references:
     - "scripts/spec_conformance.sh — the join"
-    - "scripts/lib/spec_conformance.py — the parser"
+    - "crates/aprender-ci-tools/src/spec_conformance_run.rs — the parser (the aprender-ci-tools spec-conformance driver)"
     - "docs/specifications/PP-LLAMA-001-MASTER.md — §6 invariants, Appendix C ledger, §12 obligation DAG"
     - ".github/workflows/ci.yml — wired per-PR in guard-runner-labels (gate depends on it)"
     - "scripts/check_mutation_registry.sh — the RETIRED predecessor, deleted in the same commit"
@@ -103,8 +103,8 @@ falsification_tests:
 
   - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-002
     rule: "The parser exists beside it"
-    prediction: "scripts/lib/spec_conformance.py is present"
-    test: "test -f scripts/lib/spec_conformance.py"
+    prediction: "crates/aprender-ci-tools/src/spec_conformance_run.rs is present"
+    test: "test -f crates/aprender-ci-tools/src/spec_conformance_run.rs"
     if_fails: "The shell wrapper reports a missing scanner and exits 2 rather than passing on an empty scan"
 
   - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-003

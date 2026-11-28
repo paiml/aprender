@@ -45,17 +45,20 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCANNER="${REPO_ROOT}/scripts/lib/spec_conformance.py"
+# The scan is the Rust driver, `aprender-ci-tools spec-conformance` (PMAT-7534, slice 2d), which
+# replaced the Python scanner that stood here before it. ci_tools_bin.sh exports $CI_TOOLS_BIN: the binary
+# built from this tree, or the one the caller set. A refusal there is a refusal here.
+. "${REPO_ROOT}/scripts/ci_tools_bin.sh" || exit 1
 
 # Vacuity floor. §6 holds 33 rules; a parser that silently stopped matching
 # would report zero rows, zero violations and look like health -- the exact
 # failure this guard is about.
 MIN_ROWS="${MIN_ROWS:-33}"
 
-scan() { # scan <root> [extra args...] -> TSV on stdout, non-zero if the scan broke
+scan() { # scan <root> [args...] -> TSV on stdout. rc 0 clean, 1 a VIOLATION was printed, 2+ the driver broke
     local root="$1"
     shift
-    python3 "$SCANNER" "$root" "$@"
+    "$CI_TOOLS_BIN" spec-conformance "$root" "$@"
 }
 
 render_violations() {
@@ -66,6 +69,11 @@ render_violations() {
 
 render_notes() {
     LC_ALL=C awk -F'\t' '$1 == "NOTE" { printf "  note %s\n", $2 }' "$1"
+}
+
+# An expired LAB row (C324: a red that cannot block). Informational, never a VIOLATION.
+render_lab() {
+    LC_ALL=C awk -F'\t' '$1 == "LAB" { printf "  lab  %-28.28s %s\n", $2, $3 }' "$1"
 }
 
 # ---------------------------------------------------------------- selftest --
@@ -143,8 +151,9 @@ selftest() {
 
     row() { # row <name> <expected rules, comma-separated, or CLEAN> <root>
         _reg "$1" || return 0
-        local name="$1" want="$2" root="$3" got
-        if ! MIN_ROWS=1 scan "$root" --no-out > "$td/out.tsv" 2>"$td/err.txt"; then
+        local name="$1" want="$2" root="$3" got rc
+        MIN_ROWS=1 scan "$root" --no-out > "$td/out.tsv" 2>"$td/err.txt"; rc=$?
+        if [ "$rc" -gt 1 ]; then
             printf '  BROKE %-38s scanner errored: %s\n' "$name" "$(head -1 "$td/err.txt")"
             fail=$((fail + 1)); return 0
         fi
@@ -161,8 +170,9 @@ selftest() {
 
     row_out() { # row_out <name> <expected rules> <root> -- like row, but COMPARES the committed derivation (no --no-out)
         _reg "$1" || return 0
-        local name="$1" want="$2" root="$3" got
-        if ! MIN_ROWS=1 scan "$root" --out "$root/evidence/parity/derived_expiries.json" > "$td/out.tsv" 2>"$td/err.txt"; then
+        local name="$1" want="$2" root="$3" got rc
+        MIN_ROWS=1 scan "$root" --out "$root/evidence/parity/derived_expiries.json" > "$td/out.tsv" 2>"$td/err.txt"; rc=$?
+        if [ "$rc" -gt 1 ]; then
             printf '  BROKE %-38s scanner errored: %s\n' "$name" "$(head -1 "$td/err.txt")"
             fail=$((fail + 1)); return 0
         fi
@@ -381,6 +391,19 @@ selftest() {
     SPEC_CONFORMANCE_TODAY=2027-06-01 row expired_row_is_red D6 \
         "$(mk_root expired "$ROW_ARMED" \
            "| r1 | a | o | — | Expires **2026-09-10** |\\n" "$LEDGER_ONE" "alpha beta")"
+    # PMAT-7534 slice 2d: the Rust driver. An expired row that is OPEN (not LAB) is D6 and must fire.
+    SPEC_CONFORMANCE_TODAY=2027-06-01 row expired_open_row_is_red D6 \
+        "$(mk_root expiredopen "$ROW_ARMED" \
+           "| r1 | a | o | — | **OPEN** Expires **2026-09-10** |\\n" "$LEDGER_ONE" "alpha beta")"
+    # The one intended difference from the Python (C324): an expired LAB row is a LAB line, not
+    # a D6, so it must NOT fire. The same expiry and override date as the row above.
+    SPEC_CONFORMANCE_TODAY=2027-06-01 row expired_lab_row_is_clean CLEAN \
+        "$(mk_root expiredlab "$ROW_ARMED" \
+           "| r1 | a | o | — | **LAB** (see Appendix D #7534) Expires **2026-09-10** |\\n" "$LEDGER_ONE" "alpha beta")"
+    # ...but only with its ruling: a bare LAB (no Appendix D ruling, no ticket) is still D6.
+    SPEC_CONFORMANCE_TODAY=2027-06-01 row expired_bare_lab_row_is_red D6 \
+        "$(mk_root expiredbarelab "$ROW_ARMED" \
+           "| r1 | a | o | — | **LAB** Expires **2026-09-10** |\\n" "$LEDGER_ONE" "alpha beta")"
 
     if [ "$LIST_ONLY" = 1 ]; then
         rm -rf "${td:?refusing to rm an empty path}"
@@ -413,7 +436,6 @@ main() {
 
     printf -- '--- PP-LLAMA-001 §6 / Appendix C / §12 vs the tree ----------------\n'
 
-    [ -f "$SCANNER" ] || { printf 'FAIL  %s is missing\n' "$SCANNER"; return 2; }
 
     local tsv rc=0 args=()
     tsv="$(mktemp)" || { printf 'FAIL  mktemp failed\n'; return 2; }
@@ -423,7 +445,9 @@ main() {
         args+=(--spec "$SPEC_CONFORMANCE_SPEC")
     fi
 
-    if ! scan "$REPO_ROOT" "${args[@]}" > "$tsv"; then
+    local srv=0
+    scan "$REPO_ROOT" "${args[@]}" > "$tsv" || srv=$?
+    if [ "$srv" -gt 1 ]; then
         printf 'FAIL  the scanner errored; §6 is UNMEASURED, and an unmeasured\n'
         printf '      registry is not a registry. That is a failure, not a skip.\n'
         return 1
@@ -444,10 +468,19 @@ main() {
     printf '%s row(s), %s ARMED, %s named case(s), %s missing\n' \
         "$rows" "$armed" "$cases" "$missing"
     render_notes "$tsv"
+    render_lab "$tsv"
 
     if [ "${parsed:-0}" -lt "$MIN_ROWS" ]; then
         printf '\nFAIL (vacuity): only %s row(s) parsed, expected %s+.\n' "${parsed:-0}" "$MIN_ROWS"
         printf 'The scan is broken, or §6 was emptied. Fix that, not this number.\n'
+        rc=1
+    fi
+
+    # rc 1 is the scanner's promise that a VIOLATION line was printed. Rc 1 with none is a broken
+    # contract, and it must not read as a pass.
+    if [ "$srv" -eq 1 ] && [ "$viol" -eq 0 ]; then
+        printf '\nFAIL (contract): the scanner exited 1 but printed no VIOLATION line.\n'
+        printf 'rc 1 means a violation was printed; this one is unexplained. Fix the scanner.\n'
         rc=1
     fi
 

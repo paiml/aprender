@@ -3,7 +3,8 @@
 use aprender_ci_tools::{
     coverage_report_scope, dag_status, git_patch_id, ladder_cells_produce, llama_fit_verdict,
     lockfile_registry_packages, nextest_fail_fast, package_include_diff, publishable_crates,
-    tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    spec_conformance_andon, spec_conformance_run, tarball_build_errors, tarball_shrink_report,
+    tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -79,6 +80,48 @@ enum Cmd {
         #[arg(long, value_name = "DIR")]
         root: String,
     },
+    /// The §12 expiry DAG: the DAG lines, D0-D4, D6 (an expired LAB row is a LAB line, not a
+    /// D6) and D5 against `--derived` (was `check_dag` in scripts/lib/spec_conformance.py).
+    /// Exit 0 clean, 1 any VIOLATION, 2 an unreadable input.
+    SpecConformanceDag {
+        /// The master spec (the §12 table is read from it).
+        #[arg(long, value_name = "MD")]
+        spec: PathBuf,
+        /// The spec path the report names it by (the D5 message and the derived file's `source`).
+        /// Default: `--spec` as given; CI passes the path relative to the repo root.
+        #[arg(long, value_name = "REL")]
+        source: Option<String>,
+        /// The committed derived-expiry JSON to compare with (D5); absent means no D5 check.
+        #[arg(long, value_name = "JSON")]
+        derived: Option<PathBuf>,
+        /// The date D6 compares against, `YYYY-MM-DD`. Default: `SPEC_CONFORMANCE_TODAY`, else today.
+        #[arg(long, value_name = "YYYY-MM-DD")]
+        today: Option<String>,
+    },
+    /// The whole spec-conformance scan of one repository root: the C rules (§6 and C5), the L
+    /// rules (the ledger), then the D rules (the §12 DAG), as TSV in the Python's order (was
+    /// scripts/lib/spec_conformance.py's `check` and `main`). Exit 0 clean, 1 any VIOLATION
+    /// (with `--write`: 1 only if the derivation was not written), 2 an unreadable input.
+    SpecConformance {
+        /// The repository root.
+        root: PathBuf,
+        /// The master spec. Default: the one `docs/specifications/PP-LLAMA-001-MASTER*.md`.
+        #[arg(long, value_name = "MD")]
+        spec: Option<PathBuf>,
+        /// The ledger. Default: `evidence/parity/LEDGER.md` under the root.
+        #[arg(long, value_name = "MD")]
+        ledger: Option<PathBuf>,
+        /// The derived-expiry JSON to compare with (D5), or to write with `--write`. Default:
+        /// `evidence/parity/derived_expiries.json` under the root.
+        #[arg(long, value_name = "JSON", conflicts_with = "no_out")]
+        out: Option<PathBuf>,
+        /// No derived-expiry file: skip D5 and do not write.
+        #[arg(long)]
+        no_out: bool,
+        /// Write the derivation to `--out` instead of comparing it (no D5).
+        #[arg(long)]
+        write: bool,
+    },
     /// `<patch-id> <commit-oid>` per patch in the diff on stdin, byte-exact with
     /// `git patch-id` (was scripts/lib/git_patch_id.py). Exit 2 on an unknown mode.
     GitPatchId {
@@ -153,6 +196,15 @@ fn read(path: &PathBuf) -> Result<Vec<u8>, String> {
 }
 
 /// The output, or a refusal.
+/// The `spec-conformance` verb: the TSV on stdout, and the exit code the driver chose.
+fn spec_conformance_cmd(opts: spec_conformance_run::Options) -> Result<String, Refusal> {
+    match spec_conformance_run::run(&opts) {
+        Ok((out, 0)) => Ok(out),
+        Ok((out, code)) => Err((out, code, String::new())),
+        Err(reason) => Err((String::new(), 2, reason)),
+    }
+}
+
 fn run(cmd: Cmd) -> Result<String, Refusal> {
     match cmd {
         Cmd::GitPatchId { mode } => {
@@ -235,6 +287,31 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
         Cmd::LadderCellsProduce { cmd } => {
             ladder_cells_produce::run(&cmd).map_err(|(code, reason)| (String::new(), code, reason))
         }
+        Cmd::SpecConformanceDag {
+            spec,
+            source,
+            derived,
+            today,
+        } => match spec_conformance_andon::run_cli(&spec, source, derived.as_deref(), today) {
+            Ok((out, 0)) => Ok(out),
+            Ok((out, code)) => Err((out, code, String::new())),
+            Err(reason) => Err((String::new(), 2, reason)),
+        },
+        Cmd::SpecConformance {
+            root,
+            spec,
+            ledger,
+            out,
+            no_out,
+            write,
+        } => spec_conformance_cmd(spec_conformance_run::Options {
+            root,
+            spec,
+            ledger,
+            out,
+            no_out,
+            write,
+        }),
         Cmd::NextestFailFast { reader, toml } => {
             // clap's value_parser admits only the two names parse() knows.
             let reader = nextest_fail_fast::Reader::parse(&reader)
@@ -288,5 +365,39 @@ fn main() -> ExitCode {
             }
             ExitCode::from(code)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MAIN: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/spec_dag/pp_main_efa749e.md"
+    );
+    const LAB: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/spec_dag/pp_lab_9a10119.md"
+    );
+
+    /// The exit code `run` would give `spec-conformance-dag` on `spec` at `today`.
+    fn exit_of(spec: &str) -> u8 {
+        let cmd = Cmd::SpecConformanceDag {
+            spec: PathBuf::from(spec),
+            source: None,
+            derived: None,
+            today: Some("2026-11-28".to_owned()),
+        };
+        match run(cmd) {
+            Ok(_) => 0,
+            Err((_, code, _)) => code,
+        }
+    }
+
+    #[test]
+    fn spec_conformance_dag_exits_1_on_the_main_fixture_and_0_on_the_lab_fixture() {
+        assert_eq!(exit_of(MAIN), 1);
+        assert_eq!(exit_of(LAB), 0);
     }
 }
