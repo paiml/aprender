@@ -94,9 +94,18 @@ ensure_target() {
 
 # One fixed set of flags: inherited host flags (target-cpu, linker args) do not apply to wasm32 and
 # would move the recorded sizes. The remaps keep checkout and cargo-home path lengths out of them.
+# web_sys_unstable_apis is aprender-db ONLY: its wasm feature calls Navigator::gpu(), which web-sys
+# exposes only under that cfg (E0599 at crates/aprender-db/src/wasm.rs without it). The same cfg changes
+# CanvasRenderingContext2d::put_image_data to i32 offsets and breaks aprender-present-lib (E0308), so it
+# is never global. Usage: set_wasm_rustflags <pkg>
+WASM_DB_CFG='--cfg=web_sys_unstable_apis'
 set_wasm_rustflags() {
+    local pkg_cfg=''
+    if [ "${1:-}" = 'aprender-db' ]; then
+        pkg_cfg=" ${WASM_DB_CFG}"
+    fi
     unset CARGO_ENCODED_RUSTFLAGS
-    export RUSTFLAGS="--cfg getrandom_backend=\"custom\" --remap-path-prefix=${REPO_ROOT}=/src --remap-path-prefix=${CARGO_HOME:-${HOME}/.cargo}=/cargo"
+    export RUSTFLAGS="--cfg getrandom_backend=\"custom\"${pkg_cfg} --remap-path-prefix=${REPO_ROOT}=/src --remap-path-prefix=${CARGO_HOME:-${HOME}/.cargo}=/cargo"
 }
 
 # Prove the toolchain still rejects the #2310 defect on this target.
@@ -184,7 +193,7 @@ build_pkg() {
     fi
     CHECK_LOG="$(mktemp)"
 
-    set_wasm_rustflags
+    set_wasm_rustflags "${pkg}"
     # Never read the status through a pipe: redirect, then read rc.
     set +e
     # -j 8 is an argv word, not an env var: the cargo-memcap wrapper on the build hosts admits
@@ -313,6 +322,23 @@ case "${1:-}" in
         ;;
     build)
         printf '%s\n' "$*" >> "${STUB_CALLS}"
+        # Mirror the real web-sys cfg failures: aprender-db needs it, aprender-present-lib breaks with it.
+        has_cfg=no
+        case " ${RUSTFLAGS:-} " in *" ${STUB_REQUIRED_CFG} "*) has_cfg=yes ;; esac
+        case " $* " in
+            *" -p aprender-db "*)
+                if [ "${has_cfg}" = no ]; then
+                    echo "error[E0599]: no method named \`gpu\` found (stub: RUSTFLAGS lacks ${STUB_REQUIRED_CFG})"
+                    exit 101
+                fi
+                ;;
+            *)
+                if [ "${has_cfg}" = yes ]; then
+                    echo "error[E0308]: arguments to this method are incorrect (stub: ${STUB_REQUIRED_CFG} leaked into $*)"
+                    exit 101
+                fi
+                ;;
+        esac
         case " $* " in
             *" -p ${STUB_FAIL_PKG:-__none__} "*)
                 echo "error[E0432]: unresolved import (stub failure for the build-path self-test)"
@@ -337,7 +363,10 @@ STUB
         set +e
         (
             export PATH="${stub_bin}:${PATH}" STUB_CALLS="${calls}" STUB_TARGET_DIR="${tdir}" \
-                STUB_FAIL_PKG="$1"
+                STUB_FAIL_PKG="$1" STUB_REQUIRED_CFG="--cfg=web_sys_unstable_apis"
+            if [ "${2:-}" = 'drop-cfg' ]; then
+                WASM_DB_CFG=''
+            fi
             build_all
         ) > "${STUB_DIR}/out" 2>&1
         RUN_RC=$?
@@ -387,7 +416,15 @@ STUB
         cat "${STUB_DIR}/out" >&2
         return 1
     fi
-    echo "SELF-TEST PASS: build_all drives the six wasm32 builds through build_pkg, and goes RED at the first failing package."
+
+    # Dropping the web-sys cfg from the fixed flags must turn the aprender-db build RED (lane Y, #7529).
+    run_build_all "" drop-cfg
+    if [ "${RUN_RC}" -eq 0 ] || ! grep -qF -- "FAIL: aprender-db " "${STUB_DIR}/out"; then
+        echo "SELF-TEST FAIL: build_all stayed GREEN with --cfg=web_sys_unstable_apis dropped from RUSTFLAGS." >&2
+        cat "${STUB_DIR}/out" >&2
+        return 1
+    fi
+    echo "SELF-TEST PASS: build_all drives the six wasm32 builds through build_pkg, goes RED at the first failing package, and RED without the web-sys cfg."
     return 0
 }
 
