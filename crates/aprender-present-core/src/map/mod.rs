@@ -12,6 +12,7 @@ pub mod cull;
 pub mod layers;
 pub mod lod;
 pub mod sprites;
+pub mod urlstate;
 
 pub use camera::{Camera2D, FlyTo, ZoomAnim};
 pub use cull::{visible_indices, Bounds};
@@ -44,6 +45,8 @@ pub enum MapError {
     ViewportMismatch,
     /// A finite value lay outside the supported numeric domain.
     OutOfRange(&'static str),
+    /// Text that does not parse as the named value (URL state codec).
+    Malformed(&'static str),
 }
 
 impl fmt::Display for MapError {
@@ -55,6 +58,7 @@ impl fmt::Display for MapError {
             Self::InvertedBounds => write!(f, "bounds minimum exceeds its maximum"),
             Self::ViewportMismatch => write!(f, "fly-to cameras must share a viewport size"),
             Self::OutOfRange(what) => write!(f, "{what} is outside the supported range"),
+            Self::Malformed(what) => write!(f, "{what} is malformed"),
         }
     }
 }
@@ -141,6 +145,7 @@ mod tests {
                 MapError::OutOfRange("pan"),
                 "pan is outside the supported range",
             ),
+            (MapError::Malformed("sel"), "sel is malformed"),
         ];
         for (err, want) in cases {
             assert_eq!(err.to_string(), want);
