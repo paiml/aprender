@@ -1,5 +1,6 @@
 //! `DataTable` widget for displaying tabular data.
 
+use presentar_core::html::escape_attr;
 use presentar_core::{
     widget::{AccessibleRole, LayoutResult, TextStyle},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Event, Rect,
@@ -608,7 +609,7 @@ impl Brick for DataTable {
     }
 
     fn to_html(&self) -> String {
-        let test_id = self.test_id_value.as_deref().unwrap_or("data-table");
+        let test_id = escape_attr(self.test_id_value.as_deref().unwrap_or("data-table"));
         format!(r#"<table class="brick-data-table" data-testid="{test_id}" role="table"></table>"#)
     }
 

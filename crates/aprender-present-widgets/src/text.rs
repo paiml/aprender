@@ -1,5 +1,6 @@
 //! Text widget for displaying text content.
 
+use presentar_core::html::{escape_attr, escape_text};
 use presentar_core::{
     widget::{FontStyle, FontWeight, LayoutResult, TextStyle},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Event, Rect,
@@ -216,7 +217,8 @@ impl Brick for Text {
         let test_id = self.test_id_value.as_deref().unwrap_or("text");
         format!(
             r#"<span class="brick-text" data-testid="{}">{}</span>"#,
-            test_id, self.content
+            escape_attr(test_id),
+            escape_text(&self.content)
         )
     }
 

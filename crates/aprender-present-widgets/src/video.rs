@@ -6,6 +6,7 @@
 //!
 //! Contract: `contracts/present-video-widget-v1.yaml`.
 
+use presentar_core::html::escape_attr;
 use presentar_core::{
     widget::{AccessibleRole, LayoutResult},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Event, Key,
@@ -357,15 +358,6 @@ impl Video {
             .filter(|name| !name.trim().is_empty())
             .or((!self.alt.trim().is_empty()).then_some(self.alt.as_str()))
     }
-}
-
-/// Escape a string for use inside a double-quoted HTML attribute.
-fn escape_attr(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }
 
 /// Record one verification outcome.

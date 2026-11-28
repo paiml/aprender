@@ -1,5 +1,6 @@
 //! Toggle switch widget.
 
+use presentar_core::html::escape_attr;
 use presentar_core::{
     widget::{AccessibleRole, LayoutResult},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Event,
@@ -422,7 +423,7 @@ impl Brick for Toggle {
     }
 
     fn to_html(&self) -> String {
-        let test_id = self.test_id_value.as_deref().unwrap_or("toggle");
+        let test_id = escape_attr(self.test_id_value.as_deref().unwrap_or("toggle"));
         let checked = if self.on { " checked" } else { "" };
         let disabled = if self.disabled { " disabled" } else { "" };
         let aria_label = self
@@ -434,6 +435,7 @@ impl Brick for Toggle {
                 Some(self.label.as_str())
             })
             .unwrap_or("");
+        let aria_label = escape_attr(aria_label);
         format!(
             r#"<input type="checkbox" role="switch" class="brick-toggle" data-testid="{test_id}" aria-label="{aria_label}"{checked}{disabled} />"#
         )

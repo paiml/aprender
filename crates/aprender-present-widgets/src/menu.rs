@@ -3,6 +3,7 @@
 //! Provides hierarchical menus with keyboard navigation, submenus,
 //! and various item types (actions, checkable, separators).
 
+use presentar_core::html::children_html;
 use presentar_core::{
     widget::{LayoutResult, TextStyle},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Event, Key,
@@ -703,7 +704,10 @@ impl Brick for Menu {
     }
 
     fn to_html(&self) -> String {
-        r#"<div class="brick-menu"></div>"#.to_string()
+        format!(
+            r#"<div class="brick-menu">{}</div>"#,
+            children_html(self.children())
+        )
     }
 
     fn to_css(&self) -> String {

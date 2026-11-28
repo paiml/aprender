@@ -1,5 +1,6 @@
 //! Image widget for displaying images.
 
+use presentar_core::html::escape_attr;
 use presentar_core::{
     widget::{AccessibleRole, LayoutResult},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Constraints, Event, Rect, Size,
@@ -339,7 +340,8 @@ impl Brick for Image {
     fn to_html(&self) -> String {
         format!(
             r#"<img class="brick-image" src="{}" alt="{}" />"#,
-            self.source, self.alt
+            escape_attr(&self.source),
+            escape_attr(&self.alt)
         )
     }
 

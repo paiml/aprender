@@ -1,5 +1,6 @@
 //! `DataCard` widget for displaying dataset metadata.
 
+use presentar_core::html::{escape_attr, escape_text};
 use presentar_core::{
     widget::{AccessibleRole, LayoutResult, TextStyle},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Point, Rect,
@@ -789,7 +790,9 @@ impl Brick for DataCard {
         let test_id = self.test_id_value.as_deref().unwrap_or("data-card");
         format!(
             r#"<div class="brick-data-card" data-testid="{}" aria-label="{}">{}</div>"#,
-            test_id, self.name, self.name
+            escape_attr(test_id),
+            escape_attr(&self.name),
+            escape_text(&self.name)
         )
     }
 

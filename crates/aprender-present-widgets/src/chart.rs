@@ -1,5 +1,6 @@
 //! `Chart` widget for data visualization.
 
+use presentar_core::html::{escape_attr, escape_text};
 use presentar_core::{
     widget::{AccessibleRole, LayoutResult, TextStyle},
     Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas, Color, Constraints, Point, Rect,
@@ -1040,10 +1041,12 @@ impl Brick for Chart {
     }
 
     fn to_html(&self) -> String {
-        let test_id = self.test_id_value.as_deref().unwrap_or("chart");
+        let test_id = escape_attr(self.test_id_value.as_deref().unwrap_or("chart"));
         let title = self.title.as_deref().unwrap_or("Chart");
         format!(
-            r#"<div class="brick-chart" data-testid="{test_id}" role="img" aria-label="{title}">{title}</div>"#
+            r#"<div class="brick-chart" data-testid="{test_id}" role="img" aria-label="{}">{}</div>"#,
+            escape_attr(title),
+            escape_text(title)
         )
     }
 

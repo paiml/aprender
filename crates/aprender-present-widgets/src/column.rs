@@ -1,5 +1,6 @@
 //! Column widget for vertical layout.
 
+use presentar_core::html::{children_html, escape_attr};
 use presentar_core::{
     widget::LayoutResult, Brick, BrickAssertion, BrickBudget, BrickVerification, Canvas,
     Constraints, Event, Rect, Size, TypeId, Widget,
@@ -254,8 +255,9 @@ impl Brick for Column {
     }
 
     fn to_html(&self) -> String {
-        let test_id = self.test_id_value.as_deref().unwrap_or("column");
-        format!(r#"<div class="brick-column" data-testid="{test_id}"></div>"#)
+        let test_id = escape_attr(self.test_id_value.as_deref().unwrap_or("column"));
+        let children = children_html(self.children());
+        format!(r#"<div class="brick-column" data-testid="{test_id}">{children}</div>"#)
     }
 
     fn to_css(&self) -> String {

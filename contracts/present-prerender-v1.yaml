@@ -1,0 +1,69 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-28"
+  updated: "2026-11-28"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#7538 — a widget tree could not prerender a page"
+    - "crates/aprender-present-core/src/html.rs — the shared escapers"
+  description: >
+    A static page is built from `Brick::to_html`. A container that drops its
+    children publishes an empty page, and an unescaped string lets page data
+    become markup.
+
+name: present-prerender
+version: "1.0.0"
+scope: >
+  `Brick::to_html` of the widgets in crates/aprender-present-widgets, observed
+  through the public API.
+status: active
+
+contract: |
+  (1) A CONTAINER EMITS ITS CHILDREN. Column, Row, Container, Stack, Grid,
+      List, Menu and Modal emit every widget `children()` returns, in order.
+      A closed Modal carries `hidden`.
+  (2) DATA IS NEVER MARKUP. Every caller-supplied string is escaped, as element
+      content or as a quoted attribute value.
+  (3) A PASSWORD IS NEVER WRITTEN. An obscured TextInput emits an empty value.
+equations:
+  prerender:
+    description: "A container's HTML wraps the concatenation of its children's HTML"
+    formula: "html(c) = open(c) ++ concat(map(html, children(c))) ++ close(c)"
+    domain: "a widget tree"
+    codomain: "an HTML fragment"
+    invariants:
+      - "every child appears once, in children() order"
+      - "no caller string introduces a tag or an attribute"
+falsification:
+  - id: FALSIFY-PRESENT-PRERENDER-V1-001
+    description: "children are emitted and strings are inert"
+    test: "cargo test -p aprender-present-widgets --lib prerender"
+    evidence: "9 passed, 2026-11-28; 5 of 8 failed before the change"
+open_obligations:
+  - |
+    Headings, links, landmarks, a stylesheet and a document emitter do not exist
+    yet. Select, RadioGroup, Tabs labels, Slider, ProgressBar and ModelCard
+    still prerender an empty shell.
+falsification_tests:
+  - id: FALSIFY-PRESENT_PRERENDER-001
+    description: "containers emit their children in order"
+    test: "cargo test -p aprender-present-widgets --lib containers_emit_their_children_in_order"
+    prediction: "both child texts appear, first before second"
+    if_fails: "a prerendered page loses its content"
+  - id: FALSIFY-PRESENT_PRERENDER-002
+    description: "text content is escaped"
+    test: "cargo test -p aprender-present-widgets --lib text_content_is_escaped"
+    prediction: "a script tag in a string comes out as text"
+    if_fails: "page data executes as script"
+  - id: FALSIFY-PRESENT_PRERENDER-003
+    description: "attribute values cannot break out"
+    test: "cargo test -p aprender-present-widgets --lib attribute_values_cannot_break_out"
+    prediction: "a quote in a string comes out as &quot;"
+    if_fails: "page data adds attributes, including event handlers"
+  - id: FALSIFY-PRESENT_PRERENDER-004
+    description: "an obscured input never writes its value"
+    test: "cargo test -p aprender-present-widgets --lib a_password_value_is_never_written_into_markup"
+    prediction: "the password text is absent from the markup"
+    if_fails: "a password is published in the page source"
