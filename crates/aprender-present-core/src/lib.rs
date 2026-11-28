@@ -81,6 +81,7 @@ mod event;
 mod geometry;
 pub mod gesture;
 pub mod history;
+pub mod html;
 pub mod lifecycle;
 mod runtime;
 pub mod shortcut;

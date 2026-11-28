@@ -70,3 +70,6 @@ pub use waveform::{waveform_points, Waveform};
 
 // File format conversions
 pub use formats::{load_ald_as_card, load_apr_as_card, AldDatasetExt, AprModelExt};
+
+#[cfg(test)]
+mod prerender_tests;
