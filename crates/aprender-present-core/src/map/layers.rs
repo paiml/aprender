@@ -344,10 +344,13 @@ impl Layers {
         outcome(self.refresh(), false)
     }
 
-    /// Replaces the brushed selection set and repaints the overlay once. RED stub: stores nothing.
+    /// Replaces the brushed selection set and repaints the overlay once.
     pub fn set_brush(&mut self, cells: BTreeSet<EntityId>) -> Outcome {
-        let _ = cells;
-        quiet()
+        self.brushed = cells;
+        self.overlay.invalidate();
+        let out = outcome(self.refresh(), false);
+        self.frame_pending |= out.frame_requested;
+        out
     }
 
     /// Cells in the brushed selection set.

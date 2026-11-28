@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use super::{LensId, MapError};
+use super::{check_finite, LensId, MapError};
 
 /// How a lens maps values to a position in `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,7 +25,8 @@ pub struct Lens {
 }
 
 impl Lens {
-    /// Builds a lens. RED stub: performs no validation yet.
+    /// Builds a lens. Refuses a domain that is not finite or not strictly ordered, and a log
+    /// domain whose lower bound is not positive.
     pub fn new(
         id: LensId,
         name: &str,
@@ -33,6 +34,14 @@ impl Lens {
         domain: (f64, f64),
         values: Vec<Option<f64>>,
     ) -> Result<Self, MapError> {
+        check_finite(domain.0, "domain")?;
+        check_finite(domain.1, "domain")?;
+        if domain.0 >= domain.1 {
+            return Err(MapError::EmptyDomain);
+        }
+        if scale == Scale::Log && domain.0 <= 0.0 {
+            return Err(MapError::NonPositive("domain"));
+        }
         Ok(Self {
             id,
             name: name.to_owned(),
@@ -67,9 +76,22 @@ impl Lens {
         &self.values
     }
 
-    /// Position of `v` on the lens scale in `[0, 1]`. RED stub: always `None`.
-    pub fn color_t(&self, _v: f64) -> Option<f64> {
-        None
+    /// Position of `v` on the lens scale, clamped to `[0, 1]`. `None` for a non-finite value, and
+    /// for a non-positive value on a log scale. Never NaN.
+    pub fn color_t(&self, v: f64) -> Option<f64> {
+        let (lo, hi) = self.domain;
+        let t = match self.scale {
+            Scale::Linear if v.is_finite() => (v - lo) / (hi - lo),
+            Scale::Log if v.is_finite() && v > 0.0 => {
+                (v.log10() - lo.log10()) / (hi.log10() - lo.log10())
+            }
+            _ => return None,
+        };
+        if t.is_nan() {
+            None
+        } else {
+            Some(t.clamp(0.0, 1.0))
+        }
     }
 }
 
@@ -94,8 +116,15 @@ impl LensRegistry {
         self.cells
     }
 
-    /// Registers a lens. RED stub: stores without checks.
+    /// Registers a lens. Refuses a lens whose values do not cover the grid, and an id that is
+    /// already registered.
     pub fn add(&mut self, lens: Lens) -> Result<(), MapError> {
+        if lens.values.len() != self.cells as usize {
+            return Err(MapError::Mismatch("lens"));
+        }
+        if self.lenses.contains_key(&lens.id) {
+            return Err(MapError::Duplicate("lens"));
+        }
         self.lenses.insert(lens.id, lens);
         Ok(())
     }

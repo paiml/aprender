@@ -6,8 +6,27 @@
 
 use std::collections::BTreeSet;
 
-use super::lens::Lens;
-use super::{EntityId, MapError};
+use super::lens::{Lens, Scale};
+use super::{check_finite, EntityId, MapError};
+
+/// Bin edges over `(lo, hi)`: equal steps in value space on a linear scale, equal steps in
+/// `log10` space on a log scale. `bins + 1` values.
+fn edges_for(scale: Scale, (lo, hi): (f64, f64), bins: usize) -> Vec<f64> {
+    let steps = (0..=bins).map(|i| i as f64 / bins as f64);
+    match scale {
+        Scale::Linear => steps.map(|s| lo + s * (hi - lo)).collect(),
+        Scale::Log => {
+            let (llo, lhi) = (lo.log10(), hi.log10());
+            steps.map(|s| 10f64.powf(llo + s * (lhi - llo))).collect()
+        }
+    }
+}
+
+/// Bin index of a position `t` in `[0, 1]`, with `t == 1` in the last bin.
+fn bin_of(t: f64, bins: usize) -> usize {
+    let scaled = (t * bins as f64).floor() as usize;
+    scaled.min(bins - 1)
+}
 
 /// Bin count of the legend histogram.
 pub const HISTOGRAM_BINS: usize = 16;
@@ -20,12 +39,25 @@ pub struct Histogram {
 }
 
 impl Histogram {
-    /// Bins `lens` into `bins` bins. RED stub: returns an empty histogram of the right shape.
+    /// Bins `lens` into `bins` equal-width bins over its domain. A cell counts when its value has
+    /// a position on the lens scale, so the counts sum to the cells with data.
     pub fn of(lens: &Lens, bins: usize) -> Result<Self, MapError> {
-        let _ = lens;
+        if bins == 0 {
+            return Err(MapError::NonPositive("bins"));
+        }
+        let mut counts = vec![0u32; bins];
+        for t in lens
+            .values()
+            .iter()
+            .flatten()
+            .filter_map(|&v| lens.color_t(v))
+        {
+            let bin = bin_of(t, bins);
+            counts[bin] = counts[bin].saturating_add(1);
+        }
         Ok(Self {
-            edges: vec![0.0; bins + 1],
-            counts: vec![0; bins],
+            edges: edges_for(lens.scale(), lens.domain(), bins),
+            counts,
         })
     }
 
@@ -53,8 +85,14 @@ pub struct Brush {
 }
 
 impl Brush {
-    /// A brush over `[lo, hi]`. RED stub: no validation yet.
+    /// A brush over `[lo, hi]`. Refuses a non-finite bound, and `lo > hi`; `lo == hi` is a
+    /// single value.
     pub fn new(lo: f64, hi: f64) -> Result<Self, MapError> {
+        check_finite(lo, "brush")?;
+        check_finite(hi, "brush")?;
+        if lo > hi {
+            return Err(MapError::InvertedBounds);
+        }
         Ok(Self { lo, hi })
     }
 
@@ -68,16 +106,23 @@ impl Brush {
         self.hi
     }
 
-    /// True when `v` lies in `[lo, hi]`. RED stub: always false.
+    /// True when `v` lies in `[lo, hi]`, both bounds included.
     pub fn contains(&self, v: f64) -> bool {
-        let _ = v;
-        false
+        (self.lo..=self.hi).contains(&v)
     }
 
-    /// Ids of the cells with data whose value the brush contains. RED stub: empty.
+    /// Ids of the cells with data whose value the brush contains. Cells without data are never
+    /// selected, whatever the bounds.
     pub fn select(&self, lens: &Lens) -> BTreeSet<EntityId> {
-        let _ = lens;
-        BTreeSet::new()
+        lens.values()
+            .iter()
+            .enumerate()
+            .filter_map(|(cell, v)| {
+                let v = (*v)?;
+                let id = u64::try_from(cell).ok()?;
+                (lens.color_t(v).is_some() && self.contains(v)).then_some(id)
+            })
+            .collect()
     }
 }
 

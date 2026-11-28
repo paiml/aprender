@@ -134,16 +134,21 @@ impl Interaction {
         self.layers.brushed()
     }
 
-    /// Switches the active lens. RED stub: changes nothing.
+    /// Switches the active lens: one lens render and one history entry. Switching to the lens
+    /// already active is a no-op.
     pub fn switch_lens(&mut self, lens: LensId, now_ms: u64) -> Result<Report, MapError> {
-        let _ = (lens, now_ms);
-        Ok(quiet())
+        if self.layers.active_lens() == Some(lens) {
+            return Ok(quiet());
+        }
+        let out = self.layers.handle(Event::LensSwitch(lens))?;
+        let nav = self.history.apply(UrlEvent::Lens(Some(lens)), now_ms)?;
+        Ok(report(out, nav))
     }
 
-    /// Replaces the brushed selection set. RED stub: changes nothing.
+    /// Replaces the brushed selection set: one overlay render, no history entry.
     pub fn brush(&mut self, cells: BTreeSet<EntityId>) -> Result<Report, MapError> {
-        let _ = cells;
-        Ok(quiet())
+        let out = self.layers.set_brush(cells);
+        Ok(report(out, Nav::Nothing))
     }
 
     /// Pointer over a screen pixel: sets the hovered cell. Writes no history.
