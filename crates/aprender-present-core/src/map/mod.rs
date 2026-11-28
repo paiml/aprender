@@ -8,7 +8,9 @@
 use std::fmt;
 
 pub mod camera;
+pub mod client;
 pub mod cull;
+pub mod delta;
 pub mod hex;
 pub mod histogram;
 pub mod interact;
@@ -21,7 +23,9 @@ pub mod sprites;
 pub mod urlstate;
 
 pub use camera::{Camera2D, FlyTo, ZoomAnim};
+pub use client::Client;
 pub use cull::{visible_indices, Bounds};
+pub use delta::Delta;
 pub use hex::HexGrid;
 pub use histogram::{Brush, Histogram, HISTOGRAM_BINS};
 pub use interact::Interaction;
@@ -64,6 +68,20 @@ pub enum MapError {
     Duplicate(&'static str),
     /// A lens whose per-cell values do not match the grid's cell count.
     Mismatch(&'static str),
+    /// A lens id that the registry does not hold.
+    UnknownLens(LensId),
+    /// A wire buffer that ends before the length its header declares.
+    Truncated(&'static str),
+    /// A wire buffer with bytes after the end its header declares.
+    TrailingBytes(&'static str),
+    /// A cell tag byte that is neither "no data" nor "value follows".
+    UnknownTag(u8),
+    /// A cell id at or beyond the grid's cell count.
+    CellOutOfRange(u32),
+    /// A delta whose sequence number is not after the last one applied to its lens.
+    Stale { seq: u64, last: u64 },
+    /// A delta whose sequence number skips past the next expected one.
+    Gap { expected: u64, seq: u64 },
 }
 
 impl fmt::Display for MapError {
@@ -79,6 +97,17 @@ impl fmt::Display for MapError {
             Self::EmptyDomain => write!(f, "value domain must have lo < hi"),
             Self::Duplicate(what) => write!(f, "{what} is already registered"),
             Self::Mismatch(what) => write!(f, "{what} does not match the grid"),
+            Self::UnknownLens(id) => write!(f, "lens {id} is not registered"),
+            Self::Truncated(what) => write!(f, "{what} is truncated"),
+            Self::TrailingBytes(what) => write!(f, "{what} has trailing bytes"),
+            Self::UnknownTag(tag) => write!(f, "tag {tag} is not a cell tag"),
+            Self::CellOutOfRange(cell) => write!(f, "cell {cell} is outside the grid"),
+            Self::Stale { seq, last } => {
+                write!(f, "sequence {seq} is not after the last applied {last}")
+            }
+            Self::Gap { expected, seq } => {
+                write!(f, "sequence {seq} skips the expected {expected}")
+            }
         }
     }
 }
@@ -173,6 +202,25 @@ mod tests {
             (MapError::EmptyDomain, "value domain must have lo < hi"),
             (MapError::Duplicate("lens"), "lens is already registered"),
             (MapError::Mismatch("lens"), "lens does not match the grid"),
+            (MapError::UnknownLens(9), "lens 9 is not registered"),
+            (MapError::Truncated("delta"), "delta is truncated"),
+            (MapError::TrailingBytes("delta"), "delta has trailing bytes"),
+            (MapError::UnknownTag(7), "tag 7 is not a cell tag"),
+            (
+                MapError::CellOutOfRange(10_530),
+                "cell 10530 is outside the grid",
+            ),
+            (
+                MapError::Stale { seq: 2, last: 3 },
+                "sequence 2 is not after the last applied 3",
+            ),
+            (
+                MapError::Gap {
+                    expected: 4,
+                    seq: 6,
+                },
+                "sequence 6 skips the expected 4",
+            ),
         ];
         for (err, want) in cases {
             assert_eq!(err.to_string(), want);

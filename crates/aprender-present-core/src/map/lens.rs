@@ -134,6 +134,11 @@ impl LensRegistry {
         self.lenses.get(&id)
     }
 
+    /// Every registered lens, in id order.
+    pub fn iter(&self) -> impl Iterator<Item = &Lens> {
+        self.lenses.values()
+    }
+
     /// Number of registered lenses.
     pub fn len(&self) -> usize {
         self.lenses.len()

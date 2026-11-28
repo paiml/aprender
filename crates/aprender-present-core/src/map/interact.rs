@@ -10,6 +10,7 @@ use super::{
     camera::Camera2D,
     hex::HexGrid,
     layers::{EntityId, Event, Layers, LensId, Outcome, OverlayChange, Renders},
+    lens::LensRegistry,
     pick::pick,
     urlstate::{HistoryPolicy, Nav, UrlEvent, UrlState},
     MapError, MAX_SCALE, MIN_SCALE,
@@ -134,9 +135,20 @@ impl Interaction {
         self.layers.brushed()
     }
 
+    /// Deltas stored for `lens` while it was inactive and not yet applied.
+    pub fn pending_deltas(&self, lens: LensId) -> u32 {
+        self.layers.pending_deltas(lens)
+    }
+
     /// Switches the active lens: one lens render and one history entry. Switching to the lens
-    /// already active is a no-op.
-    pub fn switch_lens(&mut self, lens: LensId, now_ms: u64) -> Result<Report, MapError> {
+    /// already active is a no-op. A lens id that `lenses` does not hold is refused, with no render
+    /// and no history entry.
+    pub fn switch_lens(
+        &mut self,
+        lenses: &LensRegistry,
+        lens: LensId,
+        now_ms: u64,
+    ) -> Result<Report, MapError> {
         if self.layers.active_lens() == Some(lens) {
             return Ok(quiet());
         }
