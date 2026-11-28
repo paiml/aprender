@@ -845,8 +845,8 @@ mod tests {
 
     // ---- the parity measurement on main -------------------------------------------------
 
-    /// `SPEC_CONFORMANCE_TODAY=2026-11-28 python3 scripts/lib/spec_conformance.py . --no-out`
-    /// on the tree at d78e2e84b, which carries the same evidence/parity/LEDGER.md as origin/main
+    /// The former Python scanner's run, `SPEC_CONFORMANCE_TODAY=2026-11-28 ... --no-out`, on the
+    /// tree at d78e2e84b, which carries the same evidence/parity/LEDGER.md as origin/main
     /// efa749e19: the LEDGER line is `LEDGER\t12\t12` and no L-rule line is printed.
     #[test]
     fn main_ledger_matches_the_python_measurement() {

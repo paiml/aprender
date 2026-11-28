@@ -11,9 +11,8 @@
 # and a mutant is KILLED iff the case table prints at least one BROKE row. A mutant that
 # does not compile is not a kill: it is named as a survivor.
 #
-# The mutant set was written against the Python parser (scripts/lib/spec_conformance.py,
-# PMAT-7534 slice 2d removed it). Each id keeps its original rule, with one equivalent Rust
-# mutant per id.
+# The mutant set was first written against the former Python parser, which PMAT-7534 slice 2d
+# removed. Each id keeps its original rule, with one equivalent Rust mutant per id.
 #
 # USAGE
 #   scripts/mutate_spec_conformance.sh          run the set, print the table, exit 1 on a survivor

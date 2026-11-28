@@ -45,8 +45,8 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# The scan is the Rust driver, `aprender-ci-tools spec-conformance` (PMAT-7534, slice 2d). It
-# replaces scripts/lib/spec_conformance.py. ci_tools_bin.sh exports $CI_TOOLS_BIN: the binary
+# The scan is the Rust driver, `aprender-ci-tools spec-conformance` (PMAT-7534, slice 2d), which
+# replaced the Python scanner that stood here before it. ci_tools_bin.sh exports $CI_TOOLS_BIN: the binary
 # built from this tree, or the one the caller set. A refusal there is a refusal here.
 . "${REPO_ROOT}/scripts/ci_tools_bin.sh" || exit 1
 

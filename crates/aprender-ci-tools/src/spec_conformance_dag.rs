@@ -4,8 +4,8 @@
 //! Expiry is either a literal date on a root row or the latest expiry among its live
 //! blockers; `expires` is a date only on root rows. The walk is the Python's, step for
 //! step, so the violations come out in the same order with the same text.
-//! Python `scripts/lib/spec_conformance.py` stays the reference until the parity lane
-//! is wired (PR2+); this module is not yet called from `main.rs`.
+//! The Python scanner was the reference for this walk until PMAT-7534 slice 2d removed it;
+//! the spec-conformance driver now calls this module.
 
 use crate::pystr::{py_list_repr, py_repr};
 use regex::Regex;
