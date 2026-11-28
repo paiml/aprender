@@ -21,7 +21,7 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Verdict: PASS under PMAT-633.\n\nThe diff (`098058684`, `origin/main...HEAD`) adds a single markdown specification, `docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md` (160 lines), documenting a CRUX measurement of `karpathy.ai/usaciv`, a workspace gap audit across `aprender-viz`, `aprender-present-*`, `aprender-db`, and `aprender-serve`, a 6-point architecture design, 10 falsifiable epic rows (`MAP-0` through `MAP-9`, `#7508..#7517` under `#7507`), 5 open decisions (`D1..D5`), and 4 guarded risks.\n\nRefutation check against PMAT-633 blocking criteria:\n1. Failing tests: None. No code or test is modified, no `.quorum` gate failure is recorded, and checking the spec text against repo guards (`check_no_claim_literals.sh`, `check_perf_claims_cite_receipts.sh`, `check_row_pr_write_set.sh`, `check_spec_proposed_dated.sh`, `spec_status_headers.sh`, `spec_sweep_rules.sh`) shows zero banned claim literals, competitor ratios, or status-header violations.\n2. Security defects: None. The diff is documentation-only and introduces no code, workflow, auth, or receipt-validation loosening (and the proposed design mandates sha256 manifest verification before rendering bundle data and routes MAP-2's CI job through D3's non-blocking nightly gate rule).\n\nFour non-blocking author follow-ups (`blocking_class: none`) were measured against the repository:\n- MAP-0 scope follow-up (line 118): Ticket PMAT-7508 and MAP-0 specify both this spec and the five `pv` contracts (projection, hex grid, camera, layer cache, URL state); this PR (`Refs #7507, #7508`) ships the spec half only, so the five `pv` contracts remain owed before closing `#7508`.\n- Workspace audit correction on `check_wasm32_core_builds.sh` (line 69): `scripts/check_wasm32_core_builds.sh` (run in `guards-nightly.yml:249`) already type-checks `aprender-core`, `aprender-present-lib`, and `aprender-viz --features wasm` for `wasm32-unknown-unknown`, not `aprender-core` alone.\n- Workspace audit precision on widgets/Canvas2D (line 53): `ChartType::Histogram` already exists in `crates/aprender-present-widgets/src/chart.rs:27,973` (unbinned/unbrushable bar rendering), and `Canvas2DRenderer` (`canvas2d.rs:14,316-340`) supports `FillRule::EvenOdd` only on single-ring paths (`Vec<Point>`), which will need multi-ring support for polygons with holes.\n- Spec index & epic registry follow-up (line 1): `APR-MAP-001-realtime-wasm-maps.md` is not yet linked in `docs/specifications/TOC.md` (`contracts/unified-specs-v1.yaml`), and epic `#7507` will need registration in `docs/roadmaps/epics.yaml` once D2 is ratified.\n\nTree witness note: `/home/noah/src/aprender/.git/worktrees/wt-7519q/paiml-lane-witness` does not exist in this lane's git directory, so `tree_witness` is omitted.",
+      "summary": "Verdict: PASS under PMAT-633.\n\nThe diff (`098058684`, `origin/main...HEAD`) adds a single markdown specification, `docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md` (160 lines), documenting a CRUX measurement of `karpathy.ai/usaciv`, a workspace gap audit across `aprender-viz`, `aprender-present-*`, `aprender-db`, and `aprender-serve`, a 6-point architecture design, 10 falsifiable epic rows (`MAP-0` through `MAP-9`, `#7508..#7517` under `#7507`), 5 open decisions (`D1..D5`), and 4 guarded risks.\n\nRefutation check against PMAT-633 blocking criteria:\n1. Failing tests: None. No code or test is modified, no `.quorum` gate failure is recorded, and checking the spec text against repo guards (`check_no_claim_literals.sh`, `check_perf_claims_cite_receipts.sh`, `check_row_pr_write_set.sh`, `check_spec_proposed_dated.sh`, `spec_status_headers.sh`, `spec_sweep_rules.sh`) shows zero banned claim literals, competitor ratios, or status-header violations.\n2. Security defects: None. The diff is documentation-only and introduces no code, workflow, auth, or receipt-validation loosening (and the proposed design mandates sha256 manifest verification before rendering bundle data and routes MAP-2's CI job through D3's non-blocking nightly gate rule).\n\nFour non-blocking author follow-ups (`blocking_class: none`) were measured against the repository:\n- MAP-0 scope follow-up (line 118): Ticket PMAT-7508 and MAP-0 specify both this spec and the five `pv` contracts (projection, hex grid, camera, layer cache, URL state); this PR (`Refs #7507, #7508`) ships the spec half only, so the five `pv` contracts remain owed before closing `#7508`.\n- Workspace audit correction on `check_wasm32_core_builds.sh` (line 69): `scripts/check_wasm32_core_builds.sh` (run in `guards-nightly.yml:249`) already type-checks `aprender-core`, `aprender-present-lib`, and `aprender-viz --features wasm` for `wasm32-unknown-unknown`, not `aprender-core` alone.\n- Workspace audit precision on widgets/Canvas2D (line 53): `ChartType::Histogram` already exists in `crates/aprender-present-widgets/src/chart.rs:27,973` (unbinned/unbrushable bar rendering), and `Canvas2DRenderer` (`canvas2d.rs:14,316-340`) supports `FillRule::EvenOdd` only on single-ring paths (`Vec<Point>`), which will need multi-ring support for polygons with holes.\n- Spec index & epic registry follow-up (line 1): `APR-MAP-001-realtime-wasm-maps.md` is not yet linked in `docs/specifications/TOC.md` (`contracts/unified-specs-v1.yaml`), and epic `#7507` will need registration in `docs/roadmaps/epics.yaml` once D2 is ratified.\n\nTree witness note: `<repo>/.git/worktrees/wt-7519q/paiml-lane-witness` does not exist in this lane's git directory, so `tree_witness` is omitted.",
       "findings": [
         {
           "blocking_class": "none",
@@ -145,7 +145,7 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "PASS: under the PMAT-633 ruling I found no named failing test and no security defect. The diff adds one Markdown spec, with no code, workflow or gate changes. It does not complete PMAT-7508 (MAP-0): the pv contracts and their mutations are missing. That is an author follow-up, and #7508 should not be closed by this diff alone. I ran no build or test, and the prompt included no recorded gate result. I only spot-checked the spec's claims about the repository, using file search: some cited paths exist, a search of .github/workflows for wasm32 or wasm-pack matched only the aprender-core check in guards-nightly.yml, and a search of aprender-serve/src for WebSocket found nothing. I did not verify its measurements of the external reference site. I left tree_witness out because no paiml-lane-witness file was found in the worktree's git dir (/home/noah/src/aprender/.git/worktrees/wt-7519q).",
+      "summary": "PASS: under the PMAT-633 ruling I found no named failing test and no security defect. The diff adds one Markdown spec, with no code, workflow or gate changes. It does not complete PMAT-7508 (MAP-0): the pv contracts and their mutations are missing. That is an author follow-up, and #7508 should not be closed by this diff alone. I ran no build or test, and the prompt included no recorded gate result. I only spot-checked the spec's claims about the repository, using file search: some cited paths exist, a search of .github/workflows for wasm32 or wasm-pack matched only the aprender-core check in guards-nightly.yml, and a search of aprender-serve/src for WebSocket found nothing. I did not verify its measurements of the external reference site. I left tree_witness out because no paiml-lane-witness file was found in the worktree's git dir (<repo>/.git/worktrees/wt-7519q).",
       "findings": [
         {
           "file": "docs/specifications/aprender-viz/APR-MAP-001-realtime-wasm-maps.md",
@@ -200,7 +200,7 @@
         "position": 1,
         "running": 1,
         "bound": 1,
-        "lock": "/tmp/paiml-cc-lane.lock",
+        "lock": "<tmp>/paiml-cc-lane.lock",
         "owner": 1289696,
         "pid": 1290974,
         "slot": 0,
@@ -324,10 +324,10 @@
     "prah": {
       "source": "none",
       "path": null,
-      "why": "no --prah, none on PATH, and no install receipt at /mnt/nvme-raid0/tmp/install-receipt.json"
+      "why": "no --prah, none on PATH, and no install receipt at <scratch>/install-receipt.json"
     },
     "bucket": {
-      "ledger": "/home/noah/.local/state/paiml-implement/agy-bucket.jsonl",
+      "ledger": "<home>/.local/state/paiml-implement/agy-bucket.jsonl",
       "window_s": 18000,
       "pace": "off",
       "buckets": {
@@ -390,7 +390,7 @@
         "host": "gx10",
         "ok": false,
         "wall_s": 0,
-        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=/tmp/apr-gpu.priority)",
+        "error": "busy: executor yielded (unit inactive; last yield: 2026-10-03T00:47:22Z host=gx10-a5b5 event=stopped gpu-priority lock=<tmp>/apr-gpu.priority)",
         "ts": "2026-11-27T22:44:37.269Z",
         "wall_ms": 341,
         "request_id": "01a21f2e-9912-7366-9134-48ee04a467b2",
@@ -398,7 +398,7 @@
         "cold": null
       }
     ],
-    "ledger": "/home/noah/.local/state/paiml-implement/advisory-ledger.jsonl",
+    "ledger": "<home>/.local/state/paiml-implement/advisory-ledger.jsonl",
     "raw": "advisory.json",
     "agrees_with_counted": null,
     "counted": "PASS"
