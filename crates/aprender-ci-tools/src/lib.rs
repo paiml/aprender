@@ -16,6 +16,7 @@ pub mod package_include_diff;
 pub mod publishable_crates;
 pub mod pyjson;
 pub mod pystr;
+pub mod spec_conformance_dag;
 pub mod tarball_build_errors;
 pub mod tarball_shrink_report;
 pub mod tarball_workspace;
