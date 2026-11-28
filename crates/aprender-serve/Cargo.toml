@@ -77,7 +77,7 @@ pacha = { workspace = true, optional = true }
 trueno-viz = { workspace = true, optional = true, features = ["terminal"] }
 
 # HTTP server ONLY (swappable via HttpServer trait)
-axum = { version = "0.7", optional = true }
+axum = { version = "0.7", optional = true, features = ["ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
 tokio-stream = { version = "0.1", optional = true }
 tower = { version = "0.5", default-features = false, features = ["util"], optional = true }
@@ -219,6 +219,9 @@ approx = "0.5"
 
 # Temporary files for mmap tests
 tempfile = "3"
+
+# MAP-8 feed route integration test: a real WebSocket client against the axum route on 127.0.0.1:0
+tokio-tungstenite = "0.24"
 
 # For testing HTTP endpoints (canonical tower/axum testing)
 http-body-util = "0.1"

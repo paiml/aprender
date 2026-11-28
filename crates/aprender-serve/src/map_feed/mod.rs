@@ -244,6 +244,18 @@ pub fn column_hash(values: &[f32]) -> u64 {
         .fold(FNV_OFFSET, |h, v| fnv1a_extend(h, &v.to_le_bytes()))
 }
 
+pub mod codec;
+#[cfg(feature = "server")]
+pub mod route;
+pub mod session;
+
+#[cfg(test)]
+mod codec_tests;
+#[cfg(all(test, feature = "server"))]
+mod route_tests;
+#[cfg(test)]
+mod session_tests;
+
 #[cfg(test)]
 mod feed_tests;
 
