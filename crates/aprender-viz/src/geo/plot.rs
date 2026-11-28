@@ -22,12 +22,12 @@ pub type Features = Vec<Vec<Vec<(f64, f64)>>>;
 /// `Coord` derives `Debug` and `Clone`, and a bare `dyn Projection` is neither, so the plot holds
 /// the projection behind an [`Arc`] and prints only its type.
 #[derive(Clone)]
-pub struct GeoProjection(Arc<dyn Projection>);
+pub struct GeoProjection(Arc<dyn Projection + Send + Sync>);
 
 impl GeoProjection {
     /// Wraps a projection so a plot can own it.
     #[must_use]
-    pub fn new<P: Projection + 'static>(projection: P) -> Self {
+    pub fn new<P: Projection + Send + Sync + 'static>(projection: P) -> Self {
         Self(Arc::new(projection))
     }
 

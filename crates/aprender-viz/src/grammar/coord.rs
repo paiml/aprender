@@ -137,7 +137,9 @@ impl Coord {
     /// Map projection (`coord_geo`): polygon vertices are `(lon, lat)` degrees.
     #[cfg(feature = "geo")]
     #[must_use]
-    pub fn geo<P: crate::geo::projection::Projection + 'static>(projection: P) -> Self {
+    pub fn geo<P: crate::geo::projection::Projection + Send + Sync + 'static>(
+        projection: P,
+    ) -> Self {
         Coord::Geo { projection: crate::geo::plot::GeoProjection::new(projection) }
     }
 
