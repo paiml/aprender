@@ -49,9 +49,10 @@ falsification_tests:
 - id: F-FR-U00-002
   rule: apr run on a safetensors hf:// repo works from nothing (U-01)
   prediction: >-
-    from nothing, `apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0`
-    exits 0 and the reply contains `4`. On apr 0.75.4 it exits 8.
-  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0 --json) || exit 1; jq -e ".text | test(\"(^|[^0-9])4([^0-9]|$)\")" <<<"$out" >/dev/null'''
+    from nothing, `apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0 --json`
+    exits 0 and its .text is the answer 4 as a whole token. A timing line such
+    as `Completed in 4.12s` does not count. On apr 0.75.4 it exits 8.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct "What is 2+2?" --temperature 0 --json) || { echo "F-FR-U00-002 (U-01): apr run exited nonzero" >&2; exit 1; }; jq -e ".text | type == \"string\" and (test(\"Completed in\") | not) and test(\"(?<![0-9.])4(?![0-9]|[.][0-9]|[a-zA-Z])\")" <<<"$out" >/dev/null || { echo "F-FR-U00-002 (U-01): reply is not the answer 4, or it is a timing line" >&2; exit 1; }'''
   if_fails: step U-01 fails - safetensors hf:// run is not usable by a newcomer.
   mutation: >-
     replace the reply check with `true`; the contract must still name exit 8 as RED on 0.75.4.
@@ -78,8 +79,10 @@ falsification_tests:
   rule: a reply is not cut off by default (U-04)
   prediction: >-
     `apr run <gguf> "Explain quicksort in three sentences." --temperature 0 --json`
-    reports more than 32 generated tokens and stop reason end-of-turn. On apr 0.75.4 it stops at 32.
-  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF "Explain quicksort in three sentences." --temperature 0 --json) || exit 1; n=$(grep -oE "\"completion_tokens\": *[0-9]+" <<<"$out" | grep -oE "[0-9]+$"); [ -n "$n" ] && [ "$n" -gt 32 ] && grep -qE "\"finish_reason\": *\"stop\"" <<<"$out" && grep -qE "[.!?](\\\\n)*\"[[:space:]]*[,}]" <<<"$out"'''
+    reports more than 32 completion_tokens, finish_reason "stop", and a .text
+    that ends with terminal punctuation. A reply cut at the token cap fails. On
+    apr 0.75.4 it stops at 32.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr run hf://Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF "Explain quicksort in three sentences." --temperature 0 --json) || { echo "F-FR-U00-005 (U-04): apr run exited nonzero" >&2; exit 1; }; jq -e "(.completion_tokens > 32) and (.finish_reason == \"stop\") and ((.text | type) == \"string\") and (.text | test(\"[.!?][[:space:]]*$\"))" <<<"$out" >/dev/null || { echo "F-FR-U00-005 (U-04): reply cut off at the token cap, or .text does not end with terminal punctuation" >&2; exit 1; }'''
   if_fails: step U-04 fails - default generation is truncated at 32 tokens.
   mutation: >-
     cap the default at 32; the stop-reason check must turn RED.
@@ -95,9 +98,9 @@ falsification_tests:
 - id: F-FR-U00-007
   rule: apr doctor exists and reports the selected backend (U-06)
   prediction: >-
-    `apr doctor --json` exits 0 and carries the selected backend. On apr 0.75.4
-    the subcommand is unrecognized.
-  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr doctor --json 2>$D/err) || { echo "F-FR-U00-007: apr doctor is not a top-level command at this head (only apr cgp doctor exists, and it has no backend key)" >&2; exit 1; }; grep -qE "\"backend\": *\"[A-Za-z]" <<<"$out" || { echo "F-FR-U00-007: apr doctor --json has no backend key" >&2; exit 1; }'''
+    `apr doctor --json` exits 0 and its .backend is a non-empty string other
+    than "unknown". On apr 0.75.4 the subcommand is unrecognized.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; out=$(apr doctor --json 2>$D/err) || { echo "F-FR-U00-007 (U-06): apr doctor is not a top-level command at this head (only apr cgp doctor exists, and it has no backend key), or exited nonzero" >&2; exit 1; }; jq -e "(.backend | type == \"string\") and (.backend | length > 0) and (.backend | ascii_downcase != \"unknown\")" <<<"$out" >/dev/null || { echo "F-FR-U00-007 (U-06): apr doctor --json backend is missing or unknown" >&2; exit 1; }'''
   if_fails: step U-06 fails - no doctor verb, so a newcomer cannot diagnose a backend.
   mutation: >-
     make `apr doctor` exit 1 with no output; the exit-0 check must turn RED.
@@ -105,8 +108,8 @@ falsification_tests:
   rule: stdout of apr run is the reply and nothing else by default (U-07)
   prediction: >-
     without -v, stdout of a successful `apr run` is the reply only; stderr has
-    no internal tag such as `[PMAT-044]`. On apr 0.75.4 the banner is on stdout.
-  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" >$D/out 2>$D/err || exit 1; grep -q "[^[:space:]]" $D/out && ! grep -qE "^[[:space:]]*[Aa]ppend|Endpoints:|=== APR Run|^[[:space:]]*Source:|^[[:space:]]*Output:|Completed in" $D/out && ! grep -qE "\[PMAT-[0-9]+\]" $D/err'''
+    no ticket tag (GH-n, PMAT-n or CRUX-X-n). On apr 0.75.4 the banner is on stdout.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; apr run hf://HuggingFaceTB/SmolLM2-135M-Instruct "hi" >$D/out 2>$D/err || { echo "F-FR-U00-008 (U-07): apr run exited nonzero" >&2; exit 1; }; grep -q "[^[:space:]]" $D/out || { echo "F-FR-U00-008 (U-07): stdout is empty" >&2; exit 1; }; grep -qE "=== APR Run|^[[:space:]]*Source:|^[[:space:]]*Output:|Completed in" $D/out && { echo "F-FR-U00-008 (U-07): banner or log line on stdout" >&2; exit 1; }; grep -qE "GH-[0-9]+|PMAT-[0-9]+|CRUX-[A-Z]-[0-9]+" $D/err && { echo "F-FR-U00-008 (U-07): ticket tag on stderr" >&2; exit 1; }; exit 0'''
   if_fails: step U-07 fails - internal banner or log lines leak onto stdout.
   mutation: >-
     print the banner on stdout; the grep must match and the test must turn RED.
@@ -131,27 +134,30 @@ falsification_tests:
 - id: F-FR-U00-011
   rule: POST /v1/messages on apr serve run (G-01)
   prediction: >-
-    with a GGUF chat model loaded, POST /v1/messages returns 200 with
-    type=message. On apr 0.75.4 it returns 404.
-  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/messages -H "content-type: application/json" -d "{\"model\":\"m\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"What is 2+2?\"}]}"); kill -0 $P 2>/dev/null || exit 1; kill $P; [ "$CODE" = 200 ] && jq -e "(.type==\"message\") and (.role==\"assistant\") and (.content[0].type==\"text\") and ((.content[0].text|type)==\"string\") and ((.content[0].text|length)>0)" $D/body >/dev/null'''
+    with a GGUF chat model pulled and served (poll /health, 60 s timeout),
+    POST /v1/messages returns 200 with type=message, role=assistant and a
+    non-empty text that does not start with error:. On apr 0.75.4 it returns 404.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; M=Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF; apr pull hf://$M >/dev/null 2>&1 || { echo "F-FR-U00-011 (G-01): apr pull hf://$M failed" >&2; exit 1; }; P0=$((20000 + RANDOM % 20000)); apr serve run $M --port $P0 >/dev/null 2>&1 & P=$!; trap "kill $P 2>/dev/null" EXIT; T=0; until curl -fsS http://127.0.0.1:$P0/health >/dev/null 2>&1; do kill -0 $P 2>/dev/null || { echo "F-FR-U00-011 (G-01): apr serve exited before /health answered" >&2; exit 1; }; T=$((T+1)); [ $T -ge 60 ] && { echo "F-FR-U00-011 (G-01): /health did not answer within 60 s" >&2; exit 1; }; sleep 1; done; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/messages -H "content-type: application/json" -d "{\"model\":\"m\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"What is 2+2?\"}]}"); [ "$CODE" = 200 ] || { echo "F-FR-U00-011 (G-01): POST /v1/messages returned $CODE, not 200" >&2; exit 1; }; jq -e "(.type == \"message\") and (.role == \"assistant\") and (.content[0].type == \"text\") and ((.content[0].text | type) == \"string\") and ((.content[0].text | length) > 0) and ((.content[0].text | ascii_downcase | startswith(\"error:\")) | not)" $D/body >/dev/null || { echo "F-FR-U00-011 (G-01): reply is empty, not a message, or an error string" >&2; exit 1; }'''
   if_fails: step G-01 fails - the Anthropic-compatible messages route is missing.
   mutation: >-
     return 404 on the route; the status check must turn RED.
 - id: F-FR-U00-012
   rule: POST /v1/responses on apr serve run (G-02)
   prediction: >-
-    with the same model, POST /v1/responses returns 200 with object=response.
-    On apr 0.75.4 it returns 404.
-  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/responses -H "content-type: application/json" -d "{\"model\":\"m\",\"input\":\"What is 2+2?\"}"); kill -0 $P 2>/dev/null || exit 1; kill $P; [ "$CODE" = 200 ] && jq -e "(.object==\"response\") and (.output|type==\"array\") and (.output|length>0)" $D/body >/dev/null'''
+    with the same model (pulled, /health polled with a 60 s timeout),
+    POST /v1/responses returns 200 with object=response, status=completed and
+    output[0].content[0] of type output_text with non-empty text. On apr 0.75.4 it returns 404.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; M=Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF; apr pull hf://$M >/dev/null 2>&1 || { echo "F-FR-U00-012 (G-02): apr pull hf://$M failed" >&2; exit 1; }; P0=$((20000 + RANDOM % 20000)); apr serve run $M --port $P0 >/dev/null 2>&1 & P=$!; trap "kill $P 2>/dev/null" EXIT; T=0; until curl -fsS http://127.0.0.1:$P0/health >/dev/null 2>&1; do kill -0 $P 2>/dev/null || { echo "F-FR-U00-012 (G-02): apr serve exited before /health answered" >&2; exit 1; }; T=$((T+1)); [ $T -ge 60 ] && { echo "F-FR-U00-012 (G-02): /health did not answer within 60 s" >&2; exit 1; }; sleep 1; done; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/responses -H "content-type: application/json" -d "{\"model\":\"m\",\"input\":\"What is 2+2?\"}"); [ "$CODE" = 200 ] || { echo "F-FR-U00-012 (G-02): POST /v1/responses returned $CODE, not 200" >&2; exit 1; }; jq -e "(.object == \"response\") and (.status == \"completed\") and (.output[0].content[0].type == \"output_text\") and ((.output[0].content[0].text | type) == \"string\") and ((.output[0].content[0].text | length) > 0)" $D/body >/dev/null || { echo "F-FR-U00-012 (G-02): response is not completed output_text with non-empty text" >&2; exit 1; }'''
   if_fails: step G-02 fails - the responses route is missing.
   mutation: >-
     return 404 on the route; the status check must turn RED.
 - id: F-FR-U00-013
   rule: a request with no model field says so (G-03)
   prediction: >-
-    POST /v1/chat/completions without a model field returns a 4xx whose message
-    names `model`. On apr 0.75.4 it returns 422 with a generic schema message.
-  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; P0=$((20000 + RANDOM % 20000)); apr serve run Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF --port $P0 >/dev/null 2>&1 & P=$!; sleep 5; kill -0 $P 2>/dev/null || exit 1; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/chat/completions -H "content-type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"); kill $P; case $CODE in 4??) jq -e "(.error|tostring|ascii_downcase|contains(\"model\"))" $D/body >/dev/null ;; *) false ;; esac'''
+    with the model pulled and /health polled (60 s timeout), POST
+    /v1/chat/completions without a model field returns a 4xx whose
+    .error.message names `model`. On apr 0.75.4 it returns 422 with a generic schema message.
+  test: 'bash -c ''command -v apr >/dev/null 2>&1 || { echo "CANNOT MEASURE: apr not on PATH" >&2; exit 75; }; command -v jq >/dev/null 2>&1 || { echo "CANNOT MEASURE: jq not on PATH" >&2; exit 75; }; command -v curl >/dev/null 2>&1 || { echo "CANNOT MEASURE: curl not on PATH" >&2; exit 75; }; D=$(mktemp -d); export HOME=$D XDG_CACHE_HOME=$D/.cache; M=Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF; apr pull hf://$M >/dev/null 2>&1 || { echo "F-FR-U00-013 (G-03): apr pull hf://$M failed" >&2; exit 1; }; P0=$((20000 + RANDOM % 20000)); apr serve run $M --port $P0 >/dev/null 2>&1 & P=$!; trap "kill $P 2>/dev/null" EXIT; T=0; until curl -fsS http://127.0.0.1:$P0/health >/dev/null 2>&1; do kill -0 $P 2>/dev/null || { echo "F-FR-U00-013 (G-03): apr serve exited before /health answered" >&2; exit 1; }; T=$((T+1)); [ $T -ge 60 ] && { echo "F-FR-U00-013 (G-03): /health did not answer within 60 s" >&2; exit 1; }; sleep 1; done; CODE=$(curl -s -o $D/body -w "%{http_code}" -X POST http://127.0.0.1:$P0/v1/chat/completions -H "content-type: application/json" -d "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"); case $CODE in 4??) ;; *) echo "F-FR-U00-013 (G-03): request without model returned $CODE, not 4xx" >&2; exit 1 ;; esac; jq -e "(.error.message | type == \"string\") and (.error.message | ascii_downcase | contains(\"model\"))" $D/body >/dev/null || { echo "F-FR-U00-013 (G-03): .error.message does not name model" >&2; exit 1; }'''
   if_fails: step G-03 fails - a missing model field gets an unhelpful error.
   mutation: >-
     return the generic schema message; the `model` match must turn RED.
