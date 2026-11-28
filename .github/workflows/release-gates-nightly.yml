@@ -152,12 +152,12 @@ jobs:
           rc=0
           setsid --wait bash scripts/check_reconcile.sh --self-test || rc=$?
           [ "$rc" -eq 0 ] || { echo "::error::check_reconcile.sh self-test is red rc=$rc: its verdict would not be evidence"; exit 1; }
+          bash scripts/tests/release_prev_tag_test.sh || { echo "::error::release_prev_tag_test.sh is red: the nightly window would not be release.yml's"; exit 1; }
           last=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -V | tail -n 1)
           [ -n "$last" ] || { echo "::error::no final vX.Y.Z tag: the window cannot be named"; exit 2; }
-          # previous tag = newest final vX.Y.Z strictly below the target: the same window release.yml judges
-          prev=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | grep -vxF "$last" \
-            | { sort -V; printf '%s\n' "$last"; } | sort -V | awk -v v="$last" '$0==v{print p; exit} {p=$0}')
-          [ -n "$prev" ] || { echo "::error::no final tag below v$last: the window cannot be named"; exit 2; }
+          # previous tag = newest final vX.Y.Z strictly below the target AND an ancestor of it: the same window release.yml
+          # judges (scripts/release/prev_final_tag.sh; a sort-only pick names a tag from another release line, aprender R2)
+          prev=$(bash scripts/release/prev_final_tag.sh "$last" "v$last") || { echo "::error::no final ancestor tag below v$last: the window cannot be named"; exit 2; }
           echo "reconcile target: v$last (window v$prev..v$last)"
           setsid --wait bash scripts/check_reconcile.sh "v$last" --prev-tag "v$prev" || rc=$?
           case $rc in
