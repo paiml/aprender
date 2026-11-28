@@ -45,6 +45,7 @@ struct EvenOddPath {
 /// Field names are self-documenting and match SVG attribute names.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
+#[non_exhaustive]
 pub enum SvgElement {
     /// Rectangle
     Rect {
