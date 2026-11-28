@@ -369,6 +369,7 @@ mod kernel_oracle_scan;
 /// KREG-001: the kernel registry — a selector dispatches only a registered combination.
 pub mod kernel_registry;
 pub mod layers;
+pub mod map_feed;
 pub mod memory;
 #[cfg(feature = "server")]
 pub mod metrics;
