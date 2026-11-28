@@ -3,7 +3,7 @@
 //! A screen pixel goes to a world point through [`Camera2D::world_at`], then to the hex cell
 //! containing it through [`HexGrid::cell_at_world`].
 
-use super::{camera::Camera2D, hex::HexGrid, MapError};
+use super::{camera::Camera2D, check_point, hex::HexGrid, MapError};
 
 /// The cell under a screen pixel, or `None` when that point is off the grid.
 ///
@@ -14,7 +14,8 @@ pub fn pick(
     camera: &Camera2D,
     screen: (f64, f64),
 ) -> Result<Option<u32>, MapError> {
-    unimplemented!("MAP-6 slice 2 RED: pick {grid:?} {camera:?} {screen:?}")
+    check_point(screen, "screen")?;
+    Ok(grid.cell_at_world(camera.world_at(screen)))
 }
 
 #[cfg(test)]
