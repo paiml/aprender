@@ -173,3 +173,12 @@ fn brush_selection_matches_the_brute_force_oracle_over_every_cell() {
         }
     }
 }
+
+#[test]
+fn brush_never_selects_a_cell_without_data() {
+    let values = vec![Some(-1.0), Some(0.0), Some(2.0), None];
+    let lens = Lens::new(2, "log", Scale::Log, (1.0, 1000.0), values).expect("log lens");
+    let brush = Brush::new(-1.0, 5.0).expect("brush");
+    let want: BTreeSet<EntityId> = [2].into_iter().collect();
+    assert_eq!(brush.select(&lens), want);
+}
