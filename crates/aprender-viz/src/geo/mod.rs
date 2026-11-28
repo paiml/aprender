@@ -9,6 +9,7 @@
 
 pub mod fill;
 pub mod hex;
+mod hex_clip;
 pub mod index;
 pub mod plot;
 pub mod projection;
@@ -32,6 +33,8 @@ pub mod simplify;
 
 #[cfg(test)]
 mod projection_tests;
+#[cfg(test)]
+mod projection_tests_review;
 #[cfg(test)]
 mod simplify_tests;
 
