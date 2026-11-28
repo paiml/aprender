@@ -1458,6 +1458,10 @@ fn emit_ccpa_trace(
         "kind": "user_prompt",
         "turn": 0,
         "text": prompt,
+        "input_bytes_sent": result.input.input_bytes_sent,
+        "input_bytes_consumed": result.input.input_bytes_consumed,
+        "prompt_sha256": result.input.prompt_sha256,
+        "prompt_tokens": result.input.prompt_tokens,
     });
     let assistant_turn = serde_json::json!({
         "v": 1,

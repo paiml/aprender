@@ -99,6 +99,9 @@ dirs = { version = "5.0", optional = true }
 # Shared math/display utilities (sovereign stack)
 batuta-common = { workspace = true }
 
+# SHA-256 of the prompt a turn handed to its driver (#4600)
+sha2 = { workspace = true }
+
 # Content-addressable hashing (native-only, used by playbook cache)
 blake3 = { version = "1.8", optional = true }
 
