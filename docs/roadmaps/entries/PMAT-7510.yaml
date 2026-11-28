@@ -1,0 +1,22 @@
+- id: PMAT-7510
+  github_issue: 7510
+  item_type: task
+  title: 'APR-MAP-001 MAP-2: viz, present and db build for wasm32, with recorded .wasm sizes (LAB)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-11-28T00:00:00+00:00
+  updated: 2026-11-28T00:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - '[ ] planted unix import: check_wasm32_viz_builds.sh --self-test fails the build of a present crate for that reason'
+  - '[ ] size file: committed, rewritten only by the script, and a stale or missing file fails'
+  - '[ ] one non-blocking nightly job, with one ticket and one owner on red'
+  - '[ ] smoke page: draws one projected polygon; a one-colour change fails it'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 7507

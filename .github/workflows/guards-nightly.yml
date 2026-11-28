@@ -547,3 +547,60 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           JOB_STATUS: ${{ job.status }}
+
+  # APR-MAP-001 MAP-2 (#7510), decision D3. LAB, not GATE: nightly and dispatch only, never on a
+  # PR, merge-queue or release path. Its own job, so a slow wasm build cannot time out the guards
+  # above and the planted-import self-test never edits their checkout. A red night reaches one
+  # ticket with one owner.
+  wasm32-viz-lab:
+    needs: [guards-nightly]
+    if: ${{ !cancelled() }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # PP-19: eight-job release builds on the shared host serialise against the benchmarks. The needs:
+    # edge keeps the two jobs of this workflow from both waiting in the group at once.
+    concurrency:
+      group: perf-intel
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    timeout-minutes: 45
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          # No later step of this job pushes: the ticket step authenticates `gh` with GH_TOKEN,
+          # and no step runs git push, so the token is not left in .git/config.
+          persist-credentials: false
+      # `2>&1 | tee` is synchronous: the log is complete when each step returns, and a step that
+      # fails still fails (pipefail), so no `exec` process substitution can outlive the step.
+      - name: viz, present and db release builds for wasm32, and their .wasm sizes (LAB, #7510)
+        id: lab_wasm32_viz
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/wasm32-viz-target" TMPDIR="$RUNNER_TEMP"
+          setsid --wait bash scripts/check_wasm32_viz_builds.sh --self-test 2>&1 | tee -a "$RUNNER_TEMP/wasm32-viz.log"
+          setsid --wait bash scripts/check_wasm32_viz_builds.sh 2>&1 | tee -a "$RUNNER_TEMP/wasm32-viz.log"
+      # Any non-success of the job: a failed step, a failed earlier step (checkout, pre-checkout), or
+      # a cancel or timeout. always() keeps it running after those; the log may be absent, and
+      # lab_ticket.sh then records the run as not measured.
+      - name: A red wasm32-viz night opens or updates its one LAB ticket (#7510)
+        if: ${{ always() && job.status != 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-wasm32-viz --title "LAB: viz/present/db wasm32 build or .wasm size is red (#7510)" \
+            --owner aprender-cop --log "$RUNNER_TEMP/wasm32-viz.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
