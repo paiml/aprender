@@ -1,6 +1,8 @@
 // Compiled witness for README.md "## Library usage" (F-FR-U00-010).
 // readme_contract.rs asserts this file contains the README block verbatim, so
 // the snippet the README promises is compiled by this test target.
+// rustfmt is skipped on purpose: the README block must stay byte-for-byte here.
+#[rustfmt::skip]
 #[allow(dead_code, unused_variables)]
 fn readme_library_snippet() {
 use aprender::linear_model::LinearRegression;
