@@ -201,10 +201,9 @@ fn get_help_commands() -> Vec<String> {
         .expect("failed to run apr --help");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut commands = Vec::new();
+    // U-08: the Commands block has blank lines between headings, so it runs to
+    // the Options: header (help_block), not to the first blank line.
     for line in help_block(&stdout) {
-        if line.is_empty() && commands.len() > 5 {
-            break;
-        }
         if let Some(name) = row_name(line).filter(|n| looks_like_command(n)) {
             commands.push(name.to_string());
         }
