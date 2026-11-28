@@ -14,6 +14,10 @@
 /// Largest number of candidate cells one rasterisation may visit.
 pub const MAX_CANDIDATE_CELLS: u128 = 4_000_000;
 
+/// Largest number of cells an [`AxialWindow`] may hold (2^24, about 16.8 million cells, or
+/// 128 MiB of `f64` in a [`CellColumn`]). Larger windows are a [`HexError::InvalidWindow`].
+pub const MAX_WINDOW_CELLS: u128 = 1 << 24;
+
 /// Largest `|value|` that [`spread`] accepts. The MAP-3 epsilon is stated for this range.
 pub const MAX_SPREAD_VALUE: f64 = 1e12;
 
@@ -210,7 +214,8 @@ pub struct AxialWindow {
 }
 
 impl AxialWindow {
-    /// A validated window. Bounds must be ordered, and the cell count must fit in `usize`.
+    /// A validated window. Bounds must be ordered, and the cell count must not exceed
+    /// [`MAX_WINDOW_CELLS`].
     pub fn new(q_min: i64, q_max: i64, r_min: i64, r_max: i64) -> Result<Self, HexError> {
         let window = Self { q_min, q_max, r_min, r_max };
         let invalid = HexError::InvalidWindow { q_min, q_max, r_min, r_max };
@@ -218,7 +223,7 @@ impl AxialWindow {
             return Err(invalid);
         }
         match window.width().checked_mul(window.height()) {
-            Some(n) if n <= usize::MAX as u128 => Ok(window),
+            Some(n) if n <= MAX_WINDOW_CELLS && n <= usize::MAX as u128 => Ok(window),
             _ => Err(invalid),
         }
     }

@@ -395,3 +395,13 @@ proptest! {
         prop_assert!((sum - value).abs() <= 1e-9 * value.abs());
     }
 }
+
+#[test]
+fn window_cell_count_is_bounded() {
+    // 2^62 cells per axis overflows the bound; a 1x1 window is well inside it.
+    assert!(matches!(
+        AxialWindow::new(-(1 << 62), 1 << 62, 0, 0),
+        Err(HexError::InvalidWindow { .. })
+    ));
+    assert!(AxialWindow::new(0, 0, 0, 0).is_ok());
+}
