@@ -136,8 +136,24 @@ impl ColumnFeed {
     /// Returns [`FeedError::UnknownColumn`] or [`FeedError::CellOutOfRange`]
     /// without changing any state.
     pub fn apply(&mut self, column: &str, changes: &[(u32, f32)]) -> Result<u64, FeedError> {
-        let _ = (column, changes);
-        Ok(0)
+        let ring_capacity = self.ring_capacity;
+        let col = self
+            .columns
+            .get_mut(column)
+            .ok_or_else(|| FeedError::UnknownColumn(column.to_owned()))?;
+        let resolved = resolve_cells(column, col.values.len(), changes)?;
+        for (index, value) in resolved {
+            col.values[index] = value;
+        }
+        col.seq += 1;
+        col.ring.push_back(Batch {
+            seq: col.seq,
+            changes: changes.to_vec(),
+        });
+        while col.ring.len() > ring_capacity {
+            col.ring.pop_front();
+        }
+        Ok(col.seq)
     }
 
     /// Resume a client that last saw `last_seen_seq` on `column`.
@@ -145,8 +161,26 @@ impl ColumnFeed {
     /// # Errors
     /// Returns [`FeedError::UnknownColumn`] or [`FeedError::FutureSeq`].
     pub fn resume(&self, column: &str, last_seen_seq: u64) -> Result<Resume, FeedError> {
-        let _ = (column, last_seen_seq);
-        Ok(Resume::Replay(Vec::new()))
+        let col = self.column(column)?;
+        if last_seen_seq > col.seq {
+            return Err(FeedError::FutureSeq {
+                column: column.to_owned(),
+                last_seen: last_seen_seq,
+                current: col.seq,
+            });
+        }
+        let missing = col.seq - last_seen_seq;
+        let ring_len = col.ring.len();
+        match usize::try_from(missing) {
+            // The last `missing` ring entries are exactly seqs last_seen+1..=seq.
+            Ok(m) if m <= ring_len => Ok(Resume::Replay(
+                col.ring.iter().skip(ring_len - m).cloned().collect(),
+            )),
+            _ => Ok(Resume::Snapshot {
+                seq: col.seq,
+                values: col.values.clone(),
+            }),
+        }
     }
 
     /// Current seq of `column`.
@@ -154,8 +188,7 @@ impl ColumnFeed {
     /// # Errors
     /// Returns [`FeedError::UnknownColumn`] if the column does not exist.
     pub fn seq(&self, column: &str) -> Result<u64, FeedError> {
-        let _ = column;
-        Ok(0)
+        self.column(column).map(|c| c.seq)
     }
 
     /// Current values of `column`.
@@ -163,23 +196,52 @@ impl ColumnFeed {
     /// # Errors
     /// Returns [`FeedError::UnknownColumn`] if the column does not exist.
     pub fn values(&self, column: &str) -> Result<&[f32], FeedError> {
-        let _ = column;
-        Ok(&[])
+        self.column(column).map(|c| c.values.as_slice())
     }
+
+    fn column(&self, column: &str) -> Result<&Column, FeedError> {
+        self.columns
+            .get(column)
+            .ok_or_else(|| FeedError::UnknownColumn(column.to_owned()))
+    }
+}
+
+/// Validate every cell of a batch before any write, so a rejected batch changes nothing.
+fn resolve_cells(
+    column: &str,
+    len: usize,
+    changes: &[(u32, f32)],
+) -> Result<Vec<(usize, f32)>, FeedError> {
+    changes
+        .iter()
+        .map(|&(cell, value)| {
+            usize::try_from(cell)
+                .ok()
+                .filter(|&index| index < len)
+                .map(|index| (index, value))
+                .ok_or_else(|| FeedError::CellOutOfRange {
+                    column: column.to_owned(),
+                    cell,
+                    len,
+                })
+        })
+        .collect()
 }
 
 /// Fold `bytes` into an FNV-1a 64-bit running hash.
 #[must_use]
 pub fn fnv1a_extend(hash: u64, bytes: &[u8]) -> u64 {
-    let _ = bytes;
-    hash
+    bytes
+        .iter()
+        .fold(hash, |h, &b| (h ^ u64::from(b)).wrapping_mul(FNV_PRIME))
 }
 
 /// Deterministic hash of a column: FNV-1a over the little-endian bytes of each value.
 #[must_use]
 pub fn column_hash(values: &[f32]) -> u64 {
-    let _ = values;
-    0
+    values
+        .iter()
+        .fold(FNV_OFFSET, |h, v| fnv1a_extend(h, &v.to_le_bytes()))
 }
 
 #[cfg(test)]
