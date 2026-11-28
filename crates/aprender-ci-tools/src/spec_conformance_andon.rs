@@ -84,9 +84,9 @@ pub fn is_lab(expires_cell: &str) -> bool {
 }
 
 /// A LAB cell is exempt from D6 only if it cites the ruling that moved it to LAB: `Appendix D`,
-/// where the spec records operator rulings, and a ticket `#<digits>`, the one ticket C324 gives
-/// every LAB row. For PMAT-7534 the ruling is the operator's of 2026-11-28 (Appendix D 3.1),
-/// which covers rows 13 and 15-21. A bare `LAB`, or one that cites only one of the two, is still
+/// where the spec records rulings, and a ticket `#<digits>`, the one ticket C324 gives
+/// every LAB row. PMAT-7534 cites an arbiter ticket, not an operator ruling; operator sign-off is pending.
+/// A bare `LAB`, or one that cites only one of the two, is still
 /// an andon, so marking a row LAB cannot clear its D6 by itself.
 #[must_use]
 pub fn cites_lab_ruling(expires_cell: &str) -> bool {

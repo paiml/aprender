@@ -476,6 +476,14 @@ main() {
         rc=1
     fi
 
+    # rc 1 is the scanner's promise that a VIOLATION line was printed. Rc 1 with none is a broken
+    # contract, and it must not read as a pass.
+    if [ "$srv" -eq 1 ] && [ "$viol" -eq 0 ]; then
+        printf '\nFAIL (contract): the scanner exited 1 but printed no VIOLATION line.\n'
+        printf 'rc 1 means a violation was printed; this one is unexplained. Fix the scanner.\n'
+        rc=1
+    fi
+
     if [ "$viol" -gt 0 ]; then
         printf '\n%s row(s) disagree with the tree:\n' "$viol"
         render_violations "$tsv"
