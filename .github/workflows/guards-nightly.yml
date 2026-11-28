@@ -579,16 +579,23 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
+          # No later step of this job pushes: the ticket step authenticates `gh` with GH_TOKEN,
+          # and no step runs git push, so the token is not left in .git/config.
+          persist-credentials: false
+      # `2>&1 | tee` is synchronous: the log is complete when each step returns, and a step that
+      # fails still fails (pipefail), so no `exec` process substitution can outlive the step.
       - name: viz, present and db release builds for wasm32, and their .wasm sizes (LAB, #7510)
         id: lab_wasm32_viz
         run: |
           set -euo pipefail
-          exec > >(tee -a "$RUNNER_TEMP/wasm32-viz.log") 2>&1
           export CARGO_TARGET_DIR="$RUNNER_TEMP/wasm32-viz-target" TMPDIR="$RUNNER_TEMP"
-          setsid --wait bash scripts/check_wasm32_viz_builds.sh --self-test
-          setsid --wait bash scripts/check_wasm32_viz_builds.sh
+          setsid --wait bash scripts/check_wasm32_viz_builds.sh --self-test 2>&1 | tee -a "$RUNNER_TEMP/wasm32-viz.log"
+          setsid --wait bash scripts/check_wasm32_viz_builds.sh 2>&1 | tee -a "$RUNNER_TEMP/wasm32-viz.log"
+      # Any non-success of the job: a failed step, a failed earlier step (checkout, pre-checkout), or
+      # a cancel or timeout. always() keeps it running after those; the log may be absent, and
+      # lab_ticket.sh then records the run as not measured.
       - name: A red wasm32-viz night opens or updates its one LAB ticket (#7510)
-        if: failure() && steps.lab_wasm32_viz.outcome == 'failure'
+        if: ${{ always() && job.status != 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

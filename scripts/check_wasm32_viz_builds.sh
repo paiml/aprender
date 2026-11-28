@@ -27,9 +27,11 @@
 # Modes:
 #   (no args)     self-test the literal + classifier, build every package, compare sizes.
 #   --write       as above, but rewrite scripts/wasm32-viz-size.txt instead of comparing.
-#   --self-test   classifier table, the #2310 literal, and a PLANTED `use std::os::unix` in
-#                 crates/aprender-present-core/src/lib.rs that must break the build for that
-#                 reason. The planted line is removed by a trap, on every exit path.
+#   --self-test   classifier table, the #2310 literal, the size comparator, the build path
+#                 (build_pkg/build_all driven through a stub `cargo` on PATH, so a broken
+#                 build_pkg or build_all turns it RED), and a PLANTED `use std::os::unix` in a
+#                 COPY of the tracked tree that must break the build for that reason, at the
+#                 planted line. The checkout is never edited.
 
 set -euo pipefail
 
@@ -43,19 +45,29 @@ DEFECT_DIAGNOSTIC="literal out of range"
 SELF_TEST_DIR=""
 CHECK_LOG=""
 PLANT_DIR=""
+STUB_DIR=""
+PLANT_LINE=""
+RUN_RC=""
 
+# Idempotent: every temp path is cleared once removed, so EXIT after INT/TERM is a no-op.
 cleanup() {
-    if [ -n "${SELF_TEST_DIR}" ] && [ -d "${SELF_TEST_DIR}" ]; then
-        rm -rf "${SELF_TEST_DIR:?}"
-    fi
-    if [ -n "${PLANT_DIR}" ] && [ -d "${PLANT_DIR}" ]; then
-        rm -rf "${PLANT_DIR:?}"
-    fi
+    local d
+    for d in "${SELF_TEST_DIR}" "${PLANT_DIR}" "${STUB_DIR}"; do
+        if [ -n "${d}" ] && [ -d "${d}" ]; then
+            rm -rf "${d:?}"
+        fi
+    done
     if [ -n "${CHECK_LOG}" ] && [ -f "${CHECK_LOG}" ]; then
         rm -f "${CHECK_LOG:?}"
     fi
+    SELF_TEST_DIR=""
+    PLANT_DIR=""
+    STUB_DIR=""
+    CHECK_LOG=""
 }
 trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 # cargo must run at the workspace root regardless of the caller's cwd.
 REPO_ROOT="$(git rev-parse --show-toplevel 2> /dev/null || pwd)"
@@ -131,6 +143,8 @@ plant_self_test() {
 
     printf '\n// wasm32 self-test plant: must break the build.\nuse std::os::unix::fs::PermissionsExt;\n' \
         >> "${PLANT_DIR}/${PLANT_REL}"
+    # The appended `use` is the last line, so the line count is its line number.
+    PLANT_LINE="$(wc -l < "${PLANT_DIR}/${PLANT_REL}")"
 
     set_wasm_rustflags
     set +e
@@ -148,9 +162,11 @@ plant_self_test() {
         report_cargo_env_failure "${CHECK_LOG}" "the planted-import self-test" >&2
         return 1
     fi
-    # The compiler quotes the offending source line, so the planted path must be in the log.
-    if ! grep -qE 'E0432|E0433' "${CHECK_LOG}" || ! grep -q 'std::os::unix::fs::PermissionsExt' "${CHECK_LOG}"; then
-        echo "SELF-TEST FAIL: the build failed, but not on the planted std::os::unix import." >&2
+    # Both must hold: an unresolved-import error code AND the compiler's location pointer at the
+    # planted file and line. Either alone can be matched by an unrelated failure.
+    if ! grep -qE '^error\[E04(32|33)\]' "${CHECK_LOG}" \
+        || ! grep -qF -- "${PLANT_REL}:${PLANT_LINE}:" "${CHECK_LOG}"; then
+        echo "SELF-TEST FAIL: the build failed, but not with E0432/E0433 at ${PLANT_REL}:${PLANT_LINE}." >&2
         grep -E '^error' -A 4 "${CHECK_LOG}" >&2 || cat "${CHECK_LOG}" >&2
         return 1
     fi
@@ -162,6 +178,10 @@ plant_self_test() {
 build_pkg() {
     local pkg="$1" rc
     shift
+    # Replace, never accumulate: each call's log is removed before the next one is made.
+    if [ -n "${CHECK_LOG}" ]; then
+        rm -f "${CHECK_LOG:?}"
+    fi
     CHECK_LOG="$(mktemp)"
 
     set_wasm_rustflags
@@ -271,11 +291,111 @@ compare_self_test() {
     return 0
 }
 
+# Drive the REAL build_pkg and build_all through a stub `cargo` placed first on PATH. The stub
+# never compiles: it answers `cargo metadata` with a target directory and records each
+# `cargo build` argv. So this proves the call sites, flags, order and failure propagation of the
+# functions the guard actually runs. A build_pkg or build_all that skips, reorders or swallows a
+# failure turns it RED. Sets RUN_RC; output goes to ${STUB_DIR}/out.
+build_path_self_test() {
+    local stub_bin calls tdir fragment n
+    STUB_DIR="$(mktemp -d)"
+    stub_bin="${STUB_DIR}/bin"
+    calls="${STUB_DIR}/calls"
+    tdir="${STUB_DIR}/target"
+    mkdir -p "${stub_bin}" "${tdir}"
+    cat > "${stub_bin}/cargo" << 'STUB'
+#!/usr/bin/env bash
+# Self-test stub for cargo: compiles nothing, records `cargo build` argv, fails one package on request.
+case "${1:-}" in
+    metadata)
+        printf '{"target_directory":"%s"}\n' "${STUB_TARGET_DIR}"
+        exit 0
+        ;;
+    build)
+        printf '%s\n' "$*" >> "${STUB_CALLS}"
+        case " $* " in
+            *" -p ${STUB_FAIL_PKG:-__none__} "*)
+                echo "error[E0432]: unresolved import (stub failure for the build-path self-test)"
+                echo "error: could not compile \`${STUB_FAIL_PKG}\` (lib) due to 1 previous error"
+                exit 101
+                ;;
+        esac
+        exit 0
+        ;;
+    *)
+        echo "stub cargo: unexpected argv: $*" >&2
+        exit 99
+        ;;
+esac
+STUB
+    chmod +x "${stub_bin}/cargo"
+
+    # Usage: run_build_all <package to fail, or empty>. Runs build_all in a subshell with the
+    # stub first on PATH, so PATH and the STUB_* variables never leak into this shell.
+    run_build_all() {
+        : > "${calls}"
+        set +e
+        (
+            export PATH="${stub_bin}:${PATH}" STUB_CALLS="${calls}" STUB_TARGET_DIR="${tdir}" \
+                STUB_FAIL_PKG="$1"
+            build_all
+        ) > "${STUB_DIR}/out" 2>&1
+        RUN_RC=$?
+        set -e
+    }
+
+    run_build_all ""
+    if [ "${RUN_RC}" -ne 0 ]; then
+        echo "SELF-TEST FAIL: build_all reported RED with a green stub cargo (exit ${RUN_RC})." >&2
+        cat "${STUB_DIR}/out" >&2
+        return 1
+    fi
+    n="$(wc -l < "${calls}")"
+    if [ "${n}" -ne 6 ]; then
+        echo "SELF-TEST FAIL: build_all ran ${n} cargo builds, expected 6 (one per wasm32 package)." >&2
+        cat "${calls}" >&2
+        return 1
+    fi
+    # build_pkg puts the per-package extra args AFTER --target, so these are ordered patterns.
+    for fragment in \
+        "-p aprender-viz .*--features geo" \
+        "-p aprender-present-core " \
+        "-p aprender-present-layout " \
+        "-p aprender-present-widgets " \
+        "-p aprender-present-lib " \
+        "-p aprender-db .*--no-default-features --features wasm"; do
+        if ! grep -qE -- "${fragment}" "${calls}"; then
+            echo "SELF-TEST FAIL: build_all never ran cargo build matching '${fragment}'." >&2
+            return 1
+        fi
+    done
+    n="$(grep -cF -- "--target ${TARGET}" "${calls}" || true)"
+    if [ "${n}" -ne 6 ]; then
+        echo "SELF-TEST FAIL: ${n} of 6 builds carried --target ${TARGET}." >&2
+        return 1
+    fi
+
+    # A failing package must turn the whole run RED and stop before the packages after it.
+    run_build_all "aprender-present-layout"
+    if [ "${RUN_RC}" -eq 0 ]; then
+        echo "SELF-TEST FAIL: build_all reported GREEN although cargo failed for aprender-present-layout." >&2
+        return 1
+    fi
+    n="$(wc -l < "${calls}")"
+    if [ "${n}" -ne 3 ] || ! grep -qF -- "FAIL: aprender-present-layout " "${STUB_DIR}/out"; then
+        echo "SELF-TEST FAIL: the failing package was not named, or build_all did not stop there (${n} builds)." >&2
+        cat "${STUB_DIR}/out" >&2
+        return 1
+    fi
+    echo "SELF-TEST PASS: build_all drives the six wasm32 builds through build_pkg, and goes RED at the first failing package."
+    return 0
+}
+
 usage() {
     echo "usage: $0 [--self-test | --write | -h]"
     echo "  (no args)    literal self-test, build every wasm32 package, compare .wasm sizes to ${SIZE_FILE_REL}"
     echo "  --write      as above, rewrite ${SIZE_FILE_REL}"
-    echo "  --self-test  classifier table, #2310 literal, and a planted std::os::unix import that must fail"
+    echo "  --self-test  classifier table, #2310 literal, build path via a stub cargo, and a planted std::os::unix import that must fail"
 }
 
 case "${1:-}" in
@@ -284,6 +404,7 @@ case "${1:-}" in
         ensure_target
         literal_self_test
         compare_self_test
+        build_path_self_test
         plant_self_test
         ;;
     --write | "")
